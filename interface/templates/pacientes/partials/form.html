@@ -1,0 +1,159 @@
+﻿<div class="paciente-form-card" id="paciente-form">
+  <h2>{{ 'Editar paciente' if paciente.paciente_id else 'Novo paciente' }}</h2>
+  {% if form_error %}
+    <div class="alert error">{{ form_error }}</div>
+  {% elif form_success %}
+    <div class="alert success">Ficha salva com sucesso.</div>
+  {% endif %}
+  <form hx-post="/pacientes/salvar"
+        hx-target="#paciente-form"
+        hx-swap="outerHTML"
+        class="paciente-form-fields">
+    <input type="hidden" name="paciente_id" value="{{ paciente.paciente_id or '' }}" />
+
+    <label for="campo-nome">Nome completo</label>
+    <input id="campo-nome" type="text" name="nome" value="{{ paciente.nome }}" required />
+
+    <label for="campo-perfil">Perfil de risco</label>
+    <select id="campo-perfil" name="perfil">
+      {% for perfil in ['baixo','medio','alto'] %}
+        <option value="{{ perfil }}" {% if paciente.perfil == perfil %}selected{% endif %}>{{ perfil.title() }}</option>
+      {% endfor %}
+    </select>
+
+    <label for="campo-observacoes">Observacoes</label>
+    <textarea id="campo-observacoes" name="observacoes" rows="4" placeholder="Historico clinico, alergias, observacoes...">{{ paciente.observacoes or '' }}</textarea>
+
+    <fieldset class="rotinas-sugestao">
+      <legend>Agenda sugerida</legend>
+      <label class="checkbox">
+        <input type="checkbox" name="usar_rotinas_padrao" value="1" {% if usar_rotinas_padrao %}checked{% endif %} />
+        Aplicar rotina sugerida ao salvar
+      </label>
+      <table>
+        <thead>
+          <tr>
+            <th>Descricao</th>
+            <th>Inicio</th>
+            <th>Duracao (min)</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for rotina in rotinas_sugestao %}
+            <tr>
+              <td>{{ rotina.label }}</td>
+              <td>{{ rotina.inicio }}</td>
+              <td>{{ rotina.duracao_min }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+      <p class="hint">Se marcado, a rotina acima substitui qualquer configuracao manual ao salvar.</p>
+    </fieldset>
+
+    <fieldset class="rotinas-pessoais">
+      <legend>Rotinas personalizadas</legend>
+      <p class="hint">Edite ou inclua pausas especificas (ex.: fisioterapia, troca de curativo). Remova linhas vazias para descartar.</p>
+      <table class="rotinas-editor-table">
+        <thead>
+          <tr>
+            <th>Descricao</th>
+            <th>Inicio</th>
+            <th>Duracao (min)</th>
+            <th>Rotulo/observacao</th>
+            <th>Status</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="rotinas-editor">
+          {% if rotinas_editor %}
+            {% for rotina in rotinas_editor %}
+              {% set indice = loop.index0 %}
+              {% include 'pacientes/partials/rotina_row.html' %}
+            {% endfor %}
+          {% else %}
+            <tr class="rotina-placeholder">
+              <td colspan="6" class="hint">Nenhuma rotina configurada. Adicione pausas personalizadas conforme necessario.</td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+      <button type="button"
+              class="secondary add-rotina"
+              data-next-index="{{ proximo_indice or 0 }}"
+              hx-get="/pacientes/rotinas/linha"
+              hx-target="#rotinas-editor"
+              hx-swap="beforeend"
+              hx-vals="js:{index: parseInt(this.dataset.nextIndex || '0', 10)}"
+              hx-on::afterRequest="this.dataset.nextIndex = parseInt(this.dataset.nextIndex || '0', 10) + 1; this.closest('fieldset').querySelectorAll('.rotina-placeholder').forEach(function(row){ row.remove(); });">
+        Adicionar pausa
+      </button>
+    </fieldset>
+
+    <div class="form-actions">
+      <button type="submit">Salvar ficha</button>
+      {% if paciente.paciente_id %}
+        <button type="button" class="secondary" hx-get="/pacientes/form" hx-target="#paciente-form" hx-swap="outerHTML">Criar nova ficha</button>
+      {% endif %}
+    </div>
+  </form>
+
+  {% set docs = documentos if documentos is defined else paciente.documentos %}
+  <fieldset class="documentos-section">
+    <legend>Documentos anexados</legend>
+    {% if paciente.paciente_id %}
+      <form class="documento-upload"
+            hx-post="/pacientes/{{ paciente.paciente_id }}/documentos"
+            hx-target="#lista-documentos"
+            hx-swap="innerHTML"
+            hx-encoding="multipart/form-data"
+            hx-on::afterRequest="if(!event.detail.failed){ this.reset(); }">
+        <input type="file" name="arquivo" accept="application/pdf" required />
+        <input type="text" name="observacao" placeholder="Resumo do conteudo (opcional)" />
+        <button type="submit">Anexar PDF</button>
+      </form>
+      <small class="hint">Apenas PDF, limite {{ max_document_mb }} MB.</small>
+      <div id="lista-documentos"
+           hx-get="/pacientes/{{ paciente.paciente_id }}/documentos"
+           hx-trigger="load, documento-atualizado from:body"
+           hx-swap="innerHTML">
+        {% set documentos = docs %}{% include 'pacientes/partials/documentos.html' %}
+      </div>
+    {% else %}
+      <p class="hint">Salve a ficha para anexar documentos (PDF).</p>
+    {% endif %}
+  </fieldset>
+
+  <section class="rotinas-atual">
+    <h3>{{ 'Rotinas salvas' if paciente.paciente_id else 'Rotinas planejadas' }}</h3>
+    {% if paciente.rotinas %}
+      <table>
+        <thead>
+          <tr>
+            <th>Descricao</th>
+            <th>Inicio</th>
+            <th>Duracao (min)</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for rotina in paciente.rotinas %}
+            <tr>
+              <td>{{ rotina.label }}</td>
+              <td>{{ rotina.inicio }}</td>
+              <td>{{ rotina.duracao_min }}</td>
+              <td>{{ 'Ativa' if rotina.ativo else 'Inativa' }}</td>
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% else %}
+      <p class="hint">Nenhuma rotina registrada. Utilize a rotina sugerida ou personalize as pausas acima.</p>
+    {% endif %}
+  </section>
+</div>
+
+
+
+
+

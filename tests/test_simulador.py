@@ -1,6 +1,6 @@
-# tests/test_simulador.py
+﻿# tests/test_simulador.py
 import pandas as pd
-from dados_simulados.gerador import gerar_sessao_simulada
+from dados_simulados.gerador import gerar_sessao_multi, gerar_sessao_simulada
 
 POSTURAS_VALIDAS = {"supino", "lateral_direito", "lateral_esquerdo", "prono"}
 
@@ -11,7 +11,7 @@ def test_gera_df_basico():
     assert not df.empty
     assert list(df.columns) == ["timestamp", "postura"]
 
-    # Timestamps válidos, ordenados e com passo constante
+    # Timestamps vÃ¡lidos, ordenados e com passo constante
     ts = pd.to_datetime(df["timestamp"])
     assert ts.is_monotonic_increasing
     diffs = ts.diff().dropna().unique()
@@ -33,3 +33,15 @@ def test_qtd_linhas_grade():
     esperado = int((horas * 60) / passo) + 1
     df = gerar_sessao_simulada(duracao_horas=horas, seed=1, passo_min=passo)
     assert len(df) == esperado
+
+
+def test_gerar_sessao_multi_pacientes():
+    df_grade, df_eventos = gerar_sessao_multi(pacientes=3, horas=1, passo_min=15, seed=99, perfil="medio")
+
+    assert set(df_grade.columns) == {"paciente_id", "timestamp", "postura"}
+    assert list(df_grade["paciente_id"].unique()) == ["P1", "P2", "P3"]
+    assert df_grade.equals(df_grade.sort_values(["paciente_id", "timestamp"]).reset_index(drop=True))
+
+    assert "paciente_id" in df_eventos.columns
+    assert df_eventos["paciente_id"].nunique() == 3
+    assert not df_eventos.empty

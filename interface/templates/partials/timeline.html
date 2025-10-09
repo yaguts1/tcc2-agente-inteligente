@@ -1,0 +1,19 @@
+﻿{% if events %}
+  <div class="timeline-bar">
+    {% for e in events %}
+      <div
+        class="segment status-{{ e.status }}"
+        style="left: {{ e.start_pct }}%; width: {{ e.width_pct }}%;"
+        title="{{ e.tooltip }}"
+      ></div>
+    {% endfor %}
+    <div class="cursor" style="left: {{ cursor_pct }}%"></div>
+  </div>
+  <div class="timeline-legend">
+    <small>{{ window_start }} → {{ window_end }}</small>
+  </div>
+{% else %}
+  <div class="timeline-legend">
+    <small>Nenhum evento na janela selecionada.</small>
+  </div>
+{% endif %}

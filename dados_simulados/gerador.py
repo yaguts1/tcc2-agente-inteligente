@@ -1,3 +1,4 @@
+# -- coding: utf-8 --
 # dados_simulados/gerador.py
 from __future__ import annotations
 from dataclasses import dataclass
@@ -5,10 +6,11 @@ from datetime import datetime, timedelta
 import random
 import numpy as np
 import pandas as pd
+from typing import Tuple
 
 POSTURAS = ["supino", "lateral_direito", "lateral_esquerdo", "prono"]
 
-# Transições “válidas” (ajuste como quiser)
+# Transições válidas (ajuste como quiser)
 TRANSICOES_VALIDAS = {
     "supino": ["lateral_direito", "lateral_esquerdo"],
     "lateral_direito": ["supino", "prono"],
@@ -87,7 +89,7 @@ def _gerar_eventos(
         falha = False
         if dur > perfil.limite_tempo_postura:
             if random.random() < perfil.prob_falha_reposicao:
-                # “estica” a permanência
+                # "estica" a permanência
                 dur += _normal_truncada(media, desvio, minimo=5.0)
                 falha = True
 
@@ -103,7 +105,7 @@ def _gerar_eventos(
 
         # Próxima postura respeitando transições válidas
         proxima = _escolher_proxima_postura(atual)
-        # Evita pulo direto supino → prono
+        # Evita pulo direto supino â†’ prono
         if atual == "supino" and proxima == "prono":
             proxima = random.choice(["lateral_direito", "lateral_esquerdo"])
         atual = proxima
@@ -113,7 +115,7 @@ def _gerar_eventos(
 def _expandir_para_grade(df_eventos: pd.DataFrame, passo_min: int, inicio: datetime, fim: datetime) -> pd.DataFrame:
     """Converte eventos (intervalos) para amostras em grade regular (timestamp, postura)."""
     # Constrói a grade
-    idx = pd.date_range(inicio, fim, freq=f"{passo_min}min")
+    idx = pd.date_range(start=inicio, end=fim, freq=f"{passo_min}min", inclusive="left")
     out = []
     e_idx = 0
 
@@ -185,3 +187,50 @@ def gerar_eventos_sessao(
     df["inicio"] = pd.to_datetime(df["timestamp"])
     df["fim"] = df["inicio"] + pd.to_timedelta(df["duracao_min"], unit="m")
     return df
+
+
+def gerar_sessao_multi(
+    pacientes: int,
+    horas: float,
+    passo_min: int,
+    seed: int,
+    perfil: str = "medio",
+) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """Gera grade e eventos para multiplos pacientes simulados."""
+    if pacientes < 1:
+        raise ValueError("O numero de pacientes deve ser pelo menos 1.")
+
+    grade_frames: list[pd.DataFrame] = []
+    eventos_frames: list[pd.DataFrame] = []
+
+    for idx in range(pacientes):
+        paciente_id = f"P{idx + 1}"
+        perfil_paciente = PerfilPaciente()  # placeholder para personalizacao futura
+        df_grade = gerar_sessao_simulada(
+            duracao_horas=horas,
+            seed=seed + idx,
+            passo_min=passo_min,
+            perfil=perfil_paciente,
+        ).copy()
+        df_grade.insert(0, "paciente_id", paciente_id)
+        grade_frames.append(df_grade)
+
+        df_eventos = gerar_eventos_sessao(
+            duracao_horas=horas,
+            seed=seed + idx,
+            perfil=perfil_paciente,
+        ).copy()
+        df_eventos.insert(0, "paciente_id", paciente_id)
+        eventos_frames.append(df_eventos)
+
+    df_grade_all = pd.concat(grade_frames, ignore_index=True)
+    df_grade_all = df_grade_all.sort_values(["paciente_id", "timestamp"]).reset_index(drop=True)
+
+    df_eventos_all = pd.concat(eventos_frames, ignore_index=True)
+    sort_cols = [col for col in ("inicio", "timestamp") if col in df_eventos_all.columns]
+    if sort_cols:
+        df_eventos_all = df_eventos_all.sort_values(["paciente_id", sort_cols[0]]).reset_index(drop=True)
+    else:
+        df_eventos_all = df_eventos_all.sort_values(["paciente_id"]).reset_index(drop=True)
+
+    return df_grade_all, df_eventos_all
