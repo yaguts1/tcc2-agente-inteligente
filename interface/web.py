@@ -6,22 +6,334 @@ Execute com:
 
 from __future__ import annotations
 
+import json
 import os
+import re
 import sqlite3
+import unicodedata
 from datetime import datetime, timedelta
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Any, Dict, List, Tuple
 
-from fastapi import FastAPI, HTTPException, Request, Response, status
-from fastapi.responses import HTMLResponse
+from fastapi import FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile, status
+from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 
-from interface.dao import criar_esquema, listar_alertas_abertos, selecionar_alertas_janela
+from interface.dao import (
+    atualizar_paciente,
+    criar_esquema,
+    criar_paciente,
+    listar_alertas_abertos,
+    listar_documentos,
+    listar_fichas_pacientes,
+    obter_documento,
+    obter_ficha_paciente,
+    registrar_documento,
+    remover_documento,
+    selecionar_alertas_janela,
+)
 
 DB_PATH = os.getenv("UPP_DB_PATH", "dados.db")
 
 app = FastAPI(title="Monitor de Alertas UPP")
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
+
+
+DEFAULT_PACIENTE_PERFIL = "medio"
+
+DEFAULT_DOCS_DIR = Path(__file__).resolve().parents[1] / "paciente_docs"
+_env_docs_dir = os.getenv("PACIENTE_DOCS_DIR")
+if _env_docs_dir:
+    PACIENTE_DOCS_DIR = Path(_env_docs_dir).expanduser()
+else:
+    PACIENTE_DOCS_DIR = DEFAULT_DOCS_DIR
+try:
+    PACIENTE_DOCS_DIR = PACIENTE_DOCS_DIR.resolve()
+except FileNotFoundError:
+    PACIENTE_DOCS_DIR = PACIENTE_DOCS_DIR
+
+try:
+    MAX_DOCUMENT_MB = max(1, int(os.getenv("PACIENTE_DOC_MAX_MB", "5")))
+except ValueError:
+    MAX_DOCUMENT_MB = 5
+MAX_DOCUMENT_BYTES = MAX_DOCUMENT_MB * 1024 * 1024
+
+_ROTINAS_SUGESTOES = {
+    "baixo": [
+        {
+            "label": "Mudanca decubito",
+            "inicio": "06:00",
+            "duracao_min": 30,
+            "descricao": "Posicao lateral alternada",
+            "ativo": True,
+            "sort_order": 0,
+        },
+        {
+            "label": "Alongamento leve",
+            "inicio": "10:00",
+            "duracao_min": 20,
+            "descricao": "Exercicios guiados",
+            "ativo": True,
+            "sort_order": 1,
+        },
+        {
+            "label": "Higiene",
+            "inicio": "14:00",
+            "duracao_min": 25,
+            "descricao": "Cuidados de higiene",
+            "ativo": True,
+            "sort_order": 2,
+        },
+        {
+            "label": "Mudanca decubito",
+            "inicio": "18:00",
+            "duracao_min": 30,
+            "descricao": "Reposicionamento",
+            "ativo": True,
+            "sort_order": 3,
+        },
+    ],
+    "medio": [
+        {
+            "label": "Mudanca decubito",
+            "inicio": "06:00",
+            "duracao_min": 30,
+            "descricao": "Posicao lateral alternada",
+            "ativo": True,
+            "sort_order": 0,
+        },
+        {
+            "label": "Alongamento assistido",
+            "inicio": "09:30",
+            "duracao_min": 20,
+            "descricao": "Exercicios assistidos",
+            "ativo": True,
+            "sort_order": 1,
+        },
+        {
+            "label": "Hidratacao",
+            "inicio": "13:30",
+            "duracao_min": 15,
+            "descricao": "Oferta de liquidos",
+            "ativo": True,
+            "sort_order": 2,
+        },
+        {
+            "label": "Mudanca decubito",
+            "inicio": "17:30",
+            "duracao_min": 30,
+            "descricao": "Reposicionamento",
+            "ativo": True,
+            "sort_order": 3,
+        },
+    ],
+    "alto": [
+        {
+            "label": "Mudanca decubito",
+            "inicio": "06:00",
+            "duracao_min": 20,
+            "descricao": "Reposicionamento com apoio",
+            "ativo": True,
+            "sort_order": 0,
+        },
+        {
+            "label": "Inspecao pele",
+            "inicio": "08:30",
+            "duracao_min": 15,
+            "descricao": "Checagem de pressao",
+            "ativo": True,
+            "sort_order": 1,
+        },
+        {
+            "label": "Alongamento assistido",
+            "inicio": "12:30",
+            "duracao_min": 20,
+            "descricao": "Movimentos passivos",
+            "ativo": True,
+            "sort_order": 2,
+        },
+        {
+            "label": "Mudanca decubito",
+            "inicio": "16:30",
+            "duracao_min": 20,
+            "descricao": "Reposicionamento com apoio",
+            "ativo": True,
+            "sort_order": 3,
+        },
+    ],
+}
+
+ROTINA_KEY_RE = re.compile(r"^rotinas-(\d+)-(label|inicio|duracao|descricao|ativo|sort)$")
+
+
+def _rotinas_sugeridas(perfil: str | None) -> List[dict]:
+    perfil_norm = (perfil or DEFAULT_PACIENTE_PERFIL).lower()
+    base = _ROTINAS_SUGESTOES.get(perfil_norm, _ROTINAS_SUGESTOES[DEFAULT_PACIENTE_PERFIL])
+    return [dict(item) for item in base]
+
+
+def _rotinas_para_editor(rotinas: List[dict] | None) -> List[dict]:
+    if not rotinas:
+        return []
+    itens: List[dict] = []
+    for idx, rotina in enumerate(rotinas):
+        itens.append(
+            {
+                "label": str(rotina.get("label", "")),
+                "inicio": str(rotina.get("inicio", "")),
+                "duracao_min": rotina.get("duracao_min", 30),
+                "descricao": rotina.get("descricao") or "",
+                "ativo": bool(rotina.get("ativo", True)),
+                "sort_order": rotina.get("sort_order", idx),
+            }
+        )
+    return itens
+
+
+def _montar_paciente_base(
+    ficha: dict | None = None,
+    documentos: List[dict] | None = None,
+) -> dict:
+    if ficha is None:
+        base: dict[str, Any] = {
+            "paciente_id": "",
+            "nome": "",
+            "perfil": DEFAULT_PACIENTE_PERFIL,
+            "observacoes": "",
+            "rotinas": [],
+        }
+    else:
+        base = dict(ficha)
+        base.setdefault("paciente_id", "")
+        base.setdefault("nome", "")
+        base["perfil"] = str(base.get("perfil") or DEFAULT_PACIENTE_PERFIL)
+        base["observacoes"] = base.get("observacoes") or ""
+        base["rotinas"] = base.get("rotinas") or []
+    base["documentos"] = documentos if documentos is not None else list(base.get("documentos", []))
+    return base
+
+
+def _montar_contexto_formulario(
+    request: Request,
+    paciente: dict,
+    rotinas_editor: List[dict] | None = None,
+    *,
+    form_error: str | None = None,
+    form_success: bool = False,
+    usar_rotinas_padrao: bool = False,
+) -> Dict[str, Any]:
+    perfil = str(paciente.get("perfil", DEFAULT_PACIENTE_PERFIL) or DEFAULT_PACIENTE_PERFIL)
+    editor = rotinas_editor if rotinas_editor is not None else _rotinas_para_editor(paciente.get("rotinas"))
+    contexto: Dict[str, Any] = {
+        "request": request,
+        "paciente": paciente,
+        "rotinas_sugestao": _rotinas_sugeridas(perfil),
+        "rotinas_editor": editor,
+        "proximo_indice": len(editor),
+        "usar_rotinas_padrao": usar_rotinas_padrao,
+        "form_error": form_error,
+        "form_success": form_success,
+        "documentos": paciente.get("documentos", []),
+        "max_document_mb": MAX_DOCUMENT_MB,
+    }
+    return contexto
+
+
+def _parse_rotinas_form(form: Any) -> List[dict]:
+    bucket: Dict[str, Dict[str, Any]] = {}
+    for key, value in form.multi_items():
+        match = ROTINA_KEY_RE.match(key)
+        if not match:
+            continue
+        idx, campo = match.groups()
+        bucket.setdefault(idx, {})[campo] = value
+    rotinas: List[dict] = []
+    for idx in sorted(bucket, key=lambda item: int(item)):
+        data = bucket[idx]
+        label = str(data.get("label") or "").strip()
+        inicio = str(data.get("inicio") or "").strip()
+        if not label or not inicio:
+            continue
+        descricao_raw = str(data.get("descricao") or "").strip()
+        try:
+            duracao_val = int(str(data.get("duracao") or "0").strip() or 0)
+        except ValueError:
+            duracao_val = 0
+        try:
+            sort_val = int(str(data.get("sort") or idx))
+        except ValueError:
+            sort_val = int(idx)
+        rotinas.append(
+            {
+                "label": label,
+                "inicio": inicio,
+                "duracao_min": duracao_val,
+                "descricao": descricao_raw or None,
+                "ativo": bool(data.get("ativo")),
+                "sort_order": sort_val,
+            }
+        )
+    return rotinas
+
+
+def _ensure_docs_dir(paciente_id: str) -> Path:
+    try:
+        PACIENTE_DOCS_DIR.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
+    destino = PACIENTE_DOCS_DIR / paciente_id
+    destino.mkdir(parents=True, exist_ok=True)
+    return destino
+
+
+def _make_unique_filename(destino: Path) -> Path:
+    if not destino.exists():
+        return destino
+    stem = destino.stem
+    sufixo = destino.suffix or ""
+    contador = 2
+    while True:
+        candidato = destino.with_name(f"{stem}_{contador}{sufixo}")
+        if not candidato.exists():
+            return candidato
+        contador += 1
+
+
+def _sanitize_filename(nome: str | None) -> str:
+    bruto = Path(nome or "documento.pdf").name
+    normalizado = unicodedata.normalize("NFKD", bruto).encode("ascii", "ignore").decode("ascii")
+    if not normalizado:
+        normalizado = "documento.pdf"
+    sanitizado = re.sub(r"[^A-Za-z0-9._-]", "_", normalizado)
+    if not sanitizado.lower().endswith(".pdf"):
+        sanitizado += ".pdf"
+    return sanitizado
+
+
+def _set_hx_trigger(response: Response, event: str, payload: Dict[str, Any] | None = None) -> None:
+    if payload is None:
+        response.headers["HX-Trigger"] = event
+    else:
+        response.headers["HX-Trigger"] = json.dumps({event: payload})
+
+
+def _document_path_from_db(caminho: str) -> Path:
+    raw_path = Path(caminho or "")
+    if raw_path.is_absolute():
+        return raw_path
+    try:
+        base_resolvida = PACIENTE_DOCS_DIR.resolve()
+    except FileNotFoundError:
+        base_resolvida = PACIENTE_DOCS_DIR
+    candidato = (PACIENTE_DOCS_DIR / raw_path).resolve()
+    try:
+        candidato.relative_to(base_resolvida)
+    except ValueError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Caminho de documento invalido.",
+        ) from exc
+    return candidato
 
 
 def _connect() -> sqlite3.Connection:
@@ -225,6 +537,221 @@ def _alterar_status(
                 """,
                 {"status": status_destino, **params},
             )
+
+
+
+@app.get("/pacientes", response_class=HTMLResponse)
+def pacientes_index(request: Request) -> HTMLResponse:
+    fichas = listar_fichas_pacientes(DB_PATH, incluir_rotinas=False)
+    contexto = {"request": request, "pacientes": fichas}
+    return templates.TemplateResponse("pacientes/index.html", contexto)
+
+
+@app.get("/partials/pacientes/lista", response_class=HTMLResponse)
+def pacientes_lista(request: Request) -> HTMLResponse:
+    fichas = listar_fichas_pacientes(DB_PATH, incluir_rotinas=False)
+    contexto = {"request": request, "pacientes": fichas}
+    return templates.TemplateResponse("pacientes/partials/lista.html", contexto)
+
+
+@app.get("/pacientes/form", response_class=HTMLResponse)
+def paciente_form_novo(request: Request) -> HTMLResponse:
+    paciente = _montar_paciente_base()
+    contexto = _montar_contexto_formulario(
+        request,
+        paciente,
+        rotinas_editor=[],
+        usar_rotinas_padrao=True,
+    )
+    return templates.TemplateResponse("pacientes/partials/form.html", contexto)
+
+
+@app.get("/pacientes/{paciente_id}/form", response_class=HTMLResponse)
+def paciente_form_existente(request: Request, paciente_id: str) -> HTMLResponse:
+    ficha = obter_ficha_paciente(DB_PATH, paciente_id, incluir_rotinas=True)
+    if ficha is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paciente nao encontrado.")
+    documentos = listar_documentos(DB_PATH, paciente_id)
+    paciente = _montar_paciente_base(ficha, documentos=documentos)
+    contexto = _montar_contexto_formulario(
+        request,
+        paciente,
+        rotinas_editor=_rotinas_para_editor(ficha.get("rotinas")),
+        usar_rotinas_padrao=False,
+    )
+    return templates.TemplateResponse("pacientes/partials/form.html", contexto)
+
+
+@app.post("/pacientes/salvar", response_class=HTMLResponse)
+async def paciente_salvar(request: Request) -> HTMLResponse:
+    form = await request.form()
+    paciente_id = str(form.get("paciente_id") or "").strip()
+    nome = str(form.get("nome") or "").strip()
+    perfil = str(form.get("perfil") or DEFAULT_PACIENTE_PERFIL).strip().lower() or DEFAULT_PACIENTE_PERFIL
+    observacoes = str(form.get("observacoes") or "").strip()
+    usar_rotinas_padrao = form.get("usar_rotinas_padrao") is not None
+
+    rotinas_form = _parse_rotinas_form(form)
+    if usar_rotinas_padrao:
+        rotinas_aplicar = _rotinas_sugeridas(perfil)
+        rotinas_editor_view = _rotinas_para_editor(rotinas_aplicar)
+    else:
+        rotinas_aplicar = rotinas_form
+        rotinas_editor_view = _rotinas_para_editor(rotinas_form)
+
+    try:
+        if paciente_id:
+            ficha = atualizar_paciente(DB_PATH, paciente_id, nome, perfil, observacoes, rotinas_aplicar)
+        else:
+            ficha = criar_paciente(DB_PATH, nome, perfil, observacoes, rotinas_aplicar)
+            paciente_id = ficha["paciente_id"]
+    except (ValueError, LookupError) as exc:
+        paciente = _montar_paciente_base(
+            {
+                "paciente_id": paciente_id,
+                "nome": nome,
+                "perfil": perfil,
+                "observacoes": observacoes,
+                "rotinas": rotinas_editor_view,
+            }
+        )
+        contexto = _montar_contexto_formulario(
+            request,
+            paciente,
+            rotinas_editor=rotinas_editor_view,
+            form_error=str(exc),
+            usar_rotinas_padrao=usar_rotinas_padrao,
+        )
+        return templates.TemplateResponse("pacientes/partials/form.html", contexto)
+
+    documentos = listar_documentos(DB_PATH, paciente_id)
+    paciente = _montar_paciente_base(ficha, documentos=documentos)
+    contexto = _montar_contexto_formulario(
+        request,
+        paciente,
+        rotinas_editor=_rotinas_para_editor(ficha.get("rotinas")),
+        form_success=True,
+        usar_rotinas_padrao=False,
+    )
+    response = templates.TemplateResponse("pacientes/partials/form.html", contexto)
+    _set_hx_trigger(
+        response,
+        "paciente-atualizado",
+        {"paciente_id": paciente_id, "message": "Ficha salva com sucesso."},
+    )
+    return response
+
+
+@app.get("/pacientes/rotinas/linha", response_class=HTMLResponse)
+def paciente_rotina_linha(request: Request, index: int = Query(0, ge=0)) -> HTMLResponse:
+    rotina = {
+        "label": "",
+        "inicio": "08:00",
+        "duracao_min": 30,
+        "descricao": "",
+        "ativo": True,
+        "sort_order": index,
+    }
+    contexto = {"request": request, "rotina": rotina, "indice": index}
+    return templates.TemplateResponse("pacientes/partials/rotina_row.html", contexto)
+
+
+@app.get("/pacientes/{paciente_id}/documentos", response_class=HTMLResponse)
+def paciente_documentos_lista(request: Request, paciente_id: str) -> HTMLResponse:
+    documentos = listar_documentos(DB_PATH, paciente_id)
+    contexto = {"request": request, "documentos": documentos, "paciente_id": paciente_id}
+    return templates.TemplateResponse("pacientes/partials/documentos.html", contexto)
+
+
+@app.post("/pacientes/{paciente_id}/documentos", response_class=HTMLResponse)
+async def paciente_documento_upload(
+    request: Request,
+    paciente_id: str,
+    arquivo: UploadFile = File(...),
+    observacao: str | None = Form(None),
+) -> HTMLResponse:
+    ficha = obter_ficha_paciente(DB_PATH, paciente_id)
+    if ficha is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paciente nao encontrado.")
+
+    conteudo = await arquivo.read(MAX_DOCUMENT_BYTES + 1)
+    if len(conteudo) > MAX_DOCUMENT_BYTES:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail=f"Arquivo excede limite de {MAX_DOCUMENT_MB} MB.",
+        )
+    if arquivo.content_type not in {"application/pdf", "application/x-pdf", "application/octet-stream"}:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Apenas PDF e suportado.")
+
+    nome_arquivo = _sanitize_filename(arquivo.filename)
+    destino_dir = _ensure_docs_dir(paciente_id)
+    destino_arquivo = _make_unique_filename(destino_dir / nome_arquivo)
+    destino_arquivo.write_bytes(conteudo)
+
+    try:
+        caminho_registro = destino_arquivo.relative_to(PACIENTE_DOCS_DIR).as_posix()
+    except ValueError:
+        caminho_registro = str(destino_arquivo)
+
+    observacao_limpa = None
+    if observacao is not None:
+        obs_trim = observacao.strip()
+        observacao_limpa = obs_trim or None
+
+    registrar_documento(DB_PATH, paciente_id, destino_arquivo.name, caminho_registro, observacao_limpa)
+    documentos = listar_documentos(DB_PATH, paciente_id)
+    contexto = {"request": request, "documentos": documentos, "paciente_id": paciente_id}
+    response = templates.TemplateResponse("pacientes/partials/documentos.html", contexto)
+    _set_hx_trigger(
+        response,
+        "documento-atualizado",
+        {"paciente_id": paciente_id, "documento": destino_arquivo.name},
+    )
+    return response
+
+
+@app.delete("/pacientes/documentos/{documento_id}", response_class=HTMLResponse)
+def paciente_documento_remover(request: Request, documento_id: int) -> HTMLResponse:
+    registro = remover_documento(DB_PATH, documento_id)
+    if registro is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento nao encontrado.")
+
+    paciente_id = registro.get("paciente_id", "")
+    caminho = registro.get("caminho")
+    if caminho:
+        try:
+            caminho_fs = _document_path_from_db(caminho)
+            if caminho_fs.exists():
+                caminho_fs.unlink()
+        except HTTPException:
+            pass
+        except OSError:
+            pass
+
+    documentos = listar_documentos(DB_PATH, paciente_id)
+    contexto = {"request": request, "documentos": documentos, "paciente_id": paciente_id}
+    response = templates.TemplateResponse("pacientes/partials/documentos.html", contexto)
+    _set_hx_trigger(
+        response,
+        "documento-atualizado",
+        {"paciente_id": paciente_id, "removido": documento_id},
+    )
+    return response
+
+
+@app.get("/pacientes/documentos/{documento_id}/download")
+def paciente_documento_download(documento_id: int) -> FileResponse:
+    registro = obter_documento(DB_PATH, documento_id)
+    if registro is None:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Documento nao encontrado.")
+    caminho_fs = _document_path_from_db(registro.get("caminho", ""))
+    if not caminho_fs.exists():
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Arquivo nao encontrado.")
+    return FileResponse(
+        caminho_fs,
+        media_type="application/pdf",
+        filename=registro.get("nome_arquivo", "documento.pdf"),
+    )
 
 
 @app.get("/api/alertas")
