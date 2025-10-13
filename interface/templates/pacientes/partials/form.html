@@ -14,6 +14,15 @@
     <label for="campo-nome">Nome completo</label>
     <input id="campo-nome" type="text" name="nome" value="{{ paciente.nome }}" required />
 
+    <label for="campo-cama">Cama / ESP32</label>
+    <input
+      id="campo-cama"
+      type="text"
+      name="cama_id"
+      value="{{ paciente.cama_id or '' }}"
+      placeholder="Identificador do leito ou dispositivo"
+    />
+
     <label for="campo-perfil">Perfil de risco</label>
     <select id="campo-perfil" name="perfil">
       {% for perfil in ['baixo','medio','alto'] %}
@@ -54,6 +63,7 @@
     <fieldset class="rotinas-pessoais">
       <legend>Rotinas personalizadas</legend>
       <p class="hint">Edite ou inclua pausas especificas (ex.: fisioterapia, troca de curativo). Remova linhas vazias para descartar.</p>
+      <input type="hidden" id="rotinas-next-index" name="rotinas_next_index" value="{{ proximo_indice or 0 }}" />
       <table class="rotinas-editor-table">
         <thead>
           <tr>
@@ -80,12 +90,11 @@
       </table>
       <button type="button"
               class="secondary add-rotina"
-              data-next-index="{{ proximo_indice or 0 }}"
               hx-get="/pacientes/rotinas/linha"
               hx-target="#rotinas-editor"
               hx-swap="beforeend"
-              hx-vals="js:{index: parseInt(this.dataset.nextIndex || '0', 10)}"
-              hx-on::afterRequest="this.dataset.nextIndex = parseInt(this.dataset.nextIndex || '0', 10) + 1; this.closest('fieldset').querySelectorAll('.rotina-placeholder').forEach(function(row){ row.remove(); });">
+              hx-include="#rotinas-next-index"
+              hx-on::afterRequest="if(event.detail.failed){return;} const hidden=document.getElementById('rotinas-next-index'); if(hidden){ const val=parseInt(hidden.value||'0',10); hidden.value = (isNaN(val)?0:val) + 1; } this.closest('fieldset').querySelectorAll('.rotina-placeholder').forEach(function(row){ row.remove(); });">
         Adicionar pausa
       </button>
     </fieldset>

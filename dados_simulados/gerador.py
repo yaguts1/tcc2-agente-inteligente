@@ -115,7 +115,7 @@ def _gerar_eventos(
 def _expandir_para_grade(df_eventos: pd.DataFrame, passo_min: int, inicio: datetime, fim: datetime) -> pd.DataFrame:
     """Converte eventos (intervalos) para amostras em grade regular (timestamp, postura)."""
     # Constrói a grade
-    idx = pd.date_range(start=inicio, end=fim, freq=f"{passo_min}min", inclusive="left")
+    idx = pd.date_range(start=inicio, end=fim, freq=f"{passo_min}min", inclusive="both")
     out = []
     e_idx = 0
 

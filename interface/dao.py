@@ -51,6 +51,16 @@ def _utc_now_iso() -> str:
     return datetime.now().replace(microsecond=0).strftime(ISO_FORMAT)
 
 
+def _ensure_cama_column(conn: sqlite3.Connection) -> None:
+    info = conn.execute("PRAGMA table_info(paciente_fichas)").fetchall()
+    colunas = {str(row["name"]) for row in info}
+    if "cama_id" not in colunas:
+        conn.execute("ALTER TABLE paciente_fichas ADD COLUMN cama_id TEXT")
+    conn.execute(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_pac_fichas_cama ON paciente_fichas (cama_id) WHERE cama_id IS NOT NULL"
+    )
+
+
 def _generate_paciente_id(conn: sqlite3.Connection, prefix: str = PACIENTE_ID_PREFIX) -> str:
     existing_ids = {str(row[0]) for row in conn.execute("SELECT id FROM pacientes")}
     pattern = re.compile(rf"^{re.escape(prefix)}-(\d+)$")
@@ -64,6 +74,32 @@ def _generate_paciente_id(conn: sqlite3.Connection, prefix: str = PACIENTE_ID_PR
         candidate = f"{prefix}-{maior:04d}"
         if candidate not in existing_ids:
             return candidate
+
+
+def _normalize_cama_id(valor: str | None) -> str | None:
+    if valor is None:
+        return None
+    texto = str(valor).strip()
+    return texto or None
+
+
+def _assert_cama_disponivel(
+    conn: sqlite3.Connection,
+    cama_id: str | None,
+    *,
+    ignorar_paciente: str | None = None,
+) -> None:
+    if cama_id is None:
+        return
+    cursor = conn.execute(
+        "SELECT paciente_id FROM paciente_fichas WHERE cama_id = ?",
+        (cama_id,),
+    )
+    row = cursor.fetchone()
+    if row is not None:
+        existente = str(row["paciente_id"])
+        if ignorar_paciente is None or existente != ignorar_paciente:
+            raise ValueError(f"Cama '{cama_id}' ja esta atribuida ao paciente {existente}.")
 
 
 def _normalize_hhmm(valor: str) -> str:
@@ -247,15 +283,16 @@ def criar_esquema(db_path: str = "dados.db") -> None:
             CREATE TABLE IF NOT EXISTS pacientes (
                 id TEXT PRIMARY KEY
             );
-            CREATE TABLE IF NOT EXISTS paciente_fichas (
-                paciente_id TEXT PRIMARY KEY,
-                nome TEXT NOT NULL,
-                perfil TEXT NOT NULL,
-                observacoes TEXT,
-                created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL,
-                FOREIGN KEY(paciente_id) REFERENCES pacientes(id) ON DELETE CASCADE
-            );
+              CREATE TABLE IF NOT EXISTS paciente_fichas (
+                  paciente_id TEXT PRIMARY KEY,
+                  nome TEXT NOT NULL,
+                  perfil TEXT NOT NULL,
+                  cama_id TEXT,
+                  observacoes TEXT,
+                  created_at TEXT NOT NULL,
+                  updated_at TEXT NOT NULL,
+                  FOREIGN KEY(paciente_id) REFERENCES pacientes(id) ON DELETE CASCADE
+              );
             CREATE TABLE IF NOT EXISTS paciente_rotinas (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 paciente_id TEXT NOT NULL,
@@ -305,8 +342,9 @@ def criar_esquema(db_path: str = "dados.db") -> None:
                 CHECK (tipo IN ('imobilidade')),
                 PRIMARY KEY (paciente_id, inicio)
             );
-            CREATE INDEX IF NOT EXISTS idx_pac_fichas_nome ON paciente_fichas (nome);
-            CREATE INDEX IF NOT EXISTS idx_rotinas_paciente ON paciente_rotinas (paciente_id, inicio);
+              CREATE INDEX IF NOT EXISTS idx_pac_fichas_nome ON paciente_fichas (nome);
+              CREATE UNIQUE INDEX IF NOT EXISTS idx_pac_fichas_cama ON paciente_fichas (cama_id) WHERE cama_id IS NOT NULL;
+              CREATE INDEX IF NOT EXISTS idx_rotinas_paciente ON paciente_rotinas (paciente_id, inicio);
             CREATE INDEX IF NOT EXISTS idx_grade_paciente_ts
                 ON grade (paciente_id, ts);
             CREATE INDEX IF NOT EXISTS idx_alertas_status
@@ -319,6 +357,8 @@ def criar_esquema(db_path: str = "dados.db") -> None:
                 ON eventos (inicio);
             """
         )
+        _ensure_cama_column(conn)
+        conn.commit()
 
 
 def proximo_identificador_paciente(db_path: str, prefixo: str = PACIENTE_ID_PREFIX) -> str:
@@ -330,7 +370,7 @@ def listar_fichas_pacientes(db_path: str, incluir_rotinas: bool = False) -> List
     with _connect(db_path) as conn:
         cursor = conn.execute(
             """
-            SELECT paciente_id, nome, perfil, observacoes, created_at, updated_at
+            SELECT paciente_id, nome, perfil, cama_id, observacoes, created_at, updated_at
             FROM paciente_fichas
             ORDER BY nome COLLATE NOCASE, paciente_id
             """
@@ -352,7 +392,7 @@ def obter_ficha_paciente(
     with _connect(db_path) as conn:
         cursor = conn.execute(
             """
-            SELECT paciente_id, nome, perfil, observacoes, created_at, updated_at
+            SELECT paciente_id, nome, perfil, cama_id, observacoes, created_at, updated_at
             FROM paciente_fichas
             WHERE paciente_id = ?
             """,
@@ -367,10 +407,37 @@ def obter_ficha_paciente(
         return ficha
 
 
+def obter_ficha_por_cama(
+    db_path: str,
+    cama_id: str,
+    incluir_rotinas: bool = False,
+) -> dict | None:
+    cama_norm = _normalize_cama_id(cama_id)
+    if cama_norm is None:
+        return None
+    with _connect(db_path) as conn:
+        cursor = conn.execute(
+            """
+            SELECT paciente_id, nome, perfil, cama_id, observacoes, created_at, updated_at
+            FROM paciente_fichas
+            WHERE cama_id = ?
+            """,
+            (cama_norm,),
+        )
+        row = cursor.fetchone()
+        if row is None:
+            return None
+        ficha = dict(row)
+        if incluir_rotinas:
+            ficha["rotinas"] = _fetch_rotinas(conn, ficha["paciente_id"])
+        return ficha
+
+
 def criar_paciente(
     db_path: str,
     nome: str,
     perfil: str,
+    cama_id: str | None = None,
     observacoes: str | None = None,
     rotinas: Sequence[dict] | None = None,
 ) -> dict:
@@ -380,17 +447,19 @@ def criar_paciente(
     perfil_norm = str(perfil or "").strip().lower()
     if perfil_norm not in PERFIS_VALIDOS:
         raise ValueError(f"Perfil invalido: {perfil}.")
+    cama_norm = _normalize_cama_id(cama_id)
     obs_val = None if observacoes is None else str(observacoes).strip() or None
     with _connect(db_path) as conn:
+        _assert_cama_disponivel(conn, cama_norm)
         paciente_id = _generate_paciente_id(conn)
         agora_iso = _utc_now_iso()
         conn.execute("INSERT INTO pacientes (id) VALUES (?)", (paciente_id,))
         conn.execute(
             """
-            INSERT INTO paciente_fichas (paciente_id, nome, perfil, observacoes, created_at, updated_at)
-            VALUES (?, ?, ?, ?, ?, ?)
+            INSERT INTO paciente_fichas (paciente_id, nome, perfil, cama_id, observacoes, created_at, updated_at)
+            VALUES (?, ?, ?, ?, ?, ?, ?)
             """,
-            (paciente_id, nome_limpo, perfil_norm, obs_val, agora_iso, agora_iso),
+            (paciente_id, nome_limpo, perfil_norm, cama_norm, obs_val, agora_iso, agora_iso),
         )
         _replace_rotinas(conn, paciente_id, rotinas)
         conn.commit()
@@ -402,6 +471,7 @@ def atualizar_paciente(
     paciente_id: str,
     nome: str,
     perfil: str,
+    cama_id: str | None = None,
     observacoes: str | None = None,
     rotinas: Sequence[dict] | None = None,
 ) -> dict:
@@ -411,6 +481,7 @@ def atualizar_paciente(
     perfil_norm = str(perfil or "").strip().lower()
     if perfil_norm not in PERFIS_VALIDOS:
         raise ValueError(f"Perfil invalido: {perfil}.")
+    cama_norm = _normalize_cama_id(cama_id)
     obs_val = None if observacoes is None else str(observacoes).strip() or None
     with _connect(db_path) as conn:
         cursor = conn.execute(
@@ -419,14 +490,15 @@ def atualizar_paciente(
         )
         if cursor.fetchone() is None:
             raise LookupError("Paciente nao encontrado.")
+        _assert_cama_disponivel(conn, cama_norm, ignorar_paciente=paciente_id)
         agora_iso = _utc_now_iso()
         conn.execute(
             """
             UPDATE paciente_fichas
-            SET nome = ?, perfil = ?, observacoes = ?, updated_at = ?
+            SET nome = ?, perfil = ?, cama_id = ?, observacoes = ?, updated_at = ?
             WHERE paciente_id = ?
             """,
-            (nome_limpo, perfil_norm, obs_val, agora_iso, paciente_id),
+            (nome_limpo, perfil_norm, cama_norm, obs_val, agora_iso, paciente_id),
         )
         if rotinas is not None:
             _replace_rotinas(conn, paciente_id, rotinas)

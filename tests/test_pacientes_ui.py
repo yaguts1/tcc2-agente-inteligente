@@ -46,6 +46,7 @@ def test_paciente_criacao_com_rotina_padrao(pacientes_client):
         data={
             "nome": "Paciente Teste",
             "perfil": "medio",
+            "cama_id": "CAMA-01",
             "observacoes": "Obs",
             "usar_rotinas_padrao": "1",
         },
@@ -61,7 +62,7 @@ def test_paciente_criacao_com_rotina_padrao(pacientes_client):
     with sqlite3.connect(pacientes_client["db_path"]) as conn:
         conn.row_factory = sqlite3.Row
         ficha = conn.execute(
-            "SELECT nome, perfil, observacoes FROM paciente_fichas WHERE paciente_id = ?",
+            "SELECT nome, perfil, cama_id, observacoes FROM paciente_fichas WHERE paciente_id = ?",
             (paciente_id,),
         ).fetchone()
         rotinas_total = conn.execute(
@@ -72,18 +73,53 @@ def test_paciente_criacao_com_rotina_padrao(pacientes_client):
     assert ficha is not None
     assert ficha["nome"] == "Paciente Teste"
     assert ficha["perfil"] == "medio"
+    assert ficha["cama_id"] == "CAMA-01"
     assert rotinas_total == 4
 
     lista = client.get("/partials/pacientes/lista")
     assert lista.status_code == 200
     assert "Paciente Teste" in lista.text
+    assert "CAMA-01" in lista.text
+
+
+def test_paciente_cama_unica(pacientes_client):
+    client = pacientes_client["client"]
+
+    primeiro = client.post(
+        "/pacientes/salvar",
+        data={"nome": "Paciente A", "perfil": "baixo", "cama_id": "LEITO-01"},
+    )
+    assert primeiro.status_code == 200
+    assert "Ficha salva com sucesso" in primeiro.text
+
+    segundo = client.post(
+        "/pacientes/salvar",
+        data={"nome": "Paciente B", "perfil": "alto", "cama_id": "LEITO-01"},
+    )
+    assert segundo.status_code == 200
+    assert "ja esta atribuida ao paciente" in segundo.text
+    assert "LEITO-01" in segundo.text
 
 
 def test_rotina_linha_endpoint(pacientes_client):
     client = pacientes_client["client"]
-    resp = client.get("/pacientes/rotinas/linha", params={"index": 5})
+    resp = client.get("/pacientes/rotinas/linha", params={"rotinas_next_index": 5})
     assert resp.status_code == 200
     assert "name=\"rotinas-5-label\"" in resp.text
+
+
+def test_rotina_linha_endpoint_resolve_indice_automatico(pacientes_client):
+    client = pacientes_client["client"]
+    params = [
+        ("rotinas-0-label", "A"),
+        ("rotinas-0-inicio", "08:00"),
+        ("rotinas-3-label", "B"),
+        ("rotinas-3-inicio", "09:00"),
+        ("rotinas_next_index", "NaN"),
+    ]
+    resp = client.get("/pacientes/rotinas/linha", params=params)
+    assert resp.status_code == 200
+    assert "name=\"rotinas-4-label\"" in resp.text
 
 
 def test_documentos_upload_e_remocao(pacientes_client):

@@ -15,9 +15,13 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
+import structlog
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
+from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+
+from interface.api import router as api_router
 
 from interface.dao import (
     atualizar_paciente,
@@ -36,7 +40,9 @@ from interface.dao import (
 DB_PATH = os.getenv("UPP_DB_PATH", "dados.db")
 
 app = FastAPI(title="Monitor de Alertas UPP")
+app.include_router(api_router)
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
+logger = structlog.get_logger(__name__)
 
 
 DEFAULT_PACIENTE_PERFIL = "medio"
@@ -199,6 +205,7 @@ def _montar_paciente_base(
             "paciente_id": "",
             "nome": "",
             "perfil": DEFAULT_PACIENTE_PERFIL,
+            "cama_id": "",
             "observacoes": "",
             "rotinas": [],
         }
@@ -206,6 +213,7 @@ def _montar_paciente_base(
         base = dict(ficha)
         base.setdefault("paciente_id", "")
         base.setdefault("nome", "")
+        base["cama_id"] = str(base.get("cama_id") or "")
         base["perfil"] = str(base.get("perfil") or DEFAULT_PACIENTE_PERFIL)
         base["observacoes"] = base.get("observacoes") or ""
         base["rotinas"] = base.get("rotinas") or []
@@ -588,6 +596,7 @@ async def paciente_salvar(request: Request) -> HTMLResponse:
     paciente_id = str(form.get("paciente_id") or "").strip()
     nome = str(form.get("nome") or "").strip()
     perfil = str(form.get("perfil") or DEFAULT_PACIENTE_PERFIL).strip().lower() or DEFAULT_PACIENTE_PERFIL
+    cama_id = str(form.get("cama_id") or "").strip()
     observacoes = str(form.get("observacoes") or "").strip()
     usar_rotinas_padrao = form.get("usar_rotinas_padrao") is not None
 
@@ -601,9 +610,24 @@ async def paciente_salvar(request: Request) -> HTMLResponse:
 
     try:
         if paciente_id:
-            ficha = atualizar_paciente(DB_PATH, paciente_id, nome, perfil, observacoes, rotinas_aplicar)
+            ficha = atualizar_paciente(
+                DB_PATH,
+                paciente_id,
+                nome,
+                perfil,
+                cama_id or None,
+                observacoes,
+                rotinas_aplicar,
+            )
         else:
-            ficha = criar_paciente(DB_PATH, nome, perfil, observacoes, rotinas_aplicar)
+            ficha = criar_paciente(
+                DB_PATH,
+                nome,
+                perfil,
+                cama_id or None,
+                observacoes,
+                rotinas_aplicar,
+            )
             paciente_id = ficha["paciente_id"]
     except (ValueError, LookupError) as exc:
         paciente = _montar_paciente_base(
@@ -611,6 +635,7 @@ async def paciente_salvar(request: Request) -> HTMLResponse:
                 "paciente_id": paciente_id,
                 "nome": nome,
                 "perfil": perfil,
+                "cama_id": cama_id,
                 "observacoes": observacoes,
                 "rotinas": rotinas_editor_view,
             }
@@ -642,17 +667,43 @@ async def paciente_salvar(request: Request) -> HTMLResponse:
     return response
 
 
+def _resolver_indice_rotina(request: Request, index_raw: str | None) -> int:
+    candidatos = [
+        index_raw,
+        request.query_params.get("rotinas_next_index"),
+    ]
+    for candidato in candidatos:
+        if candidato is None:
+            continue
+        try:
+            index_cast = int(candidato)
+            if index_cast >= 0:
+                return index_cast
+        except ValueError:
+            continue
+
+    maiores_indices = [
+        int(match.group(1))
+        for chave, _ in request.query_params.multi_items()
+        if (match := ROTINA_KEY_RE.match(chave))
+    ]
+    if maiores_indices:
+        return max(maiores_indices) + 1
+    return 0
+
+
 @app.get("/pacientes/rotinas/linha", response_class=HTMLResponse)
-def paciente_rotina_linha(request: Request, index: int = Query(0, ge=0)) -> HTMLResponse:
+def paciente_rotina_linha(request: Request, index: str | None = Query(None)) -> HTMLResponse:
+    resolved_index = _resolver_indice_rotina(request, index)
     rotina = {
         "label": "",
         "inicio": "08:00",
         "duracao_min": 30,
         "descricao": "",
         "ativo": True,
-        "sort_order": index,
+        "sort_order": resolved_index,
     }
-    contexto = {"request": request, "rotina": rotina, "indice": index}
+    contexto = {"request": request, "rotina": rotina, "indice": resolved_index}
     return templates.TemplateResponse("pacientes/partials/rotina_row.html", contexto)
 
 
@@ -837,5 +888,16 @@ def encerrar_alerta(request: Request, paciente_id: str, inicio: str) -> HTMLResp
 def _init_schema() -> None:
     try:
         criar_esquema(DB_PATH)
+        logger.info("schema_garantido", db_path=DB_PATH)
     except Exception as exc:  # pragma: no cover - log but do not fail startup
-        print(f"[WARN] Nao foi possivel garantir schema do banco: {exc}")
+        logger.warning("schema_nao_garantido", motivo=str(exc))
+
+
+@app.get("/metrics")
+def metrics_endpoint() -> Response:
+    return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
+
+
+@app.get("/healthz")
+def health_check() -> Dict[str, str]:
+    return {"status": "ok"}

@@ -3,3 +3,10 @@ numpy
 pytest
 
 fpdf2
+httpx
+jinja2
+python-multipart
+pytest-asyncio
+redis
+structlog
+prometheus-client
