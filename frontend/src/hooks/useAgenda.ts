@@ -69,7 +69,7 @@ export function useAgenda(pacienteId: string): UseAgendaReturn {
         const agenda = await AgendaApi.createAgenda(pacienteId, data);
         setState((prev) => ({
           ...prev,
-          agendas: [...prev.agendas, agenda],
+          agendas: Array.isArray(prev.agendas) ? [...prev.agendas, agenda] : [agenda],
           loading: false,
         }));
         return agenda;
@@ -98,7 +98,9 @@ export function useAgenda(pacienteId: string): UseAgendaReturn {
         );
         setState((prev) => ({
           ...prev,
-          agendas: prev.agendas.map((a) => (a.id === agendaId ? updated : a)),
+          agendas: Array.isArray(prev.agendas)
+            ? prev.agendas.map((a) => (a.id === agendaId ? updated : a))
+            : [updated],
           selectedAgenda:
             prev.selectedAgenda?.id === agendaId ? updated : prev.selectedAgenda,
           loading: false,
@@ -125,7 +127,9 @@ export function useAgenda(pacienteId: string): UseAgendaReturn {
         await AgendaApi.deleteAgenda(pacienteId, agendaId);
         setState((prev) => ({
           ...prev,
-          agendas: prev.agendas.filter((a) => a.id !== agendaId),
+          agendas: Array.isArray(prev.agendas)
+            ? prev.agendas.filter((a) => a.id !== agendaId)
+            : [],
           selectedAgenda:
             prev.selectedAgenda?.id === agendaId ? null : prev.selectedAgenda,
           loading: false,
