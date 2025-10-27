@@ -707,6 +707,176 @@ async def frontend_alerts(
     # Apply pagination
     return results[offset : offset + limit]
 
+
+class BatchAlertRequest(BaseModel):
+    """Request body for batch alert operations."""
+    alert_ids: List[str]
+
+
+@router.post("/frontend/alerts/batch/acknowledge", status_code=status.HTTP_200_OK)
+async def batch_acknowledge(payload: BatchAlertRequest) -> dict:
+    """Acknowledge multiple alerts at once.
+    
+    Request:
+    {
+      "alert_ids": ["paciente_id__inicio", "paciente_id2__inicio2", ...]
+    }
+    
+    Response:
+    {
+      "ok": true,
+      "processed": 2,
+      "failed": 0,
+      "errors": []
+    }
+    """
+    logger = structlog.get_logger(__name__)
+    logger.info("batch_acknowledge_called", alert_ids_count=len(payload.alert_ids))
+    
+    processed = 0
+    failed = 0
+    errors: List[dict] = []
+    broadcast_tasks: List = []
+    
+    # Process each alert in thread pool to avoid blocking
+    async def _process_alert(alert_id: str) -> tuple[bool, dict]:
+        """Process a single alert and return (success, error_dict_or_none)."""
+        try:
+            paciente_id, inicio = alert_id.split("__", 1)
+            # Run DB operation in thread pool
+            await asyncio.to_thread(
+                alterar_status_alerta, 
+                DB_PATH, paciente_id, inicio, "reconhecido"
+            )
+            
+            # Queue WebSocket broadcast as background task
+            try:
+                task = asyncio.create_task(ws_manager.broadcast({
+                    "type": "alert_update",
+                    "alert_id": alert_id,
+                    "status": "acknowledged",
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }))
+                broadcast_tasks.append(task)
+            except Exception as ws_err:
+                logger.warning("batch_ack_broadcast_queued_failed", error=str(ws_err))
+            
+            return True, None
+        except Exception as exc:
+            return False, {"alert_id": alert_id, "error": str(exc)}
+    
+    # Run all alerts in parallel using thread pool
+    tasks = [_process_alert(aid) for aid in payload.alert_ids]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    for result in results:
+        if isinstance(result, Exception):
+            failed += 1
+            errors.append({"error": str(result)})
+        elif result[0]:
+            processed += 1
+        else:
+            failed += 1
+            if result[1]:
+                errors.append(result[1])
+    
+    # Schedule broadcasts to happen in background (don't wait)
+    async def _log_broadcast_results() -> None:
+        try:
+            await asyncio.gather(*broadcast_tasks, return_exceptions=True)
+        except Exception:
+            pass
+    
+    try:
+        asyncio.create_task(_log_broadcast_results())
+    except Exception:
+        pass
+    
+    return {"ok": True, "processed": processed, "failed": failed, "errors": errors}
+
+
+@router.post("/frontend/alerts/batch/complete", status_code=status.HTTP_200_OK)
+async def batch_complete(payload: BatchAlertRequest) -> dict:
+    """Complete multiple alerts at once.
+    
+    Request:
+    {
+      "alert_ids": ["paciente_id__inicio", "paciente_id2__inicio2", ...]
+    }
+    
+    Response:
+    {
+      "ok": true,
+      "processed": 2,
+      "failed": 0,
+      "errors": []
+    }
+    """
+    logger = structlog.get_logger(__name__)
+    logger.info("batch_complete_called", alert_ids_count=len(payload.alert_ids))
+    
+    processed = 0
+    failed = 0
+    errors: List[dict] = []
+    broadcast_tasks: List = []
+    
+    # Process each alert in thread pool to avoid blocking
+    async def _process_alert(alert_id: str) -> tuple[bool, dict]:
+        """Process a single alert and return (success, error_dict_or_none)."""
+        try:
+            paciente_id, inicio = alert_id.split("__", 1)
+            # Run DB operation in thread pool
+            await asyncio.to_thread(
+                alterar_status_alerta, 
+                DB_PATH, paciente_id, inicio, "fechado", True
+            )
+            
+            # Queue WebSocket broadcast as background task
+            try:
+                task = asyncio.create_task(ws_manager.broadcast({
+                    "type": "alert_update",
+                    "alert_id": alert_id,
+                    "status": "completed",
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                }))
+                broadcast_tasks.append(task)
+            except Exception as ws_err:
+                logger.warning("batch_complete_broadcast_queued_failed", error=str(ws_err))
+            
+            return True, None
+        except Exception as exc:
+            return False, {"alert_id": alert_id, "error": str(exc)}
+    
+    # Run all alerts in parallel using thread pool
+    tasks = [_process_alert(aid) for aid in payload.alert_ids]
+    results = await asyncio.gather(*tasks, return_exceptions=True)
+    
+    for result in results:
+        if isinstance(result, Exception):
+            failed += 1
+            errors.append({"error": str(result)})
+        elif result[0]:
+            processed += 1
+        else:
+            failed += 1
+            if result[1]:
+                errors.append(result[1])
+    
+    # Schedule broadcasts to happen in background (don't wait)
+    async def _log_broadcast_results() -> None:
+        try:
+            await asyncio.gather(*broadcast_tasks, return_exceptions=True)
+        except Exception:
+            pass
+    
+    try:
+        asyncio.create_task(_log_broadcast_results())
+    except Exception:
+        pass
+    
+    return {"ok": True, "processed": processed, "failed": failed, "errors": errors}
+
+
 @router.post("/frontend/alerts/{alert_id}/acknowledge", status_code=status.HTTP_200_OK)
 async def frontend_acknowledge(alert_id: str) -> dict:
     try:
@@ -746,101 +916,6 @@ async def frontend_complete(alert_id: str) -> dict:
     except LookupError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"code": "not_found", "message": "Alert not found"})
     return {"ok": True}
-
-
-class BatchAlertRequest(BaseModel):
-    """Request body for batch alert operations."""
-    alert_ids: List[str]
-
-
-@router.post("/frontend/alerts/batch/acknowledge", status_code=status.HTTP_200_OK)
-async def batch_acknowledge(payload: BatchAlertRequest) -> dict:
-    """Acknowledge multiple alerts at once.
-    
-    Request:
-    {
-      "alert_ids": ["paciente_id__inicio", "paciente_id2__inicio2", ...]
-    }
-    
-    Response:
-    {
-      "ok": true,
-      "processed": 2,
-      "failed": 0,
-      "errors": []
-    }
-    """
-    processed = 0
-    failed = 0
-    errors: List[dict] = []
-    
-    for alert_id in payload.alert_ids:
-        try:
-            paciente_id, inicio = alert_id.split("__", 1)
-            alterar_status_alerta(DB_PATH, paciente_id, inicio, "reconhecido")
-            processed += 1
-            
-            # Broadcast update via WebSocket (with error handling)
-            try:
-                await ws_manager.broadcast({
-                    "type": "alert_update",
-                    "alert_id": alert_id,
-                    "status": "acknowledged",
-                    "timestamp": datetime.now(timezone.utc).isoformat()
-                })
-            except Exception as ws_err:
-                # Log WebSocket error but don't fail the whole batch
-                structlog.get_logger(__name__).warning("batch_ack_broadcast_failed", error=str(ws_err))
-        except Exception as exc:
-            failed += 1
-            errors.append({"alert_id": alert_id, "error": str(exc)})
-    
-    return {"ok": True, "processed": processed, "failed": failed, "errors": errors}
-
-
-@router.post("/frontend/alerts/batch/complete", status_code=status.HTTP_200_OK)
-async def batch_complete(payload: BatchAlertRequest) -> dict:
-    """Complete multiple alerts at once.
-    
-    Request:
-    {
-      "alert_ids": ["paciente_id__inicio", "paciente_id2__inicio2", ...]
-    }
-    
-    Response:
-    {
-      "ok": true,
-      "processed": 2,
-      "failed": 0,
-      "errors": []
-    }
-    """
-    processed = 0
-    failed = 0
-    errors: List[dict] = []
-    
-    for alert_id in payload.alert_ids:
-        try:
-            paciente_id, inicio = alert_id.split("__", 1)
-            alterar_status_alerta(DB_PATH, paciente_id, inicio, "fechado", definir_fim=True)
-            processed += 1
-            
-            # Broadcast update via WebSocket (with error handling)
-            try:
-                await ws_manager.broadcast({
-                    "type": "alert_update",
-                    "alert_id": alert_id,
-                    "status": "completed",
-                    "timestamp": datetime.now(timezone.utc).isoformat()
-                })
-            except Exception as ws_err:
-                # Log WebSocket error but don't fail the whole batch
-                structlog.get_logger(__name__).warning("batch_complete_broadcast_failed", error=str(ws_err))
-        except Exception as exc:
-            failed += 1
-            errors.append({"alert_id": alert_id, "error": str(exc)})
-    
-    return {"ok": True, "processed": processed, "failed": failed, "errors": errors}
 
 
 @router.post("/device_events/reconcile", status_code=status.HTTP_200_OK)
