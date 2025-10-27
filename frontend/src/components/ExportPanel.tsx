@@ -214,7 +214,7 @@ export function ExportPanel({ onSuccess, onError }: ExportPanelProps) {
               <h4 className="text-sm font-medium mb-3">Formato</h4>
               <RadioGroup
                 value={filters.format}
-                onValueChange={(value) =>
+                onValueChange={(value: string) =>
                   setFilters(prev => ({ ...prev, format: value as 'csv' | 'pdf' }))
                 }
               >
