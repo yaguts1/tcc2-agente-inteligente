@@ -10,6 +10,8 @@ import {
   X,
 } from 'lucide-react';
 import { Button } from '../ui/button';
+import { CriticalAlertBadge } from '../alerts/CriticalAlertBadge';
+import { CriticalAlert } from '../../hooks/useCriticalAlerts';
 import { cn } from '../ui/utils';
 
 interface AppLayoutProps {
@@ -18,6 +20,14 @@ interface AppLayoutProps {
   onLogout: () => void;
   currentPage: 'dashboard' | 'timeline' | 'patients' | 'admin';
   onNavigate: (page: 'dashboard' | 'timeline' | 'patients' | 'admin') => void;
+  criticalAlerts?: {
+    total: number;
+    highRisk: number;
+    acknowledgedMedium: number;
+    hasNew: boolean;
+    alerts: CriticalAlert[];
+  };
+  onCriticalAlertClick?: (alert: CriticalAlert) => void;
 }
 
 const navigation = [
@@ -33,6 +43,8 @@ export function AppLayout({
   onLogout,
   currentPage,
   onNavigate,
+  criticalAlerts,
+  onCriticalAlertClick,
 }: AppLayoutProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
 
@@ -145,6 +157,16 @@ export function AppLayout({
                 <p className="text-foreground">{currentUser}</p>
                 <p className="text-muted-foreground">Conectado</p>
               </div>
+              {criticalAlerts && criticalAlerts.total > 0 && (
+                <CriticalAlertBadge
+                  totalCritical={criticalAlerts.total}
+                  highRisk={criticalAlerts.highRisk}
+                  acknowledgedMedium={criticalAlerts.acknowledgedMedium}
+                  hasNewCritical={criticalAlerts.hasNew}
+                  criticalAlerts={criticalAlerts.alerts}
+                  onAlertClick={onCriticalAlertClick}
+                />
+              )}
             </div>
             <Button
               variant="outline"

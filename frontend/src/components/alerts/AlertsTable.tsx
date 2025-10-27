@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Alert } from '../../lib/api';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
+import { Checkbox } from '../ui/checkbox';
 import {
   Table,
   TableBody,
@@ -13,6 +14,8 @@ import {
 import { CheckCircle2, AlertTriangle, Clock, Eye } from 'lucide-react';
 import { EmptyState } from '../shared/EmptyState';
 import { Skeleton } from '../ui/skeleton';
+import { BulkActionBar } from './BulkActionBar';
+import { useAlertSelection } from '../../hooks/useAlertSelection';
 import {
   AlertDialog,
   AlertDialogAction,
@@ -39,6 +42,17 @@ export function AlertsTable({
 }: AlertsTableProps) {
   const [confirmingComplete, setConfirmingComplete] = useState<string | null>(null);
   const [processingId, setProcessingId] = useState<string | null>(null);
+  
+  // Initialize alert selection
+  const {
+    selectedIds,
+    selectedCount,
+    allSelected,
+    isIndeterminate,
+    toggleAlert,
+    toggleAll,
+    clearSelection,
+  } = useAlertSelection(alerts.map((a) => a.id));
 
   const formatTime = (dateString: string) => {
     return new Date(dateString).toLocaleTimeString('pt-BR', {
@@ -123,6 +137,27 @@ export function AlertsTable({
     setConfirmingComplete(null);
   };
 
+  // Bulk action handlers
+  const handleBulkAcknowledge = async () => {
+    setProcessingId('bulk');
+    try {
+      await Promise.all(selectedIds.map((id) => onAcknowledge(id)));
+      clearSelection();
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
+  const handleBulkComplete = async () => {
+    setProcessingId('bulk');
+    try {
+      await Promise.all(selectedIds.map((id) => onComplete(id)));
+      clearSelection();
+    } finally {
+      setProcessingId(null);
+    }
+  };
+
   const sortedAlerts = [...alerts].sort((a, b) => {
     const aOverdue = isOverdue(a.nextRepositioning);
     const bOverdue = isOverdue(b.nextRepositioning);
@@ -164,6 +199,14 @@ export function AlertsTable({
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="w-12">
+                <Checkbox
+                  checked={allSelected}
+                  indeterminate={isIndeterminate}
+                  onCheckedChange={toggleAll}
+                  aria-label="Selecionar todos os alertas"
+                />
+              </TableHead>
               <TableHead>Paciente</TableHead>
               <TableHead>Quarto/Leito</TableHead>
               <TableHead>Risco</TableHead>
@@ -177,12 +220,22 @@ export function AlertsTable({
             {sortedAlerts.map((alert) => {
               const overdue = isOverdue(alert.nextRepositioning);
               const isProcessing = processingId === alert.id;
+              const isSelected = selectedIds.includes(alert.id);
 
               return (
                 <TableRow
                   key={alert.id}
-                  className={overdue ? 'bg-danger-light/20' : ''}
+                  className={`${overdue ? 'bg-danger-light/20' : ''} ${
+                    isSelected ? 'bg-blue-50' : ''
+                  }`}
                 >
+                  <TableCell>
+                    <Checkbox
+                      checked={isSelected}
+                      onCheckedChange={() => toggleAlert(alert.id)}
+                      aria-label={`Selecionar ${alert.patientName}`}
+                    />
+                  </TableCell>
                   <TableCell>
                     <div className="flex items-center gap-2">
                       {overdue && (
@@ -248,7 +301,7 @@ export function AlertsTable({
       {/* Confirmation Dialog */}
       <AlertDialog
         open={confirmingComplete !== null}
-        onOpenChange={(open) => !open && setConfirmingComplete(null)}
+        onOpenChange={(open: boolean) => !open && setConfirmingComplete(null)}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
@@ -270,6 +323,17 @@ export function AlertsTable({
           </AlertDialogFooter>
         </AlertDialogContent>
       </AlertDialog>
+
+      {/* Bulk Action Bar */}
+      {selectedCount > 0 && (
+        <BulkActionBar
+          selectedCount={selectedCount}
+          isLoading={processingId === 'bulk'}
+          onAcknowledgeAll={handleBulkAcknowledge}
+          onCompleteAll={handleBulkComplete}
+          onClearSelection={clearSelection}
+        />
+      )}
     </>
   );
 }

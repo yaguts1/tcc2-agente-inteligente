@@ -3,7 +3,10 @@ import { AlertTriangle, Bell, Calendar } from 'lucide-react';
 import { alertsApi, Alert, ApiException, statsApi, DashboardStats } from '../../lib/api';
 import { usePolling } from '../../hooks/usePolling';
 import { useWebSocket } from '../../hooks/useWebSocket';
+import { useAlertFilters, AlertFilters } from '../../hooks/useAlertFilters';
+import { useCriticalAlerts } from '../../hooks/useCriticalAlerts';
 import { ExportPanel } from '../ExportPanel';
+import { FilterBar } from '../alerts/FilterBar';
 import { Card } from '../ui/card';
 import { ErrorBanner } from '../shared/ErrorBanner';
 import { PollIndicator } from '../shared/PollIndicator';
@@ -19,6 +22,51 @@ export function DashboardPage() {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isOffline, setIsOffline] = useState(false);
+  const [patients, setPatients] = useState<Array<{ id: string; name: string }>>([]);
+  const [filters, setFilters] = useState<AlertFilters>({});
+  const [activeFilterCount, setActiveFilterCount] = useState(0);
+
+  const updateFilter = useCallback((key: keyof AlertFilters, value: any) => {
+    setFilters((prev) => ({
+      ...prev,
+      [key]: value,
+    }));
+  }, []);
+
+  const clearAllFilters = useCallback(() => {
+    setFilters({});
+  }, []);
+
+  useEffect(() => {
+    const count = Object.values(filters).filter((v) => v !== undefined && v !== '').length;
+    setActiveFilterCount(count);
+  }, [filters]);
+
+  // Filter alerts based on current filters
+  const filteredAlerts = alerts.filter((alert) => {
+    // Convert riskLevel to severity for filtering
+    const severity = alert.riskLevel === 'high' ? 'HIGH' : alert.riskLevel === 'medium' ? 'MEDIUM' : 'LOW';
+    if (filters.severity && severity !== filters.severity) {
+      return false;
+    }
+    if (filters.status && alert.status !== filters.status) {
+      return false;
+    }
+    return true;
+  });
+
+  // Critical alerts hook
+  const {
+    criticalAlerts,
+    totalCritical,
+    highRisk,
+    acknowledgedMedium,
+    hasNewCritical,
+  } = useCriticalAlerts(alerts, {
+    enabled: true,
+    soundEnabled: true,
+    notificationsEnabled: true,
+  });
 
   const fetchAlerts = useCallback(async () => {
     setIsLoading(true);
@@ -190,6 +238,15 @@ export function DashboardPage() {
         onError={(msg) => toast.error(msg)}
       />
 
+      {/* Filter Bar */}
+      <FilterBar
+        filters={filters}
+        onFilterChange={updateFilter}
+        onClearFilters={clearAllFilters}
+        activeFilterCount={activeFilterCount}
+        patients={patients}
+      />
+
       {/* Stats Cards */}
       {isLoading ? (
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
@@ -255,7 +312,7 @@ export function DashboardPage() {
       {/* Alerts Table */}
       <Card>
         <AlertsTable
-          alerts={activeAlerts}
+          alerts={filteredAlerts}
           onAcknowledge={handleAcknowledge}
           onComplete={handleComplete}
           isLoading={isLoading}

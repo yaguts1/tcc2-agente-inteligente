@@ -13,6 +13,11 @@ export interface AlertFilters {
   severities?: string[];
   patientId?: string;
   alertTypes?: string[];
+  severity?: 'LOW' | 'MEDIUM' | 'HIGH' | 'CRITICAL';
+  status?: 'open' | 'acknowledged' | 'completed';
+  searchText?: string;
+  dateFrom?: Date;
+  dateTo?: Date;
 }
 
 export interface FilterStats {
