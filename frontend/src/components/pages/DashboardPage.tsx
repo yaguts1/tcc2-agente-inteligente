@@ -3,6 +3,7 @@ import { AlertTriangle, Bell, Calendar } from 'lucide-react';
 import { alertsApi, Alert, ApiException, statsApi, DashboardStats } from '../../lib/api';
 import { usePolling } from '../../hooks/usePolling';
 import { useWebSocket } from '../../hooks/useWebSocket';
+import { ExportPanel } from '../ExportPanel';
 import { Card } from '../ui/card';
 import { ErrorBanner } from '../shared/ErrorBanner';
 import { PollIndicator } from '../shared/PollIndicator';
@@ -182,6 +183,12 @@ export function DashboardPage() {
           onDismiss={() => setError(null)}
         />
       )}
+
+      {/* Export Panel */}
+      <ExportPanel
+        onSuccess={(msg) => toast.success(msg)}
+        onError={(msg) => toast.error(msg)}
+      />
 
       {/* Stats Cards */}
       {isLoading ? (
