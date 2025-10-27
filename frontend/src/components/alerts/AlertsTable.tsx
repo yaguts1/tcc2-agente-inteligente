@@ -202,7 +202,7 @@ export function AlertsTable({
               <TableHead className="w-12">
                 <Checkbox
                   checked={allSelected}
-                  indeterminate={isIndeterminate}
+                  indeterminate={isIndeterminate ? true : undefined}
                   onCheckedChange={toggleAll}
                   aria-label="Selecionar todos os alertas"
                 />
