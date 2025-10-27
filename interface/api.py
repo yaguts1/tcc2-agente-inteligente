@@ -780,13 +780,17 @@ async def batch_acknowledge(payload: BatchAlertRequest) -> dict:
             alterar_status_alerta(DB_PATH, paciente_id, inicio, "reconhecido")
             processed += 1
             
-            # Broadcast update via WebSocket
-            await ws_manager.broadcast({
-                "type": "alert_update",
-                "alert_id": alert_id,
-                "status": "acknowledged",
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            })
+            # Broadcast update via WebSocket (with error handling)
+            try:
+                await ws_manager.broadcast({
+                    "type": "alert_update",
+                    "alert_id": alert_id,
+                    "status": "acknowledged",
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                })
+            except Exception as ws_err:
+                # Log WebSocket error but don't fail the whole batch
+                structlog.get_logger(__name__).warning("batch_ack_broadcast_failed", error=str(ws_err))
         except Exception as exc:
             failed += 1
             errors.append({"alert_id": alert_id, "error": str(exc)})
@@ -821,13 +825,17 @@ async def batch_complete(payload: BatchAlertRequest) -> dict:
             alterar_status_alerta(DB_PATH, paciente_id, inicio, "fechado", definir_fim=True)
             processed += 1
             
-            # Broadcast update via WebSocket
-            await ws_manager.broadcast({
-                "type": "alert_update",
-                "alert_id": alert_id,
-                "status": "completed",
-                "timestamp": datetime.now(timezone.utc).isoformat()
-            })
+            # Broadcast update via WebSocket (with error handling)
+            try:
+                await ws_manager.broadcast({
+                    "type": "alert_update",
+                    "alert_id": alert_id,
+                    "status": "completed",
+                    "timestamp": datetime.now(timezone.utc).isoformat()
+                })
+            except Exception as ws_err:
+                # Log WebSocket error but don't fail the whole batch
+                structlog.get_logger(__name__).warning("batch_complete_broadcast_failed", error=str(ws_err))
         except Exception as exc:
             failed += 1
             errors.append({"alert_id": alert_id, "error": str(exc)})
