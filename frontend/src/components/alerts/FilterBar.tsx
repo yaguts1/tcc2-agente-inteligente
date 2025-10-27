@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { X, Filter, Calendar, Search, AlertCircle } from 'lucide-react';
+import { X, Filter, Calendar, Search, ChevronDown } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
@@ -15,8 +15,12 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '../ui/popover';
+import {
+  Collapsible,
+  CollapsibleContent,
+  CollapsibleTrigger,
+} from '../ui/collapsible';
 import { Badge } from '../ui/badge';
-import { Card } from '../ui/card';
 import { AlertFilters } from '../../hooks/useAlertFilters';
 
 interface FilterBarProps {
@@ -47,6 +51,8 @@ export function FilterBar({
   activeFilterCount,
   patients = [],
 }: FilterBarProps) {
+  const [isOpen, setIsOpen] = useState(false);
+
   const handleSearchChange = useCallback(
     (e: React.ChangeEvent<HTMLInputElement>) => {
       onFilterChange('searchText', e.target.value || undefined);
@@ -91,253 +97,269 @@ export function FilterBar({
     : '';
 
   return (
-    <Card className="p-4 space-y-4">
-      {/* Filter Header with active count */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="p-2 rounded-lg bg-primary/10">
-            <Filter className="w-5 h-5 text-primary" />
+    <Collapsible open={isOpen} onOpenChange={setIsOpen} className="space-y-2 mb-4">
+      {/* Compact Header - Always visible */}
+      <CollapsibleTrigger asChild>
+        <Button
+          variant="outline"
+          className="w-full justify-between h-10"
+          size="sm"
+        >
+          <div className="flex items-center gap-2">
+            <Filter className="w-4 h-4" />
+            <span className="text-sm">
+              Filtros {activeFilterCount > 0 && `(${activeFilterCount})`}
+            </span>
           </div>
-          <div>
-            <h3 className="font-semibold text-sm">Filtros</h3>
-            <p className="text-xs text-muted-foreground">
-              {activeFilterCount === 0
-                ? 'Nenhum filtro aplicado'
-                : `${activeFilterCount} filtro${activeFilterCount !== 1 ? 's' : ''} ativo${activeFilterCount !== 1 ? 's' : ''}`}
-            </p>
-          </div>
-        </div>
-        {activeFilterCount > 0 && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={onClearFilters}
-            className="text-destructive hover:text-destructive hover:bg-destructive/10"
-          >
-            <X className="w-4 h-4 mr-1" />
-            Limpar
-          </Button>
-        )}
-      </div>
+          <ChevronDown
+            className="w-4 h-4 transition-transform"
+            style={{ transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}
+          />
+        </Button>
+      </CollapsibleTrigger>
 
-      {/* Active Filters Display as Removable Badges */}
-      {activeFilterCount > 0 && (
-        <div className="flex flex-wrap gap-2 p-3 bg-muted/50 rounded-lg">
+      {/* Active Filters as inline badges when collapsed */}
+      {!isOpen && activeFilterCount > 0 && (
+        <div className="flex flex-wrap gap-1">
           {filters.severity && (
             <Badge
               variant="secondary"
-              className="cursor-pointer hover:bg-secondary/80 transition-colors"
+              className="cursor-pointer text-xs py-0.5"
               onClick={() => onFilterChange('severity', undefined)}
             >
-              <AlertCircle className="w-3 h-3 mr-1" />
-              Severidade: {getSeverityLabel(filters.severity)}
-              <X className="w-3 h-3 ml-2" />
+              {getSeverityLabel(filters.severity)}
+              <X className="w-3 h-3 ml-1" />
             </Badge>
           )}
           {filters.status && (
             <Badge
               variant="secondary"
-              className="cursor-pointer hover:bg-secondary/80 transition-colors"
+              className="cursor-pointer text-xs py-0.5"
               onClick={() => onFilterChange('status', undefined)}
             >
-              Status: {getStatusLabel(filters.status)}
-              <X className="w-3 h-3 ml-2" />
+              {getStatusLabel(filters.status)}
+              <X className="w-3 h-3 ml-1" />
             </Badge>
           )}
           {filters.patientId && (
             <Badge
               variant="secondary"
-              className="cursor-pointer hover:bg-secondary/80 transition-colors"
+              className="cursor-pointer text-xs py-0.5"
               onClick={() => onFilterChange('patientId', undefined)}
             >
-              Paciente: {getPatientName(filters.patientId)}
-              <X className="w-3 h-3 ml-2" />
+              {getPatientName(filters.patientId).substring(0, 10)}
+              <X className="w-3 h-3 ml-1" />
             </Badge>
           )}
           {filters.searchText && (
             <Badge
               variant="secondary"
-              className="cursor-pointer hover:bg-secondary/80 transition-colors"
+              className="cursor-pointer text-xs py-0.5"
               onClick={() => onFilterChange('searchText', undefined)}
             >
-              Busca: "{filters.searchText}"
-              <X className="w-3 h-3 ml-2" />
+              "{filters.searchText.substring(0, 8)}"
+              <X className="w-3 h-3 ml-1" />
             </Badge>
           )}
           {(filters.dateFrom || filters.dateTo) && (
             <Badge
               variant="secondary"
-              className="cursor-pointer hover:bg-secondary/80 transition-colors"
+              className="cursor-pointer text-xs py-0.5"
               onClick={() => {
                 onFilterChange('dateFrom', undefined);
                 onFilterChange('dateTo', undefined);
               }}
             >
-              Data: {filters.dateFrom ? new Date(filters.dateFrom).toLocaleDateString('pt-BR') : 'início'} a{' '}
-              {filters.dateTo ? new Date(filters.dateTo).toLocaleDateString('pt-BR') : 'hoje'}
-              <X className="w-3 h-3 ml-2" />
+              Data
+              <X className="w-3 h-3 ml-1" />
             </Badge>
           )}
         </div>
       )}
 
-      {/* Filter Controls - Organized by section */}
-      <div className="space-y-4">
-        {/* Search Row */}
-        <div>
-          <Label htmlFor="search-input" className="text-xs font-medium mb-2 block">
-            Buscar
-          </Label>
-          <div className="relative">
-            <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+      <CollapsibleContent className="pt-2 space-y-3 border-t">
+        {/* Active Filters Display - Full version when expanded */}
+        {activeFilterCount > 0 && (
+          <div className="flex flex-wrap gap-2 p-2 bg-muted/50 rounded">
+            {filters.severity && (
+              <Badge
+                variant="secondary"
+                className="cursor-pointer"
+                onClick={() => onFilterChange('severity', undefined)}
+              >
+                Severidade: {getSeverityLabel(filters.severity)}
+                <X className="w-3 h-3 ml-2" />
+              </Badge>
+            )}
+            {filters.status && (
+              <Badge
+                variant="secondary"
+                className="cursor-pointer"
+                onClick={() => onFilterChange('status', undefined)}
+              >
+                Status: {getStatusLabel(filters.status)}
+                <X className="w-3 h-3 ml-2" />
+              </Badge>
+            )}
+            {filters.patientId && (
+              <Badge
+                variant="secondary"
+                className="cursor-pointer"
+                onClick={() => onFilterChange('patientId', undefined)}
+              >
+                Paciente: {getPatientName(filters.patientId)}
+                <X className="w-3 h-3 ml-2" />
+              </Badge>
+            )}
+            {filters.searchText && (
+              <Badge
+                variant="secondary"
+                className="cursor-pointer"
+                onClick={() => onFilterChange('searchText', undefined)}
+              >
+                Busca: "{filters.searchText}"
+                <X className="w-3 h-3 ml-2" />
+              </Badge>
+            )}
+            {(filters.dateFrom || filters.dateTo) && (
+              <Badge
+                variant="secondary"
+                className="cursor-pointer"
+                onClick={() => {
+                  onFilterChange('dateFrom', undefined);
+                  onFilterChange('dateTo', undefined);
+                }}
+              >
+                Data: {filters.dateFrom ? new Date(filters.dateFrom).toLocaleDateString('pt-BR') : 'início'} a{' '}
+                {filters.dateTo ? new Date(filters.dateTo).toLocaleDateString('pt-BR') : 'hoje'}
+                <X className="w-3 h-3 ml-2" />
+              </Badge>
+            )}
+            {activeFilterCount > 0 && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={onClearFilters}
+                className="text-destructive hover:text-destructive hover:bg-destructive/10 h-7 text-xs"
+              >
+                <X className="w-3 h-3 mr-1" />
+                Limpar
+              </Button>
+            )}
+          </div>
+        )}
+
+        {/* Filter Controls - Grid when expanded */}
+        <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+          {/* Search */}
+          <div>
             <Input
-              id="search-input"
-              placeholder="Título, descrição, código do paciente..."
+              placeholder="Buscar..."
               value={filters.searchText || ''}
               onChange={handleSearchChange}
-              className="pl-9"
+              className="h-9"
             />
           </div>
-        </div>
 
-        {/* Filter Selects - Grid */}
-        <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
           {/* Severity */}
-          <div>
-            <Label htmlFor="severity-select" className="text-xs font-medium mb-2 block">
-              Severidade
-            </Label>
-            <Select
-              value={filters.severity || 'all'}
-              onValueChange={(value: string) =>
-                onFilterChange('severity', value === 'all' ? undefined : value)
-              }
-            >
-              <SelectTrigger id="severity-select">
-                <SelectValue placeholder="Todas" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todas</SelectItem>
-                {SEVERITY_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <Select
+            value={filters.severity || 'all'}
+            onValueChange={(value: string) =>
+              onFilterChange('severity', value === 'all' ? undefined : value)
+            }
+          >
+            <SelectTrigger className="h-9">
+              <SelectValue placeholder="Severidade" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todas</SelectItem>
+              {SEVERITY_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
           {/* Status */}
-          <div>
-            <Label htmlFor="status-select" className="text-xs font-medium mb-2 block">
-              Status
-            </Label>
-            <Select
-              value={filters.status || 'all'}
-              onValueChange={(value: string) =>
-                onFilterChange('status', value === 'all' ? undefined : value)
-              }
-            >
-              <SelectTrigger id="status-select">
-                <SelectValue placeholder="Todos" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos</SelectItem>
-                {STATUS_OPTIONS.map((option) => (
-                  <SelectItem key={option.value} value={option.value}>
-                    {option.label}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          </div>
+          <Select
+            value={filters.status || 'all'}
+            onValueChange={(value: string) =>
+              onFilterChange('status', value === 'all' ? undefined : value)
+            }
+          >
+            <SelectTrigger className="h-9">
+              <SelectValue placeholder="Status" />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="all">Todos</SelectItem>
+              {STATUS_OPTIONS.map((option) => (
+                <SelectItem key={option.value} value={option.value}>
+                  {option.label}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
 
           {/* Patient - only show if we have patients */}
           {patients.length > 0 && (
-            <div>
-              <Label htmlFor="patient-select" className="text-xs font-medium mb-2 block">
-                Paciente
-              </Label>
-              <Select
-                value={filters.patientId || 'all'}
-                onValueChange={(value: string) =>
-                  onFilterChange('patientId', value === 'all' ? undefined : value)
-                }
-              >
-                <SelectTrigger id="patient-select">
-                  <SelectValue placeholder="Todos" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="all">Todos</SelectItem>
-                  {patients.map((patient) => (
-                    <SelectItem key={patient.id} value={patient.id}>
-                      {patient.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            </div>
+            <Select
+              value={filters.patientId || 'all'}
+              onValueChange={(value: string) =>
+                onFilterChange('patientId', value === 'all' ? undefined : value)
+              }
+            >
+              <SelectTrigger className="h-9">
+                <SelectValue placeholder="Paciente" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="all">Todos</SelectItem>
+                {patients.map((patient) => (
+                  <SelectItem key={patient.id} value={patient.id}>
+                    {patient.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           )}
-        </div>
 
-        {/* Date Range */}
-        <div>
-          <Label className="text-xs font-medium mb-2 block">Período</Label>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start text-left font-normal"
-                >
-                  <Calendar className="mr-2 h-4 w-4" />
-                  {filters.dateFrom
-                    ? new Date(filters.dateFrom).toLocaleDateString('pt-BR')
-                    : 'Data inicial'}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-3" align="start">
-                <Label htmlFor="date-from" className="text-xs font-medium">
-                  De
-                </Label>
-                <Input
-                  id="date-from"
-                  type="date"
-                  value={dateFromValue}
-                  onChange={handleDateFromChange}
-                  className="mt-1"
-                />
-              </PopoverContent>
-            </Popover>
-
-            <Popover>
-              <PopoverTrigger asChild>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start text-left font-normal"
-                >
-                  <Calendar className="mr-2 h-4 w-4" />
-                  {filters.dateTo
-                    ? new Date(filters.dateTo).toLocaleDateString('pt-BR')
-                    : 'Data final'}
-                </Button>
-              </PopoverTrigger>
-              <PopoverContent className="w-auto p-3" align="start">
-                <Label htmlFor="date-to" className="text-xs font-medium">
-                  Até
-                </Label>
-                <Input
-                  id="date-to"
-                  type="date"
-                  value={dateToValue}
-                  onChange={handleDateToChange}
-                  className="mt-1"
-                />
-              </PopoverContent>
-            </Popover>
-          </div>
+          {/* Date Range Compact */}
+          <Popover>
+            <PopoverTrigger asChild>
+              <Button
+                variant="outline"
+                size="sm"
+                className="h-9 justify-start text-left font-normal"
+              >
+                <Calendar className="mr-1.5 h-3 w-3" />
+                Data
+              </Button>
+            </PopoverTrigger>
+            <PopoverContent className="w-64 p-3">
+              <div className="space-y-2">
+                <div>
+                  <Label className="text-xs">De</Label>
+                  <Input
+                    type="date"
+                    value={dateFromValue}
+                    onChange={handleDateFromChange}
+                    className="h-8 text-xs mt-1"
+                  />
+                </div>
+                <div>
+                  <Label className="text-xs">Até</Label>
+                  <Input
+                    type="date"
+                    value={dateToValue}
+                    onChange={handleDateToChange}
+                    className="h-8 text-xs mt-1"
+                  />
+                </div>
+              </div>
+            </PopoverContent>
+          </Popover>
         </div>
-      </div>
-    </Card>
+      </CollapsibleContent>
+    </Collapsible>
   );
 }

@@ -5,8 +5,10 @@ import { Badge } from '../ui/badge';
 import { Skeleton } from '../ui/skeleton';
 import { ErrorBanner } from '../shared/ErrorBanner';
 import { EmptyState } from '../shared/EmptyState';
+import { ExportPanel } from '../ExportPanel';
 import { CheckCircle2, Eye, AlertCircle, Clock } from 'lucide-react';
 import { cn } from '../ui/utils';
+import { toast } from 'sonner';
 
 export function TimelinePage() {
   const [events, setEvents] = useState<TimelineEvent[]>([]);
@@ -160,6 +162,12 @@ export function TimelinePage() {
           Timeline de alertas e reposicionamentos
         </p>
       </div>
+
+      {/* Export Panel */}
+      <ExportPanel
+        onSuccess={(msg) => toast.success(msg)}
+        onError={(msg) => toast.error(msg)}
+      />
 
       {error && (
         <ErrorBanner

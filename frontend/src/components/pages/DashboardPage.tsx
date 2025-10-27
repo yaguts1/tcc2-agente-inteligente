@@ -5,7 +5,6 @@ import { usePolling } from '../../hooks/usePolling';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { useAlertFilters, AlertFilters } from '../../hooks/useAlertFilters';
 import { useCriticalAlerts } from '../../hooks/useCriticalAlerts';
-import { ExportPanel } from '../ExportPanel';
 import { FilterBar } from '../alerts/FilterBar';
 import { Card } from '../ui/card';
 import { ErrorBanner } from '../shared/ErrorBanner';
@@ -231,12 +230,6 @@ export function DashboardPage() {
           onDismiss={() => setError(null)}
         />
       )}
-
-      {/* Export Panel */}
-      <ExportPanel
-        onSuccess={(msg) => toast.success(msg)}
-        onError={(msg) => toast.error(msg)}
-      />
 
       {/* Filter Bar */}
       <FilterBar
