@@ -51,9 +51,27 @@ def db_temp():
     
     yield path
     
-    # Cleanup
-    if os.path.exists(path):
-        os.unlink(path)
+    # Cleanup - force close any remaining connections
+    import sqlite3
+    # Close any open connections
+    try:
+        sqlite3.connect(path).close()
+    except:
+        pass
+    
+    # Try to remove file, with retry for Windows
+    max_retries = 3
+    for attempt in range(max_retries):
+        try:
+            if os.path.exists(path):
+                os.unlink(path)
+            break
+        except PermissionError:
+            if attempt < max_retries - 1:
+                import time
+                time.sleep(0.1)
+            else:
+                pass  # Silently ignore if can't delete
 
 
 def _create_test_patient(paciente_id: str, db_path: str):
