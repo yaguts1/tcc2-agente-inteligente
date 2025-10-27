@@ -29,6 +29,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 
 from interface.api import router as api_router
 from interface.api import reconcile_device_events
+from interface.endpoints_agenda import router as agenda_router
 import asyncio
 
 from interface.dao import (
@@ -122,6 +123,7 @@ async def _lifespan(app: FastAPI):
 
 app = FastAPI(title="Monitor de Alertas UPP", lifespan=_lifespan)
 app.include_router(api_router)
+app.include_router(agenda_router)
 
 # Add security headers middleware
 app.add_middleware(SecurityHeadersMiddleware)

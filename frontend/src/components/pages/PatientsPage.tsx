@@ -6,8 +6,9 @@ import { Badge } from '../ui/badge';
 import { Skeleton } from '../ui/skeleton';
 import { ErrorBanner } from '../shared/ErrorBanner';
 import { EmptyState } from '../shared/EmptyState';
-import { Users, Plus, Edit, Trash2 } from 'lucide-react';
+import { Users, Plus, Edit, Trash2, Calendar, X } from 'lucide-react';
 import { PatientForm } from '../patients/PatientForm';
+import { AgendaPanel } from '../patients/AgendaPanel';
 import { toast } from 'sonner';
 import {
   AlertDialog,
@@ -27,6 +28,7 @@ export function PatientsPage() {
   const [showForm, setShowForm] = useState(false);
   const [editingPatient, setEditingPatient] = useState<Patient | null>(null);
   const [deletingPatient, setDeletingPatient] = useState<Patient | null>(null);
+  const [selectedPatientForAgenda, setSelectedPatientForAgenda] = useState<Patient | null>(null);
 
   useEffect(() => {
     fetchPatients();
@@ -82,6 +84,33 @@ export function PatientsPage() {
         return null;
     }
   };
+
+  // Show AgendaPanel when patient is selected
+  if (selectedPatientForAgenda) {
+    return (
+      <div className="space-y-6">
+        <div className="flex items-center justify-between">
+          <div>
+            <h1 className="text-foreground">
+              📅 Agendas - {selectedPatientForAgenda.name}
+            </h1>
+            <p className="text-muted-foreground">
+              Gerencie as agendas de supressão, redução e monitoramento
+            </p>
+          </div>
+          <Button
+            variant="outline"
+            onClick={() => setSelectedPatientForAgenda(null)}
+          >
+            <X className="w-4 h-4 mr-2" />
+            Voltar
+          </Button>
+        </div>
+
+        <AgendaPanel pacienteId={selectedPatientForAgenda.id} />
+      </div>
+    );
+  }
 
   if (showForm || editingPatient) {
     return (
@@ -219,6 +248,15 @@ export function PatientsPage() {
                       variant="outline"
                       size="sm"
                       className="flex-1"
+                      onClick={() => setSelectedPatientForAgenda(patient)}
+                    >
+                      <Calendar className="w-4 h-4 mr-1" />
+                      Agendas
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1"
                       onClick={() => setEditingPatient(patient)}
                     >
                       <Edit className="w-4 h-4 mr-1" />
@@ -242,7 +280,7 @@ export function PatientsPage() {
       {/* Delete Confirmation Dialog */}
       <AlertDialog
         open={deletingPatient !== null}
-        onOpenChange={(open) => !open && setDeletingPatient(null)}
+        onOpenChange={(open: boolean) => !open && setDeletingPatient(null)}
       >
         <AlertDialogContent>
           <AlertDialogHeader>

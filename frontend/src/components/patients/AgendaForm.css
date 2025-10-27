@@ -1,0 +1,155 @@
+/* AgendaForm Styles */
+
+.agenda-form {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 1.5rem;
+  background: white;
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+}
+
+.agenda-form__error {
+  padding: 0.75rem 1rem;
+  background-color: #fee;
+  border-left: 4px solid #f66;
+  color: #c00;
+  border-radius: 4px;
+  font-size: 0.9rem;
+}
+
+.agenda-form__row {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 1rem;
+}
+
+@media (max-width: 640px) {
+  .agenda-form__row {
+    grid-template-columns: 1fr;
+  }
+}
+
+.agenda-form__group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.agenda-form__group label {
+  font-weight: 500;
+  color: #333;
+  font-size: 0.95rem;
+}
+
+.agenda-form__group input[type="text"],
+.agenda-form__group input[type="time"],
+.agenda-form__group input[type="date"],
+.agenda-form__group input[type="number"],
+.agenda-form__group select,
+.agenda-form__group textarea {
+  padding: 0.75rem;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  font-family: inherit;
+  transition: border-color 0.2s;
+}
+
+.agenda-form__group input[type="text"]:focus,
+.agenda-form__group input[type="time"]:focus,
+.agenda-form__group input[type="date"]:focus,
+.agenda-form__group input[type="number"]:focus,
+.agenda-form__group select:focus,
+.agenda-form__group textarea:focus {
+  outline: none;
+  border-color: #007bff;
+  box-shadow: 0 0 0 3px rgba(0, 123, 255, 0.1);
+}
+
+.agenda-form__checkbox-label {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  font-weight: normal;
+  user-select: none;
+}
+
+.agenda-form__checkbox-label input[type="checkbox"] {
+  cursor: pointer;
+  width: 18px;
+  height: 18px;
+}
+
+.agenda-form__weekdays {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(80px, 1fr));
+  gap: 0.5rem;
+  padding: 0.75rem;
+  background: #f9f9f9;
+  border-radius: 4px;
+  border: 1px solid #eee;
+}
+
+.agenda-form__day-checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  cursor: pointer;
+  user-select: none;
+}
+
+.agenda-form__day-checkbox input[type="checkbox"] {
+  cursor: pointer;
+  width: 16px;
+  height: 16px;
+}
+
+.agenda-form__buttons {
+  display: flex;
+  gap: 1rem;
+  justify-content: flex-end;
+}
+
+.agenda-form__submit,
+.agenda-form__cancel {
+  padding: 0.75rem 1.5rem;
+  border: none;
+  border-radius: 4px;
+  font-size: 0.95rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.2s;
+}
+
+.agenda-form__submit {
+  background-color: #007bff;
+  color: white;
+}
+
+.agenda-form__submit:hover:not(:disabled) {
+  background-color: #0056b3;
+  box-shadow: 0 2px 8px rgba(0, 86, 179, 0.3);
+}
+
+.agenda-form__submit:disabled {
+  background-color: #ccc;
+  cursor: not-allowed;
+  opacity: 0.6;
+}
+
+.agenda-form__cancel {
+  background-color: #f0f0f0;
+  color: #333;
+}
+
+.agenda-form__cancel:hover:not(:disabled) {
+  background-color: #e0e0e0;
+}
+
+.agenda-form__cancel:disabled {
+  cursor: not-allowed;
+  opacity: 0.6;
+}

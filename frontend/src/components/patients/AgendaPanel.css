@@ -1,0 +1,124 @@
+/* AgendaPanel Styles */
+
+.agenda-panel {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+  padding: 2rem;
+  background: #f5f5f5;
+  border-radius: 12px;
+}
+
+.agenda-panel__header {
+  margin-bottom: 0.5rem;
+}
+
+.agenda-panel__title {
+  margin: 0;
+  font-size: 1.5rem;
+  font-weight: 700;
+  color: #333;
+}
+
+.agenda-panel__subtitle {
+  margin: 0.5rem 0 0 0;
+  font-size: 0.95rem;
+  color: #666;
+}
+
+/* Alert Messages */
+.agenda-panel__alert {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 1rem;
+  border-radius: 6px;
+  border-left: 4px solid;
+}
+
+.agenda-panel__alert--error {
+  background-color: #fee;
+  border-color: #f66;
+  color: #c00;
+}
+
+.agenda-panel__alert-close {
+  background: none;
+  border: none;
+  font-size: 1.2rem;
+  cursor: pointer;
+  color: inherit;
+  padding: 0.25rem;
+  opacity: 0.7;
+  transition: opacity 0.2s;
+}
+
+.agenda-panel__alert-close:hover {
+  opacity: 1;
+}
+
+/* List View */
+.agenda-panel__list-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.agenda-panel__create-btn {
+  align-self: flex-start;
+  padding: 0.75rem 1.5rem;
+  background-color: #28a745;
+  color: white;
+  border: none;
+  border-radius: 6px;
+  font-size: 0.95rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.2s;
+  box-shadow: 0 2px 6px rgba(40, 167, 69, 0.2);
+}
+
+.agenda-panel__create-btn:hover:not(:disabled) {
+  background-color: #218838;
+  box-shadow: 0 4px 12px rgba(40, 167, 69, 0.3);
+  transform: translateY(-1px);
+}
+
+.agenda-panel__create-btn:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+/* Form View */
+.agenda-panel__form-view {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.agenda-panel__form-header {
+  margin-bottom: 0.5rem;
+}
+
+.agenda-panel__form-header h3 {
+  margin: 0;
+  font-size: 1.25rem;
+  font-weight: 600;
+  color: #333;
+}
+
+/* Responsive */
+@media (max-width: 768px) {
+  .agenda-panel {
+    padding: 1rem;
+    gap: 1rem;
+  }
+
+  .agenda-panel__title {
+    font-size: 1.25rem;
+  }
+
+  .agenda-panel__subtitle {
+    font-size: 0.9rem;
+  }
+}
