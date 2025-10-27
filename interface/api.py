@@ -1254,14 +1254,14 @@ async def timeline_record(record: TimelineRecord) -> dict:
 
 
 @router.get("/pacientes", status_code=status.HTTP_200_OK)
-async def api_listar_pacientes(incluir_rotinas: bool = False) -> list[dict]:
+async def api_listar_pacientes(incluir_rotinas: bool = False) -> list[FrontendPatient]:
     """Retorna a lista de fichas de pacientes em JSON.
 
     Query params:
     - incluir_rotinas: bool (default False) para incluir as rotinas associadas.
     """
     fichas = listar_fichas_pacientes(DB_PATH, incluir_rotinas=incluir_rotinas)
-    return fichas
+    return [_ficha_to_frontend(ficha) for ficha in fichas]
 
 
 def _map_perfil_from_frontend(risk: str) -> str:
