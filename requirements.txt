@@ -11,3 +11,6 @@ redis
 structlog
 prometheus-client
 passlib[bcrypt]
+reportlab
+python-dateutil
+

@@ -8,11 +8,12 @@ import os
 from collections import defaultdict
 import time
 from datetime import datetime, timedelta, timezone
-from typing import Any, AsyncIterator, Dict, Iterable, List, Mapping
+from typing import Any, AsyncIterator, Dict, Iterable, List, Mapping, Optional
 
 import pandas as pd
 import structlog
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status, WebSocket, WebSocketDisconnect, Query
+from fastapi.responses import StreamingResponse
 from passlib.hash import bcrypt
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
@@ -48,6 +49,7 @@ from modulo_alerta.engine import processar_alertas
 from quality.filtro import FiltroResultado, filtrar as filtrar_evento, flush_filtro, reset_filtro
 from servicos import metricas
 from servicos.processamento_incremental import ProcessadorIncremental
+from ferramentas.exportador import ExportService, ExportFilters, generate_csv_filename, generate_pdf_filename
 
 DB_PATH = os.getenv("UPP_DB_PATH", "dados.db")
 DEFAULT_PERFIL = "medio"
@@ -1604,6 +1606,181 @@ async def websocket_eventos(websocket: WebSocket):
         logger.error("ws_eventos_erro", device_id=device_id, error=str(e))
 
 
+# ==================== EXPORT ENDPOINTS ====================
+
+@router.get("/alerts/export/csv")
+async def export_alerts_csv(
+    request: Request,
+    start_date: Optional[str] = Query(None, description="Data inicial (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="Data final (YYYY-MM-DD)"),
+    status: Optional[str] = Query(None, description="Status: pending, acknowledged, completed"),
+    patient_id: Optional[str] = Query(None, description="ID do paciente"),
+    limit: int = Query(10000, ge=1, le=100000, description="Limite de registros"),
+):
+    """
+    Exporta alertas em formato CSV.
+    
+    Query Parameters:
+    - start_date: Data inicial no formato YYYY-MM-DD
+    - end_date: Data final no formato YYYY-MM-DD
+    - status: Status do alerta (pending, acknowledged, completed)
+    - patient_id: ID do paciente
+    - limit: Limite de registros (máximo 100000)
+    
+    Returns:
+    - CSV file with alerts data
+    """
+    try:
+        # Validar autenticação
+        user = request.cookies.get("session_user")
+        if not user:
+            auth_header = request.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer "):
+                token = auth_header[7:]
+                if ":" in token:
+                    user = token.split(":")[0]
+        
+        if not user:
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Não autenticado")
+        
+        # Parsear datas
+        start_dt = None
+        end_dt = None
+        
+        if start_date:
+            try:
+                start_dt = datetime.fromisoformat(start_date)
+            except ValueError:
+                raise HTTPException(400, detail="start_date inválido. Use YYYY-MM-DD")
+        
+        if end_date:
+            try:
+                end_dt = datetime.fromisoformat(end_date)
+            except ValueError:
+                raise HTTPException(400, detail="end_date inválido. Use YYYY-MM-DD")
+        
+        # Criar filtros
+        filters = ExportFilters(
+            start_date=start_dt,
+            end_date=end_dt,
+            status=status,
+            patient_id=patient_id,
+            limit=limit,
+        )
+        
+        # Validar filtros
+        valid, error = filters.validate()
+        if not valid:
+            raise HTTPException(400, detail=error)
+        
+        # Gerar CSV
+        export_service = ExportService(DB_PATH)
+        csv_content = export_service.export_to_csv(filters, username=user)
+        
+        # Gerar nome do arquivo
+        filename = generate_csv_filename(filters)
+        
+        # Retornar como arquivo
+        return StreamingResponse(
+            iter([csv_content]),
+            media_type="text/csv",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("csv_export_error", error=str(e), user=user if 'user' in locals() else None)
+        raise HTTPException(500, detail=f"Erro ao exportar CSV: {str(e)}")
+
+
+@router.get("/alerts/export/pdf")
+async def export_alerts_pdf(
+    request: Request,
+    start_date: Optional[str] = Query(None, description="Data inicial (YYYY-MM-DD)"),
+    end_date: Optional[str] = Query(None, description="Data final (YYYY-MM-DD)"),
+    status: Optional[str] = Query(None, description="Status: pending, acknowledged, completed"),
+    patient_id: Optional[str] = Query(None, description="ID do paciente"),
+):
+    """
+    Exporta alertas em formato PDF.
+    
+    Query Parameters:
+    - start_date: Data inicial no formato YYYY-MM-DD
+    - end_date: Data final no formato YYYY-MM-DD
+    - status: Status do alerta (pending, acknowledged, completed)
+    - patient_id: ID do paciente
+    
+    Returns:
+    - PDF file with formatted alerts report
+    """
+    try:
+        # Validar autenticação
+        user = request.cookies.get("session_user")
+        if not user:
+            auth_header = request.headers.get("Authorization", "")
+            if auth_header.startswith("Bearer "):
+                token = auth_header[7:]
+                if ":" in token:
+                    user = token.split(":")[0]
+        
+        if not user:
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Não autenticado")
+        
+        # Parsear datas
+        start_dt = None
+        end_dt = None
+        
+        if start_date:
+            try:
+                start_dt = datetime.fromisoformat(start_date)
+            except ValueError:
+                raise HTTPException(400, detail="start_date inválido. Use YYYY-MM-DD")
+        
+        if end_date:
+            try:
+                end_dt = datetime.fromisoformat(end_date)
+            except ValueError:
+                raise HTTPException(400, detail="end_date inválido. Use YYYY-MM-DD")
+        
+        # Criar filtros
+        filters = ExportFilters(
+            start_date=start_dt,
+            end_date=end_dt,
+            status=status,
+            patient_id=patient_id,
+            limit=10000,
+        )
+        
+        # Validar filtros
+        valid, error = filters.validate()
+        if not valid:
+            raise HTTPException(400, detail=error)
+        
+        # Gerar PDF
+        export_service = ExportService(DB_PATH)
+        pdf_content = export_service.export_to_pdf(filters, username=user)
+        
+        # Gerar nome do arquivo
+        filename = generate_pdf_filename(filters)
+        
+        # Retornar como arquivo
+        return StreamingResponse(
+            iter([pdf_content]),
+            media_type="application/pdf",
+            headers={"Content-Disposition": f"attachment; filename={filename}"},
+        )
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("pdf_export_error", error=str(e), user=user if 'user' in locals() else None)
+        raise HTTPException(500, detail=f"Erro ao exportar PDF: {str(e)}")
+
+
+# ==================== END EXPORT ENDPOINTS ====================
+
+
 # WebSocket endpoint for real-time alerts
 @router.websocket("/ws/alerts")
 async def websocket_alerts(websocket: WebSocket):
@@ -1626,4 +1803,5 @@ async def websocket_alerts(websocket: WebSocket):
     except Exception as e:
         structlog.get_logger(__name__).error("ws_error", error=str(e))
         await ws_manager.disconnect(websocket)
+
 
