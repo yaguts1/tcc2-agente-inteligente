@@ -48,7 +48,7 @@ from interface.ws_manager_optimized import (
     ws_manager_optimized,
     WebSocketFilter,
 )
-from dados_simulados.gerador import gerar_sessao_simulada, PerfilPaciente
+from dados_simulados.gerador import gerar_sessao_simulada, PerfilPaciente, PERFIS_PREDEFINIDOS
 from modulo_alerta.engine import processar_alertas
 from quality.filtro import FiltroResultado, filtrar as filtrar_evento, flush_filtro, reset_filtro
 from servicos import metricas
@@ -1426,11 +1426,16 @@ async def api_simular_paciente(paciente_id: str, payload: SimulationRequest) -> 
         
         # 2. Gerar dados simulados
         try:
+            # Mapear nível de risco para perfil
+            perfil_key = payload.perfil.lower() if payload.perfil else "medio"
+            perfil_params = PERFIS_PREDEFINIDOS.get(perfil_key, PERFIS_PREDEFINIDOS["medio"])
+            perfil = PerfilPaciente(**perfil_params)
+            
             df_grade, contextos = gerar_sessao_simulada(
                 duracao_horas=payload.duracao_horas,
                 seed=payload.seed or 42,
                 passo_min=5,
-                perfil=PerfilPaciente(perfil=payload.perfil),
+                perfil=perfil,
                 incluir_contexto=True
             )
         except Exception as e:
