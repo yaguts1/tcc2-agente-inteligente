@@ -108,13 +108,6 @@ async function request<T>(
     ...options,
   });
 
-  // Handle 401 Unauthorized - clear auth and redirect to login
-  if (response.status === 401) {
-    clearAuth();
-    // Redirect to login page on next render
-    window.location.href = '/login';
-  }
-
   return handleResponse<T>(response);
 }
 

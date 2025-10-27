@@ -30,9 +30,9 @@ export function useAuth() {
           });
         }
         setError(null);
-        return;
+        setIsLoading(false);
       } catch (err) {
-        // If /me fails with 401, session is invalid or expired
+        // If /me fails, session is invalid or expired
         if (err instanceof ApiException && err.status === 401) {
           clearAuth();
           setUser(null);
@@ -43,12 +43,11 @@ export function useAuth() {
           setUser(null);
           setError(null);
         }
-        return;
+        setIsLoading(false);
       }
     } catch (err) {
       setError('Erro ao verificar autenticação');
       console.error('[useAuth] checkAuth error:', err);
-    } finally {
       setIsLoading(false);
     }
   };
