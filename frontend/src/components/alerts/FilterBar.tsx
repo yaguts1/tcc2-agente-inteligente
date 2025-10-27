@@ -193,14 +193,17 @@ export function FilterBar({
         </div>
 
         {/* Severity */}
-        <Select value={filters.severity || ''} onValueChange={(value: string) => 
-          onFilterChange('severity', value || undefined)
-        }>
+        <Select 
+          value={filters.severity || 'all'} 
+          onValueChange={(value: string) => 
+            onFilterChange('severity', value === 'all' ? undefined : value)
+          }
+        >
           <SelectTrigger>
             <SelectValue placeholder="Severidade" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">Todas</SelectItem>
+            <SelectItem value="all">Todas</SelectItem>
             {SEVERITY_OPTIONS.map((option) => (
               <SelectItem key={option.value} value={option.value}>
                 {option.label}
@@ -210,14 +213,17 @@ export function FilterBar({
         </Select>
 
         {/* Status */}
-        <Select value={filters.status || ''} onValueChange={(value: string) => 
-          onFilterChange('status', value || undefined)
-        }>
+        <Select 
+          value={filters.status || 'all'} 
+          onValueChange={(value: string) => 
+            onFilterChange('status', value === 'all' ? undefined : value)
+          }
+        >
           <SelectTrigger>
             <SelectValue placeholder="Status" />
           </SelectTrigger>
           <SelectContent>
-            <SelectItem value="">Todos</SelectItem>
+            <SelectItem value="all">Todos</SelectItem>
             {STATUS_OPTIONS.map((option) => (
               <SelectItem key={option.value} value={option.value}>
                 {option.label}
@@ -228,14 +234,17 @@ export function FilterBar({
 
         {/* Patient */}
         {patients.length > 0 && (
-          <Select value={filters.patientId || ''} onValueChange={(value: string) => 
-            onFilterChange('patientId', value || undefined)
-          }>
+          <Select 
+            value={filters.patientId || 'all'} 
+            onValueChange={(value: string) => 
+              onFilterChange('patientId', value === 'all' ? undefined : value)
+            }
+          >
             <SelectTrigger>
               <SelectValue placeholder="Paciente" />
             </SelectTrigger>
             <SelectContent>
-              <SelectItem value="">Todos</SelectItem>
+              <SelectItem value="all">Todos</SelectItem>
               {patients.map((patient) => (
                 <SelectItem key={patient.id} value={patient.id}>
                   {patient.name}
