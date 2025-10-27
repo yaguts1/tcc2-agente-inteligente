@@ -1,0 +1,275 @@
+import { useState } from 'react';
+import { Alert } from '../../lib/api';
+import { Badge } from '../ui/badge';
+import { Button } from '../ui/button';
+import {
+  Table,
+  TableBody,
+  TableCell,
+  TableHead,
+  TableHeader,
+  TableRow,
+} from '../ui/table';
+import { CheckCircle2, AlertTriangle, Clock, Eye } from 'lucide-react';
+import { EmptyState } from '../shared/EmptyState';
+import { Skeleton } from '../ui/skeleton';
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from '../ui/alert-dialog';
+
+interface AlertsTableProps {
+  alerts: Alert[];
+  onAcknowledge: (alertId: string) => void;
+  onComplete: (alertId: string) => void;
+  isLoading: boolean;
+}
+
+export function AlertsTable({
+  alerts,
+  onAcknowledge,
+  onComplete,
+  isLoading,
+}: AlertsTableProps) {
+  const [confirmingComplete, setConfirmingComplete] = useState<string | null>(null);
+  const [processingId, setProcessingId] = useState<string | null>(null);
+
+  const formatTime = (dateString: string) => {
+    return new Date(dateString).toLocaleTimeString('pt-BR', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+  };
+
+  const formatDate = (dateString: string) => {
+    return new Date(dateString).toLocaleDateString('pt-BR', {
+      day: '2-digit',
+      month: '2-digit',
+    });
+  };
+
+  const getTimeUntil = (dateString: string) => {
+    const date = new Date(dateString);
+    const now = new Date();
+    const diff = date.getTime() - now.getTime();
+    const minutes = Math.floor(Math.abs(diff) / 60000);
+    const hours = Math.floor(minutes / 60);
+    const mins = minutes % 60;
+
+    if (diff < 0) {
+      if (hours > 0) {
+        return `Atrasado ${hours}h ${mins}min`;
+      }
+      return `Atrasado ${mins}min`;
+    } else {
+      if (hours > 0) {
+        return `Em ${hours}h ${mins}min`;
+      }
+      return `Em ${mins}min`;
+    }
+  };
+
+  const isOverdue = (dateString: string) =>
+    new Date(dateString) < new Date();
+
+  const getRiskBadge = (level: string) => {
+    switch (level) {
+      case 'high':
+        return <Badge variant="destructive">Alto Risco</Badge>;
+      case 'medium':
+        return (
+          <Badge className="bg-warning text-warning-foreground">
+            Risco Médio
+          </Badge>
+        );
+      case 'low':
+        return <Badge variant="secondary">Baixo Risco</Badge>;
+      default:
+        return null;
+    }
+  };
+
+  const getStatusBadge = (status: string) => {
+    switch (status) {
+      case 'acknowledged':
+        return (
+          <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-200">
+            Reconhecido
+          </Badge>
+        );
+      case 'pending':
+        return <Badge variant="outline">Pendente</Badge>;
+      default:
+        return null;
+    }
+  };
+
+  const handleAcknowledgeClick = async (alertId: string) => {
+    setProcessingId(alertId);
+    await onAcknowledge(alertId);
+    setProcessingId(null);
+  };
+
+  const handleCompleteClick = async (alertId: string) => {
+    setProcessingId(alertId);
+    await onComplete(alertId);
+    setProcessingId(null);
+    setConfirmingComplete(null);
+  };
+
+  const sortedAlerts = [...alerts].sort((a, b) => {
+    const aOverdue = isOverdue(a.nextRepositioning);
+    const bOverdue = isOverdue(b.nextRepositioning);
+
+    if (aOverdue && !bOverdue) return -1;
+    if (!aOverdue && bOverdue) return 1;
+
+    return (
+      new Date(a.nextRepositioning).getTime() -
+      new Date(b.nextRepositioning).getTime()
+    );
+  });
+
+  if (isLoading) {
+    return (
+      <div className="p-6">
+        <div className="space-y-3">
+          {[...Array(5)].map((_, i) => (
+            <Skeleton key={i} className="h-16 w-full" />
+          ))}
+        </div>
+      </div>
+    );
+  }
+
+  if (alerts.length === 0) {
+    return (
+      <EmptyState
+        icon={CheckCircle2}
+        title="Nenhum alerta ativo"
+        description="Todos os pacientes estão com reposicionamento em dia. Continue monitorando!"
+      />
+    );
+  }
+
+  return (
+    <>
+      <div className="overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Paciente</TableHead>
+              <TableHead>Quarto/Leito</TableHead>
+              <TableHead>Risco</TableHead>
+              <TableHead>Último Reposic.</TableHead>
+              <TableHead>Próximo Reposic.</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Ações</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {sortedAlerts.map((alert) => {
+              const overdue = isOverdue(alert.nextRepositioning);
+              const isProcessing = processingId === alert.id;
+
+              return (
+                <TableRow
+                  key={alert.id}
+                  className={overdue ? 'bg-danger-light/20' : ''}
+                >
+                  <TableCell>
+                    <div className="flex items-center gap-2">
+                      {overdue && (
+                        <AlertTriangle className="w-4 h-4 text-danger flex-shrink-0" />
+                      )}
+                      <span className="truncate">{alert.patientName}</span>
+                    </div>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    {alert.room} / {alert.bed}
+                  </TableCell>
+                  <TableCell>{getRiskBadge(alert.riskLevel)}</TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    <div className="flex items-center gap-2">
+                      <Clock className="w-4 h-4 text-muted-foreground flex-shrink-0" />
+                      <div>
+                        <div>{formatTime(alert.lastRepositioning)}</div>
+                        <div className="text-muted-foreground">
+                          {formatDate(alert.lastRepositioning)}
+                        </div>
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell className="whitespace-nowrap">
+                    <div className={overdue ? 'text-danger' : ''}>
+                      <div>{formatTime(alert.nextRepositioning)}</div>
+                      <div className="text-muted-foreground">
+                        {getTimeUntil(alert.nextRepositioning)}
+                      </div>
+                    </div>
+                  </TableCell>
+                  <TableCell>{getStatusBadge(alert.status)}</TableCell>
+                  <TableCell>
+                    <div className="flex gap-2">
+                      {alert.status === 'pending' && (
+                        <Button
+                          size="sm"
+                          variant="outline"
+                          onClick={() => handleAcknowledgeClick(alert.id)}
+                          disabled={isProcessing}
+                        >
+                          <Eye className="w-4 h-4 mr-1" />
+                          Reconhecer
+                        </Button>
+                      )}
+                      <Button
+                        size="sm"
+                        onClick={() => setConfirmingComplete(alert.id)}
+                        disabled={isProcessing}
+                      >
+                        <CheckCircle2 className="w-4 h-4 mr-1" />
+                        Reposicionar
+                      </Button>
+                    </div>
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </div>
+
+      {/* Confirmation Dialog */}
+      <AlertDialog
+        open={confirmingComplete !== null}
+        onOpenChange={(open) => !open && setConfirmingComplete(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Confirmar Reposicionamento</AlertDialogTitle>
+            <AlertDialogDescription>
+              Você confirma que o paciente foi reposicionado? Esta ação irá
+              encerrar o alerta e registrar o evento.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() =>
+                confirmingComplete && handleCompleteClick(confirmingComplete)
+              }
+            >
+              Confirmar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+    </>
+  );
+}

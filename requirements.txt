@@ -10,3 +10,4 @@ pytest-asyncio
 redis
 structlog
 prometheus-client
+passlib[bcrypt]

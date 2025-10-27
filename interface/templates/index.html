@@ -49,16 +49,17 @@
           <option value="{{ p }}" {% if pid == p %}selected{% endif %}>{{ p }}</option>
         {% endfor %}
       </select>
-      <input type="hidden" id="now" name="now" value="{{ now or '' }}" />
-      <input type="hidden" id="horas" name="horas" value="{{ horas if horas is not none else '' }}" />
+  <input type="hidden" id="now" name="now" value="{{ now or '' }}" />
+  <input type="hidden" id="horas" name="horas" value="{{ horas if horas is not none else '' }}" />
+  <input type="hidden" id="mode" name="mode" value="{{ mode or 'live' }}" />
     </div>
 
     <div
       id="timeline"
       hx-get="/partials/timeline"
-      hx-trigger="load, every 2s, refresh"
+      hx-trigger="{{ 'load, every 2s, refresh' if mode == 'live' else 'load, refresh' }}"
       hx-swap="innerHTML"
-      hx-include="#now,#pid,#horas,#rate"
+      hx-include="#now,#pid,#horas,#rate,#mode"
     ></div>
 
     <table>
@@ -78,9 +79,9 @@
       <tbody
         id="tbody-alertas"
         hx-get="/partials/alertas"
-        hx-trigger="load, every 2s, refresh"
+        hx-trigger="{{ 'load, every 2s, refresh' if mode == 'live' else 'load, refresh' }}"
         hx-swap="innerHTML"
-        hx-include="#now,#pid,#horas,#rate"
+        hx-include="#now,#pid,#horas,#rate,#mode"
       >
         {% include 'partials/alertas_rows.html' %}
       </tbody>

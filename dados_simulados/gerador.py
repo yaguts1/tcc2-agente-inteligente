@@ -8,6 +8,13 @@ import numpy as np
 import pandas as pd
 from typing import Tuple
 
+from .contextos import (
+    EventoContextual,
+    gerar_eventos_contextuais,
+    adicionar_contextos_na_grade,
+    validar_eventos_contextuais,
+)
+
 POSTURAS = ["supino", "lateral_direito", "lateral_esquerdo", "prono"]
 
 # Transições válidas (ajuste como quiser)
@@ -16,6 +23,25 @@ TRANSICOES_VALIDAS = {
     "lateral_direito": ["supino", "prono"],
     "lateral_esquerdo": ["supino", "prono"],
     "prono": ["lateral_direito", "lateral_esquerdo"],
+}
+
+# NOVO: Perfis heterogêneos predefinidos (Problema 3)
+PERFIS_PREDEFINIDOS = {
+    "baixo": {
+        "limite_tempo_postura": 150,
+        "prob_falha_reposicao": 0.4,
+        "duracao_refeicao": 30,
+    },
+    "medio": {
+        "limite_tempo_postura": 120,
+        "prob_falha_reposicao": 0.7,
+        "duracao_refeicao": 30,
+    },
+    "alto": {
+        "limite_tempo_postura": 90,
+        "prob_falha_reposicao": 0.85,
+        "duracao_refeicao": 25,
+    },
 }
 
 # (média_min, desvio_min) por postura
@@ -140,11 +166,30 @@ def gerar_sessao_simulada(
     passo_min: int = 5,
     inicio: datetime | None = None,
     perfil: PerfilPaciente | None = None,
-) -> pd.DataFrame:
+    incluir_contexto: bool = True,
+    tipos_eventos: dict[str, bool] | None = None,
+) -> tuple[pd.DataFrame, list[EventoContextual]]:
     """
-    Gera série temporal de posturas (grade regular):
-    - timestamp (ISO)
-    - postura (str)
+    Gera série temporal de posturas (grade regular) com contextos hospitalares.
+    
+    Args:
+        duracao_horas: Duração da simulação em horas
+        seed: Seed para reproducibilidade
+        passo_min: Intervalo da grade em minutos
+        inicio: Timestamp inicial (se None, usa agora - duracao_horas)
+        perfil: PerfilPaciente (se None, usa padrão)
+        incluir_contexto: Se True, inclui eventos agendados (refeições, cirurgias, etc)
+        tipos_eventos: Dict indicando quais tipos de eventos incluir
+                      Ex: {"refeicao": True, "cirurgia": False}
+    
+    Returns:
+        (grade_dataframe, eventos_contextuais)
+        
+        grade_dataframe tem colunas:
+        - timestamp (ISO)
+        - postura (str)
+        - contexto (str ou None): tipo de evento contextual
+        - suprime_alerta (bool): se alerta deve ser suprimido neste momento
     """
     agora = datetime.now().replace(second=0, microsecond=0)
     if inicio is None:
@@ -154,9 +199,31 @@ def gerar_sessao_simulada(
     if perfil is None:
         perfil = PerfilPaciente()
 
+    # Gera eventos de simulação normal
     df_eventos = _gerar_eventos(inicio, fim, perfil, seed)
     df_grade = _expandir_para_grade(df_eventos, passo_min, inicio, fim)
-    return df_grade
+    
+    # Adiciona contextos hospitalares
+    contextos = []
+    if incluir_contexto:
+        contextos = gerar_eventos_contextuais(
+            inicio=inicio,
+            fim=fim,
+            tipos_eventos=tipos_eventos,
+            seed=seed,
+        )
+        
+        # Marca contextos na grade
+        df_grade = adicionar_contextos_na_grade(df_grade, contextos)
+        
+        # Valida
+        is_valid, erros = validar_eventos_contextuais(contextos, inicio, fim)
+        if not is_valid:
+            print("⚠️ Aviso: Alguns eventos contextuais têm problemas:")
+            for erro in erros:
+                print(f"  {erro}")
+    
+    return df_grade, contextos
 
 def gerar_eventos_sessao(
     duracao_horas: int = 24,
@@ -195,29 +262,92 @@ def gerar_sessao_multi(
     passo_min: int,
     seed: int,
     perfil: str = "medio",
-) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """Gera grade e eventos para multiplos pacientes simulados."""
+    incluir_contexto: bool = True,
+    tipos_eventos: dict[str, bool] | None = None,
+    perfis_customizados: list[PerfilPaciente] | None = None,
+    distribuir_por_risco: bool = False,
+) -> Tuple[dict[str, pd.DataFrame], dict[str, list[EventoContextual]], pd.DataFrame]:
+    """
+    Gera grade e eventos para múltiplos pacientes simulados.
+    
+    Args:
+        pacientes: Número de pacientes
+        horas: Duração da simulação em horas
+        passo_min: Intervalo da grade em minutos
+        seed: Seed para reproducibilidade
+        perfil: Tipo de perfil padrão (baixo/medio/alto)
+        incluir_contexto: Se True, inclui eventos agendados
+        tipos_eventos: Dict indicando quais tipos de eventos incluir
+        perfis_customizados: Lista de PerfilPaciente customizados (se None, usa padrão)
+        distribuir_por_risco: Se True, distribui pacientes entre baixo/médio/alto risco
+    
+    Returns:
+        (grades_dict, contextos_dict, eventos_df)
+        
+        grades_dict: {paciente_id: grade_dataframe, ...}
+        contextos_dict: {paciente_id: [EventoContextual, ...], ...}
+        eventos_df: DataFrame com todos os eventos consolidados
+    """
     if pacientes < 1:
-        raise ValueError("O numero de pacientes deve ser pelo menos 1.")
+        raise ValueError("O número de pacientes deve ser pelo menos 1.")
 
     grade_frames: list[pd.DataFrame] = []
     eventos_frames: list[pd.DataFrame] = []
+    grades_dict = {}
+    contextos_dict = {}
+    
+    agora = datetime.now().replace(second=0, microsecond=0)
+    inicio_base = agora - timedelta(hours=horas)
+    fim_base = inicio_base + timedelta(hours=horas)
+
+    # NOVO: Determinar perfis heterogêneos (Problema 3)
+    if perfis_customizados is not None:
+        if len(perfis_customizados) != pacientes:
+            raise ValueError(
+                f"Número de perfis ({len(perfis_customizados)}) "
+                f"deve ser igual ao número de pacientes ({pacientes})"
+            )
+        perfis_lista = perfis_customizados
+    elif distribuir_por_risco:
+        # Distribui entre baixo, médio, alto risco
+        niveis = ["baixo", "medio", "alto"]
+        perfis_lista = []
+        for idx in range(pacientes):
+            nivel = niveis[idx % 3]
+            params = PERFIS_PREDEFINIDOS[nivel]
+            perfis_lista.append(PerfilPaciente(**params))
+    else:
+        # Usa o perfil padrão para todos
+        params = PERFIS_PREDEFINIDOS.get(perfil, PERFIS_PREDEFINIDOS["medio"])
+        perfis_lista = [PerfilPaciente(**params) for _ in range(pacientes)]
 
     for idx in range(pacientes):
-        paciente_id = f"P{idx + 1}"
-        perfil_paciente = PerfilPaciente()  # placeholder para personalizacao futura
-        df_grade = gerar_sessao_simulada(
+        paciente_id = f"PAC-{idx:04d}"
+        perfil_paciente = perfis_lista[idx]  # NOVO: Usa perfil específico
+        
+        df_grade, contextos = gerar_sessao_simulada(
             duracao_horas=horas,
             seed=seed + idx,
             passo_min=passo_min,
+            inicio=inicio_base,
             perfil=perfil_paciente,
-        ).copy()
+            incluir_contexto=incluir_contexto,
+            tipos_eventos=tipos_eventos,
+        )
+        
+        df_grade = df_grade.copy()
         df_grade.insert(0, "paciente_id", paciente_id)
         grade_frames.append(df_grade)
+        grades_dict[paciente_id] = df_grade
 
+        # Armazena contextos
+        contextos_dict[paciente_id] = contextos
+
+        # Gera eventos para o DataFrame consolidado
         df_eventos = gerar_eventos_sessao(
             duracao_horas=horas,
             seed=seed + idx,
+            inicio=inicio_base,
             perfil=perfil_paciente,
         ).copy()
         df_eventos.insert(0, "paciente_id", paciente_id)
@@ -233,4 +363,4 @@ def gerar_sessao_multi(
     else:
         df_eventos_all = df_eventos_all.sort_values(["paciente_id"]).reset_index(drop=True)
 
-    return df_grade_all, df_eventos_all
+    return grades_dict, contextos_dict, df_eventos_all

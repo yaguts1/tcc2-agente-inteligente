@@ -14,14 +14,20 @@ import unicodedata
 from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
+import random
+import string
 
 import structlog
 from fastapi import FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile, status
-from fastapi.responses import FileResponse, HTMLResponse
+from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from fastapi.templating import Jinja2Templates
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
+from contextlib import asynccontextmanager
+from fastapi.staticfiles import StaticFiles
 
 from interface.api import router as api_router
+from interface.api import reconcile_device_events
+import asyncio
 
 from interface.dao import (
     atualizar_paciente,
@@ -32,15 +38,91 @@ from interface.dao import (
     listar_fichas_pacientes,
     obter_documento,
     obter_ficha_paciente,
+    obter_ficha_por_cama,
     registrar_documento,
     remover_documento,
     selecionar_alertas_janela,
+    inserir_timeline_event,
+    inserir_timeline_event as _dao_inserir_timeline_event,
+    listar_device_events,
 )
 
 DB_PATH = os.getenv("UPP_DB_PATH", "dados.db")
 
-app = FastAPI(title="Monitor de Alertas UPP")
+@asynccontextmanager
+async def _lifespan(app: FastAPI):
+    # Ensure DB schema available at startup (non-fatal)
+    try:
+        criar_esquema(DB_PATH)
+        logger.info("schema_garantido", db_path=DB_PATH)
+    except Exception as exc:  # pragma: no cover - log but do not fail startup
+        logger.warning("schema_nao_garantido", motivo=str(exc))
+
+    # Start reconciler background task
+    try:
+        interval_raw = os.getenv("DEVICE_RECONCILE_INTERVAL", "30")
+        interval = max(1, int(interval_raw))
+    except Exception:
+        interval = 30
+
+    async def _loop() -> None:
+        logger.info("reconciler_started", interval=interval)
+        while True:
+            try:
+                result = await reconcile_device_events(None, 100)
+                if result and (result.get("processed", 0) or result.get("skipped", 0)):
+                    logger.info("reconciler_cycle", processed=result.get("processed"), skipped=result.get("skipped"))
+            except asyncio.CancelledError:
+                logger.info("reconciler_cancelled")
+                raise
+            except Exception as exc:
+                logger.exception("reconciler_error", motivo=str(exc))
+            try:
+                await asyncio.sleep(interval)
+            except asyncio.CancelledError:
+                logger.info("reconciler_sleep_cancelled")
+                raise
+
+    task = asyncio.create_task(_loop(), name="device_reconciler")
+    app.state._reconcile_task = task
+
+    try:
+        yield
+    finally:
+        # cancel reconciler on shutdown
+        task = getattr(app.state, "_reconcile_task", None)
+        if task is not None and not task.done():
+            task.cancel()
+            try:
+                await task
+            except asyncio.CancelledError:
+                logger.info("reconciler_stopped")
+
+
+app = FastAPI(title="Monitor de Alertas UPP", lifespan=_lifespan)
 app.include_router(api_router)
+# Serve built SPA (if present) under /site-ui. Support multiple possible build locations
+# (legacy `site_ui/dist`, or `frontend/build` produced by this repo's Vite config).
+_ROOT = Path(__file__).resolve().parents[1]
+_candidates = [
+    _ROOT / "site_ui" / "dist",
+    _ROOT / "frontend" / "build",
+    _ROOT / "frontend" / "dist",
+    _ROOT / "frontend",
+]
+SITE_UI_DIST = None
+for cand in _candidates:
+    # Require at least an index.html file to consider this a valid SPA dist
+    if (cand / "index.html").exists():
+        SITE_UI_DIST = cand
+        break
+
+if SITE_UI_DIST is not None:
+    try:
+        app.mount("/site-ui", StaticFiles(directory=str(SITE_UI_DIST), html=True), name="site_ui")
+    except Exception:
+        # Do not fail if static mounting is not possible
+        SITE_UI_DIST = None
 templates = Jinja2Templates(directory=str(Path(__file__).resolve().parent / "templates"))
 logger = structlog.get_logger(__name__)
 
@@ -536,6 +618,14 @@ def _alterar_status(
                     "duracao_min": duracao_min,
                 },
             )
+            # log timeline event for alert close
+            try:
+                ts_iso = fim_iso
+                ts_ms = int(base_now.timestamp() * 1000)
+                inserir_timeline_event(DB_PATH, paciente_id, ts_iso, ts_ms, "alert_close", descricao=None, meta={"inicio": inicio})
+            except Exception:
+                # timeline logging must not break normal flow
+                pass
         else:
             conn.execute(
                 """
@@ -545,6 +635,15 @@ def _alterar_status(
                 """,
                 {"status": status_destino, **params},
             )
+            # if this is an acknowledgement, log it in the timeline
+            try:
+                if str(status_destino).lower() == "reconhecido":
+                    base_now = datetime.now().replace(microsecond=0)
+                    ts_iso = base_now.strftime("%Y-%m-%dT%H:%M:%S")
+                    ts_ms = int(base_now.timestamp() * 1000)
+                    inserir_timeline_event(DB_PATH, paciente_id, ts_iso, ts_ms, "alert_ack", descricao=None, meta={"inicio": inicio})
+            except Exception:
+                pass
 
 
 
@@ -664,6 +763,145 @@ async def paciente_salvar(request: Request) -> HTMLResponse:
         "paciente-atualizado",
         {"paciente_id": paciente_id, "message": "Ficha salva com sucesso."},
     )
+    return response
+
+
+@app.post("/pacientes/generar", response_class=HTMLResponse)
+async def pacientes_gerar(request: Request) -> HTMLResponse:
+    """Gera em massa N fichas de paciente para testes.
+
+    Recebe o campo form `gerar_count` (int, 1-500) e opcional `seed` para
+    gerar nomes determinísticos. Retorna o mesmo fragmento de formulario
+    com um indicador de sucesso e dispara o gatilho HTMX `pacientes-gerados`.
+    """
+    form = await request.form()
+    try:
+        count_raw = form.get("gerar_count") or form.get("count") or "0"
+        count = int(str(count_raw).strip() or "0")
+    except ValueError:
+        count = 0
+    # clamp count
+    if count <= 0:
+        count = 0
+    if count > 500:
+        count = 500
+
+    seed_raw = form.get("seed")
+    if seed_raw is not None and str(seed_raw).strip() != "":
+        try:
+            seed_val = int(str(seed_raw))
+        except ValueError:
+            seed_val = sum(ord(c) for c in str(seed_raw))
+        rnd = random.Random(seed_val)
+    else:
+        rnd = random.Random()
+
+    # small name lists for generation
+    first_names = [
+        "Ana",
+        "Bruno",
+        "Carla",
+        "Daniel",
+        "Eduarda",
+        "Fabio",
+        "Gabriela",
+        "Henrique",
+        "Isabela",
+        "Joao",
+        "Karen",
+        "Lucas",
+        "Mariana",
+        "Nicolas",
+        "Olivia",
+        "Paulo",
+        "Quezia",
+        "Rafael",
+        "Sofia",
+        "Tiago",
+    ]
+    last_names = [
+        "Silva",
+        "Souza",
+        "Costa",
+        "Santos",
+        "Oliveira",
+        "Pereira",
+        "Rodrigues",
+        "Almeida",
+        "Nascimento",
+        "Lima",
+        "Araújo",
+        "Fernandes",
+        "Gomes",
+        "Ribeiro",
+        "Martins",
+    ]
+
+    perfis = ["baixo", "medio", "alto"]
+
+    # generation options: assign_camas (optional), cama_prefix (optional), cama_start (optional)
+    assign_camas_raw = form.get("assign_camas") or form.get("assign_cama")
+    assign_camas = str(assign_camas_raw).strip() in {"1", "true", "True", "on"} if assign_camas_raw is not None else False
+    cama_prefix = str(form.get("cama_prefix") or "LEITO").strip() or "LEITO"
+    try:
+        cama_start = int(str(form.get("cama_start") or "1"))
+    except Exception:
+        cama_start = 1
+
+    created_ids: List[str] = []
+    assigned_camas: set[str] = set()
+    next_cama_index = cama_start
+
+    def _cama_exists(cama_id: str) -> bool:
+        # check DB and local assigned set
+        if cama_id in assigned_camas:
+            return True
+        try:
+            existing = obter_ficha_por_cama(DB_PATH, cama_id)
+            return existing is not None
+        except Exception:
+            return False
+
+    for i in range(count):
+        nome = f"{rnd.choice(first_names)} {rnd.choice(last_names)}"
+        # add a short random suffix to reduce collisions
+        if rnd.random() < 0.3:
+            nome = f"{nome} {rnd.choice(string.ascii_uppercase)}{rnd.randint(1,99)}"
+        perfil = rnd.choice(perfis)
+
+        cama_to_use = None
+        if assign_camas:
+            # find next available cama id (prefix-###)
+            attempts = 0
+            while attempts < 10000:
+                candidato = f"{cama_prefix}-{next_cama_index:03d}"
+                next_cama_index += 1
+                attempts += 1
+                if not _cama_exists(candidato):
+                    cama_to_use = candidato
+                    assigned_camas.add(candidato)
+                    break
+            # if none found, leave cama_to_use None
+
+        try:
+            ficha = criar_paciente(DB_PATH, nome, perfil, cama_to_use, "Ficha gerada automaticamente para testes.")
+            pid = ficha.get("paciente_id")
+            if pid:
+                created_ids.append(pid)
+        except Exception:
+            # ignore single creation errors and continue
+            continue
+
+    paciente = _montar_paciente_base()
+    contexto = _montar_contexto_formulario(
+        request,
+        paciente,
+        rotinas_editor=[],
+        form_success=True,
+    )
+    response = templates.TemplateResponse("pacientes/partials/form.html", contexto)
+    # Notify clients that patients were generated and include IDs (if any)
+    _set_hx_trigger(response, "pacientes-gerados", {"count": len(created_ids), "ids": created_ids})
     return response
 
 
@@ -813,6 +1051,7 @@ def api_alertas() -> List[dict]:
 
 def _render_alertas_fragment(request: Request) -> HTMLResponse:
     alertas_visiveis, horas, now_iso, rate, pid = _carregar_alertas_para_view(request)
+    mode = request.query_params.get("mode") or "live"
     contexto = {
         "request": request,
         "alertas_abertos": alertas_visiveis,
@@ -821,6 +1060,7 @@ def _render_alertas_fragment(request: Request) -> HTMLResponse:
         "now": now_iso,
         "rate": rate,
         "pid": pid,
+        "mode": mode,
     }
     return templates.TemplateResponse("partials/alertas_rows.html", contexto)
 
@@ -849,13 +1089,52 @@ def partial_timeline(request: Request) -> HTMLResponse:
         "horas": horas,
         "rate": rate,
         "pid": pid,
+        "mode": request.query_params.get("mode") or "live",
     }
     return templates.TemplateResponse("partials/timeline.html", contexto)
+
+
+@app.get("/admin/device_events", response_class=HTMLResponse)
+def admin_device_events(request: Request) -> HTMLResponse:
+    """Admin page showing pending device events and a manual reconcile action."""
+    events = listar_device_events(DB_PATH, limit=200)
+    contexto = {"request": request, "events": events}
+    return templates.TemplateResponse("device_events.html", contexto)
+
+
+@app.get("/partials/device_events", response_class=HTMLResponse)
+def partial_device_events(request: Request) -> HTMLResponse:
+    events = listar_device_events(DB_PATH, limit=200)
+    contexto = {"request": request, "events": events}
+    return templates.TemplateResponse("partials/device_events_rows.html", contexto)
+
+
+@app.post("/admin/device_events/reconcile", response_class=HTMLResponse)
+async def admin_device_events_reconcile(request: Request) -> HTMLResponse:
+    """Trigger reconciliation and return updated rows fragment (HTMX target)."""
+    # run reconcile (uses api helper imported earlier)
+    try:
+        result = await reconcile_device_events(None, 200)
+    except Exception as exc:
+        result = {"processed": 0, "skipped": 0, "error": str(exc)}
+    events = listar_device_events(DB_PATH, limit=200)
+    response = templates.TemplateResponse("partials/device_events_rows.html", {"request": request, "events": events, "result": result})
+    # notify client via HTMX trigger
+    try:
+        _set_hx_trigger(response, "device-events-reconciled", result)
+    except Exception:
+        pass
+    return response
 
 
 @app.get("/", response_class=HTMLResponse)
 def index(request: Request) -> HTMLResponse:
     """Renderiza a página principal com a lista de alertas."""
+    # If the SPA dist exists, redirect root to /site-ui/ so the new front is shown.
+    if SITE_UI_DIST is not None and SITE_UI_DIST.exists():
+        # keep a trailing slash so relative asset paths in the SPA work correctly
+        return RedirectResponse(url="/site-ui/")
+
     alertas_visiveis, horas, now_iso, rate, pid = _carregar_alertas_para_view(request)
     contexto = {
         "request": request,
@@ -865,6 +1144,7 @@ def index(request: Request) -> HTMLResponse:
         "now": now_iso,
         "rate": rate,
         "pid": pid,
+        "mode": request.query_params.get("mode") or "live",
     }
     return templates.TemplateResponse("index.html", contexto)
 
@@ -884,13 +1164,7 @@ def encerrar_alerta(request: Request, paciente_id: str, inicio: str) -> HTMLResp
     return _render_alertas_fragment(request)
 
 
-@app.on_event("startup")
-def _init_schema() -> None:
-    try:
-        criar_esquema(DB_PATH)
-        logger.info("schema_garantido", db_path=DB_PATH)
-    except Exception as exc:  # pragma: no cover - log but do not fail startup
-        logger.warning("schema_nao_garantido", motivo=str(exc))
+
 
 
 @app.get("/metrics")

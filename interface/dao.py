@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 import sqlite3
 from datetime import datetime, timedelta
+import json
 from pathlib import Path
 from typing import Dict, List, Sequence
 
@@ -355,10 +356,96 @@ def criar_esquema(db_path: str = "dados.db") -> None:
                 ON alertas (paciente_id, inicio);
             CREATE INDEX IF NOT EXISTS idx_eventos_inicio
                 ON eventos (inicio);
+            CREATE TABLE IF NOT EXISTS timeline_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                paciente_id TEXT,
+                ts TEXT NOT NULL,
+                ts_ms INTEGER NOT NULL,
+                tipo TEXT NOT NULL,
+                descricao TEXT,
+                meta TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_timeline_paciente_ts ON timeline_events (paciente_id, ts);
+            CREATE TABLE IF NOT EXISTS devices (
+                device_id TEXT PRIMARY KEY,
+                meta TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE TABLE IF NOT EXISTS device_assignments (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id TEXT NOT NULL,
+                cama_id TEXT,
+                paciente_id TEXT,
+                start_ts TEXT NOT NULL,
+                start_ms INTEGER NOT NULL,
+                end_ts TEXT,
+                end_ms INTEGER,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_device_assign_device_start ON device_assignments (device_id, start_ms);
+            CREATE INDEX IF NOT EXISTS idx_device_assign_cama_start ON device_assignments (cama_id, start_ms);
+            CREATE TABLE IF NOT EXISTS paciente_cama_history (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                paciente_id TEXT NOT NULL,
+                cama_id TEXT NOT NULL,
+                start_ts TEXT NOT NULL,
+                start_ms INTEGER NOT NULL,
+                end_ts TEXT,
+                end_ms INTEGER,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_paciente_cama_start ON paciente_cama_history (paciente_id, start_ms);
+            CREATE INDEX IF NOT EXISTS idx_cama_paciente_start ON paciente_cama_history (cama_id, start_ms);
+            CREATE TABLE IF NOT EXISTS device_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                device_id TEXT NOT NULL,
+                ts TEXT NOT NULL,
+                ts_ms INTEGER NOT NULL,
+                payload TEXT NOT NULL,
+                created_at TEXT NOT NULL DEFAULT (datetime('now')),
+                processed_at TEXT
+            );
+            CREATE INDEX IF NOT EXISTS idx_device_events_device_ts ON device_events (device_id, ts_ms);
+            CREATE TABLE IF NOT EXISTS users (
+                username TEXT PRIMARY KEY,
+                password_hash TEXT NOT NULL,
+                display_name TEXT,
+                created_at TEXT NOT NULL DEFAULT (datetime('now'))
+            );
+            CREATE INDEX IF NOT EXISTS idx_users_created_at ON users (created_at);
             """
         )
         _ensure_cama_column(conn)
         conn.commit()
+
+
+def criar_usuario(db_path: str, username: str, password_hash: str, display_name: str | None = None) -> None:
+    """Cria um usuario novo. Levanta ValueError se ja existir."""
+    uname = str(username or "").strip()
+    if not uname:
+        raise ValueError("username invalido")
+    ph = str(password_hash or "").strip()
+    if not ph:
+        raise ValueError("password_hash necessario")
+    disp = None if display_name is None else str(display_name).strip() or None
+    agora = _utc_now_iso()
+    with _connect(db_path) as conn:
+        cur = conn.execute("SELECT username FROM users WHERE username = ?", (uname,))
+        if cur.fetchone() is not None:
+            raise ValueError("usuario ja existe")
+        conn.execute("INSERT INTO users (username, password_hash, display_name, created_at) VALUES (?, ?, ?, ?)", (uname, ph, disp, agora))
+        conn.commit()
+
+
+def obter_usuario_por_nome(db_path: str, username: str) -> dict | None:
+    uname = str(username or "").strip()
+    if not uname:
+        return None
+    with _connect(db_path) as conn:
+        cur = conn.execute("SELECT username, password_hash, display_name, created_at FROM users WHERE username = ?", (uname,))
+        row = cur.fetchone()
+    return None if row is None else dict(row)
 
 
 def proximo_identificador_paciente(db_path: str, prefixo: str = PACIENTE_ID_PREFIX) -> str:
@@ -462,6 +549,36 @@ def criar_paciente(
             (paciente_id, nome_limpo, perfil_norm, cama_norm, obs_val, agora_iso, agora_iso),
         )
         _replace_rotinas(conn, paciente_id, rotinas)
+        # If a cama was provided, register initial paciente->cama history
+        if cama_norm is not None:
+            # use same timestamp used for created_at
+            start_ms = int(pd.to_datetime(agora_iso).timestamp() * 1000)
+            conn.execute(
+                "INSERT INTO paciente_cama_history (paciente_id, cama_id, start_ts, start_ms) VALUES (?, ?, ?, ?)",
+                (paciente_id, cama_norm, agora_iso, start_ms),
+            )
+            # if there is a device currently assigned to this cama, bind it to the paciente
+            try:
+                cur = conn.execute(
+                    "SELECT device_id FROM device_assignments WHERE cama_id = ? AND end_ms IS NULL ORDER BY start_ms DESC LIMIT 1",
+                    (cama_norm,),
+                )
+                row = cur.fetchone()
+                if row is not None:
+                    device_id = row["device_id"]
+                    # start a new device_assignment that links this device to the paciente
+                    now_ms = int(pd.to_datetime(agora_iso).timestamp() * 1000)
+                    conn.execute(
+                        "UPDATE device_assignments SET end_ts = ?, end_ms = ? WHERE device_id = ? AND end_ms IS NULL",
+                        (agora_iso, now_ms, device_id),
+                    )
+                    conn.execute(
+                        "INSERT INTO device_assignments (device_id, cama_id, paciente_id, start_ts, start_ms) VALUES (?, ?, ?, ?, ?)",
+                        (device_id, cama_norm, paciente_id, agora_iso, now_ms),
+                    )
+            except Exception:
+                # non-fatal: do not prevent patient creation
+                pass
         conn.commit()
     return obter_ficha_paciente(db_path, paciente_id, incluir_rotinas=True)  # type: ignore[return-value]
 
@@ -484,12 +601,15 @@ def atualizar_paciente(
     cama_norm = _normalize_cama_id(cama_id)
     obs_val = None if observacoes is None else str(observacoes).strip() or None
     with _connect(db_path) as conn:
-        cursor = conn.execute(
-            "SELECT 1 FROM paciente_fichas WHERE paciente_id = ?",
+        # fetch existing ficha to detect cama changes
+        cur = conn.execute(
+            "SELECT paciente_id, cama_id FROM paciente_fichas WHERE paciente_id = ?",
             (paciente_id,),
         )
-        if cursor.fetchone() is None:
+        row = cur.fetchone()
+        if row is None:
             raise LookupError("Paciente nao encontrado.")
+        existing_cama = row["cama_id"]
         _assert_cama_disponivel(conn, cama_norm, ignorar_paciente=paciente_id)
         agora_iso = _utc_now_iso()
         conn.execute(
@@ -502,6 +622,51 @@ def atualizar_paciente(
         )
         if rotinas is not None:
             _replace_rotinas(conn, paciente_id, rotinas)
+        # if cama changed, close previous history and create new history entry
+        try:
+            if (existing_cama or None) != (cama_norm or None):
+                # close last open history for this paciente (if any)
+                cur2 = conn.execute(
+                    "SELECT id, start_ms FROM paciente_cama_history WHERE paciente_id = ? AND end_ms IS NULL ORDER BY start_ms DESC LIMIT 1",
+                    (paciente_id,),
+                )
+                r2 = cur2.fetchone()
+                now_ms = int(pd.to_datetime(agora_iso).timestamp() * 1000)
+                if r2 is not None:
+                    aid = int(r2["id"])
+                    conn.execute(
+                        "UPDATE paciente_cama_history SET end_ts = ?, end_ms = ? WHERE id = ?",
+                        (agora_iso, now_ms, aid),
+                    )
+                # start new history if new cama provided
+                if cama_norm is not None:
+                    conn.execute(
+                        "INSERT INTO paciente_cama_history (paciente_id, cama_id, start_ts, start_ms) VALUES (?, ?, ?, ?)",
+                        (paciente_id, cama_norm, agora_iso, now_ms),
+                    )
+                    # if there is a device currently assigned to this cama, bind it to the paciente
+                    try:
+                        cur = conn.execute(
+                            "SELECT device_id FROM device_assignments WHERE cama_id = ? AND end_ms IS NULL ORDER BY start_ms DESC LIMIT 1",
+                            (cama_norm,),
+                        )
+                        row = cur.fetchone()
+                        if row is not None:
+                            device_id = row["device_id"]
+                            # close previous open assignment and start new one linking device->paciente
+                            conn.execute(
+                                "UPDATE device_assignments SET end_ts = ?, end_ms = ? WHERE device_id = ? AND end_ms IS NULL",
+                                (agora_iso, now_ms, device_id),
+                            )
+                            conn.execute(
+                                "INSERT INTO device_assignments (device_id, cama_id, paciente_id, start_ts, start_ms) VALUES (?, ?, ?, ?, ?)",
+                                (device_id, cama_norm, paciente_id, agora_iso, now_ms),
+                            )
+                    except Exception:
+                        pass
+        except Exception:
+            # non-fatal: keep patient update even if history logging fails
+            pass
         conn.commit()
     ficha = obter_ficha_paciente(db_path, paciente_id, incluir_rotinas=True)
     if ficha is None:
@@ -635,7 +800,36 @@ def inserir_alertas(
             """,
             registros,
         )
-        return conn.total_changes - before
+        # number of DB changes caused by alert inserts only
+        delta_alerts = conn.total_changes - before
+        # For each alerta we persisted, add a timeline event so historical navigation
+        # can reflect when alerts were generated. We insert an event with tipo 'alert_open'
+        # using the inicio timestamp from the alerta payload and an epoch ms for easier queries.
+        try:
+            for idx, alerta in enumerate(alertas):
+                paciente_id = str(alerta["paciente_id"]) if isinstance(alerta, dict) else registros[idx][0]
+                inicio_val = inicio_series.iat[idx]
+                status_val = str(alerta.get("status", "")) if isinstance(alerta, dict) else registros[idx][6]
+                if inicio_val is None:
+                    continue
+                # only log opening events for alerts that are 'aberto' or were inserted now
+                if status_val.lower() != "aberto":
+                    continue
+                ts_iso = inicio_val
+                try:
+                    ts_ms = int(pd.to_datetime(ts_iso).timestamp() * 1000)
+                except Exception:
+                    ts_ms = None
+                if ts_ms is None:
+                    continue
+                conn.execute(
+                    "INSERT INTO timeline_events (paciente_id, ts, ts_ms, tipo, descricao, meta) VALUES (?, ?, ?, ?, ?, ?)",
+                    (paciente_id, ts_iso, ts_ms, "alert_open", None, None),
+                )
+        except Exception:
+            # Do not fail alert insertion for timeline logging errors
+            pass
+        return int(delta_alerts)
 
 
 def contar_por_paciente(db_path: str, tabela: str) -> Dict[str, int]:
@@ -700,3 +894,372 @@ def listar_pacientes(db_path: str, horas: int | None = 24) -> list[str]:
             )
         rows = cur.fetchall()
     return [str(row[0]) for row in rows]
+
+
+def inserir_timeline_event(
+    db_path: str,
+    paciente_id: str,
+    ts: str,
+    ts_ms: int,
+    tipo: str,
+    descricao: str | None = None,
+    meta: dict | None = None,
+) -> int:
+    """Insere um evento na timeline e retorna o id do registro inserido."""
+    if not ts or ts_ms is None:
+        raise ValueError("ts e ts_ms devem ser informados para inserir um evento de timeline.")
+    meta_text = None if meta is None else json.dumps(meta, ensure_ascii=False)
+    with _connect(db_path) as conn:
+        # paciente_id may be None or empty for generic events; only ensure paciente when provided
+        if paciente_id:
+            _ensure_paciente(conn, paciente_id)
+        cursor = conn.execute(
+            "INSERT INTO timeline_events (paciente_id, ts, ts_ms, tipo, descricao, meta) VALUES (?, ?, ?, ?, ?, ?)",
+            (paciente_id, ts, int(ts_ms), tipo, descricao, meta_text),
+        )
+        return int(cursor.lastrowid)
+
+
+def selecionar_timeline(
+    db_path: str,
+    paciente_id: str | None = None,
+    start_ms: int | None = None,
+    end_ms: int | None = None,
+    limit: int = 1000,
+) -> list[dict]:
+    """Seleciona eventos da timeline aplicando filtros opcionais. Retorna lista de dicts.
+
+    Ordena por `ts_ms` ascendente.
+    """
+    sql = "SELECT id, paciente_id, ts, ts_ms, tipo, descricao, meta, created_at FROM timeline_events"
+    params: list = []
+    where_clauses: list[str] = []
+    if paciente_id:
+        where_clauses.append("paciente_id = ?")
+        params.append(paciente_id)
+    if start_ms is not None:
+        where_clauses.append("ts_ms >= ?")
+        params.append(int(start_ms))
+    if end_ms is not None:
+        where_clauses.append("ts_ms <= ?")
+        params.append(int(end_ms))
+    if where_clauses:
+        sql = f"{sql} WHERE {' AND '.join(where_clauses)}"
+    sql = f"{sql} ORDER BY ts_ms ASC LIMIT ?"
+    params.append(int(limit))
+    with _connect(db_path) as conn:
+        cur = conn.execute(sql, tuple(params))
+        rows = cur.fetchall()
+    results: list[dict] = []
+    for row in rows:
+        meta_val = row["meta"]
+        try:
+            meta_parsed = None if meta_val is None else json.loads(meta_val)
+        except Exception:
+            meta_parsed = None
+        results.append(
+            {
+                "id": row["id"],
+                "paciente_id": row["paciente_id"],
+                "ts": row["ts"],
+                "ts_ms": int(row["ts_ms"]),
+                "tipo": row["tipo"],
+                "descricao": row["descricao"],
+                "meta": meta_parsed,
+                "created_at": row["created_at"],
+            }
+        )
+    return results
+
+
+def alterar_status_alerta(
+    db_path: str,
+    paciente_id: str,
+    inicio: str,
+    status_destino: str,
+    definir_fim: bool = False,
+    now_dt: datetime | None = None,
+) -> None:
+    """Atualiza o status de um alerta e registra evento de timeline quando aplicavel.
+
+    - status_destino: 'aberto'|'reconhecido'|'fechado'
+    - if definir_fim is True, sets fim and duracao_min based on now_dt or current time.
+    """
+    if not paciente_id or not inicio:
+        raise ValueError("paciente_id e inicio precisam ser informados")
+    with _connect(db_path) as conn:
+        cur = conn.execute(
+            "SELECT paciente_id FROM alertas WHERE paciente_id = ? AND inicio = ?",
+            (paciente_id, inicio),
+        )
+        if cur.fetchone() is None:
+            raise LookupError("Alerta nao encontrado.")
+
+        params = {"paciente_id": paciente_id, "inicio": inicio}
+        if definir_fim:
+            base_now = (now_dt or datetime.now()).replace(microsecond=0)
+            ini_dt = datetime.fromisoformat(inicio[:19])
+            fim_iso = base_now.strftime("%Y-%m-%dT%H:%M:%S")
+            duracao_min = round((base_now - ini_dt).total_seconds() / 60.0, 2)
+            conn.execute(
+                """
+                UPDATE alertas
+                SET status = :status, fim = :fim, duracao_min = :duracao_min
+                WHERE paciente_id = :paciente_id AND inicio = :inicio
+                """,
+                {
+                    "status": status_destino,
+                    "paciente_id": paciente_id,
+                    "inicio": inicio,
+                    "fim": fim_iso,
+                    "duracao_min": duracao_min,
+                },
+            )
+            # timeline log for alert close
+            try:
+                ts_iso = fim_iso
+                ts_ms = int(base_now.timestamp() * 1000)
+                inserir_timeline_event(db_path, paciente_id, ts_iso, ts_ms, "alert_close", descricao=None, meta={"inicio": inicio})
+            except Exception:
+                pass
+        else:
+            conn.execute(
+                """
+                UPDATE alertas
+                SET status = :status
+                WHERE paciente_id = :paciente_id AND inicio = :inicio
+                """,
+                {"status": status_destino, **params},
+            )
+            # timeline log for acknowledgement
+            try:
+                if str(status_destino).lower() == "reconhecido":
+                    base_now = datetime.now().replace(microsecond=0)
+                    ts_iso = base_now.strftime("%Y-%m-%dT%H:%M:%S")
+                    ts_ms = int(base_now.timestamp() * 1000)
+                    inserir_timeline_event(db_path, paciente_id, ts_iso, ts_ms, "alert_ack", descricao=None, meta={"inicio": inicio})
+            except Exception:
+                pass
+        conn.commit()
+
+
+def registrar_device(db_path: str, device_id: str, meta: dict | None = None) -> None:
+    """Registra um device (ESP32) no banco, armazenando metadados opcionais."""
+    if not device_id:
+        raise ValueError("device_id deve ser informado.")
+    meta_text = None if meta is None else json.dumps(meta, ensure_ascii=False)
+    with _connect(db_path) as conn:
+        conn.execute(
+            "INSERT OR IGNORE INTO devices (device_id, meta) VALUES (?, ?)",
+            (str(device_id), meta_text),
+        )
+
+
+def _to_ms(ts_iso: str | None, fallback_now: bool = True) -> int | None:
+    if ts_iso is None:
+        if not fallback_now:
+            return None
+        return int(pd.Timestamp.now().timestamp() * 1000)
+    try:
+        return int(pd.to_datetime(ts_iso).timestamp() * 1000)
+    except Exception:
+        if not fallback_now:
+            return None
+        return int(pd.Timestamp.now().timestamp() * 1000)
+
+
+def start_device_assignment(
+    db_path: str,
+    device_id: str,
+    cama_id: str | None = None,
+    paciente_id: str | None = None,
+    start_ts: str | None = None,
+    start_ms: int | None = None,
+) -> int:
+    """Inicia uma atribuição do device para uma cama/paciente no momento fornecido.
+
+    Retorna o id do registro inserido em `device_assignments`.
+    Se já existir uma atribuição aberta para o mesmo device, ela será finalizada com o mesmo start_ts.
+    """
+    if not device_id:
+        raise ValueError("device_id deve ser informado.")
+    if start_ms is None:
+        start_ms = _to_ms(start_ts, fallback_now=True)
+    if start_ts is None:
+        start_ts = _utc_now_iso()
+    cama_norm = _normalize_cama_id(cama_id)
+    paciente_norm = None if paciente_id is None else str(paciente_id)
+    with _connect(db_path) as conn:
+        # ensure device exists
+        conn.execute("INSERT OR IGNORE INTO devices (device_id) VALUES (?)", (device_id,))
+        # close any previous open assignment for this device
+        cur = conn.execute(
+            "SELECT id FROM device_assignments WHERE device_id = ? AND end_ms IS NULL ORDER BY start_ms DESC LIMIT 1",
+            (device_id,),
+        )
+        row = cur.fetchone()
+        if row is not None:
+            aid = int(row["id"])
+            conn.execute(
+                "UPDATE device_assignments SET end_ts = ?, end_ms = ? WHERE id = ?",
+                (start_ts, int(start_ms), aid),
+            )
+        cursor = conn.execute(
+            "INSERT INTO device_assignments (device_id, cama_id, paciente_id, start_ts, start_ms) VALUES (?, ?, ?, ?, ?)",
+            (device_id, cama_norm, paciente_norm, start_ts, int(start_ms)),
+        )
+        return int(cursor.lastrowid)
+
+
+def end_device_assignment(db_path: str, device_id: str, end_ts: str | None = None, end_ms: int | None = None) -> int:
+    """Encerra a última atribuição aberta para o device e retorna o número de linhas afetadas."""
+    if not device_id:
+        raise ValueError("device_id deve ser informado.")
+    if end_ms is None:
+        end_ms = _to_ms(end_ts, fallback_now=True)
+    if end_ts is None:
+        end_ts = _utc_now_iso()
+    with _connect(db_path) as conn:
+        cur = conn.execute(
+            "SELECT id FROM device_assignments WHERE device_id = ? AND end_ms IS NULL ORDER BY start_ms DESC LIMIT 1",
+            (device_id,),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return 0
+        aid = int(row["id"])
+        conn.execute(
+            "UPDATE device_assignments SET end_ts = ?, end_ms = ? WHERE id = ?",
+            (end_ts, int(end_ms), aid),
+        )
+        return 1
+
+
+def resolver_paciente_por_device_em(db_path: str, device_id: str, ts_ms: int) -> str | None:
+    """Resolve qual paciente (se houver) estava associado ao device no instante `ts_ms`.
+
+    Retorna o paciente_id ou None.
+    """
+    if not device_id:
+        return None
+    with _connect(db_path) as conn:
+        cur = conn.execute(
+            "SELECT paciente_id FROM device_assignments WHERE device_id = ? AND start_ms <= ? AND (end_ms IS NULL OR end_ms >= ?) ORDER BY start_ms DESC LIMIT 1",
+            (device_id, int(ts_ms), int(ts_ms)),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None
+        pid = row["paciente_id"]
+        return None if pid is None else str(pid)
+
+
+def listar_device_assignments(db_path: str, device_id: str | None = None, limit: int = 100) -> list[dict]:
+    sql = "SELECT id, device_id, cama_id, paciente_id, start_ts, start_ms, end_ts, end_ms, created_at FROM device_assignments"
+    params: list = []
+    if device_id:
+        sql = f"{sql} WHERE device_id = ?"
+        params.append(device_id)
+    sql = f"{sql} ORDER BY start_ms DESC LIMIT ?"
+    params.append(int(limit))
+    with _connect(db_path) as conn:
+        cur = conn.execute(sql, tuple(params))
+        rows = cur.fetchall()
+    results: list[dict] = []
+    for row in rows:
+        results.append({
+            "id": row["id"],
+            "device_id": row["device_id"],
+            "cama_id": row["cama_id"],
+            "paciente_id": row["paciente_id"],
+            "start_ts": row["start_ts"],
+            "start_ms": int(row["start_ms"]),
+            "end_ts": row["end_ts"],
+            "end_ms": (None if row["end_ms"] is None else int(row["end_ms"])),
+            "created_at": row["created_at"],
+        })
+    return results
+
+
+def inserir_device_event(db_path: str, device_id: str, ts: str, ts_ms: int, payload: dict) -> int:
+    """Armazena o payload bruto recebido de um device para posterior reconciliação.
+
+    Retorna o id do registro inserido.
+    """
+    if not device_id:
+        raise ValueError("device_id deve ser informado.")
+    meta_text = json.dumps(payload, ensure_ascii=False)
+    with _connect(db_path) as conn:
+        cursor = conn.execute(
+            "INSERT INTO device_events (device_id, ts, ts_ms, payload) VALUES (?, ?, ?, ?)",
+            (device_id, ts, int(ts_ms), meta_text),
+        )
+        return int(cursor.lastrowid)
+
+
+def listar_device_events(db_path: str, device_id: str | None = None, limit: int = 100, include_processed: bool = False) -> list[dict]:
+    """List device_events. By default only returns events where processed_at IS NULL.
+
+    Set include_processed=True to return all events regardless of processed_at.
+    """
+    sql = "SELECT id, device_id, ts, ts_ms, payload, created_at, processed_at FROM device_events"
+    params: list = []
+    where_clauses: list[str] = []
+    if device_id:
+        where_clauses.append("device_id = ?")
+        params.append(device_id)
+    if not include_processed:
+        where_clauses.append("processed_at IS NULL")
+    if where_clauses:
+        sql = f"{sql} WHERE {' AND '.join(where_clauses)}"
+    sql = f"{sql} ORDER BY ts_ms DESC LIMIT ?"
+    params.append(int(limit))
+    with _connect(db_path) as conn:
+        cur = conn.execute(sql, tuple(params))
+        rows = cur.fetchall()
+    results: list[dict] = []
+    for row in rows:
+        try:
+            payload_parsed = json.loads(row["payload"])
+        except Exception:
+            payload_parsed = None
+        results.append({
+            "id": row["id"],
+            "device_id": row["device_id"],
+            "ts": row["ts"],
+            "ts_ms": int(row["ts_ms"]),
+            "payload": payload_parsed,
+            "created_at": row["created_at"],
+            "processed_at": row["processed_at"],
+        })
+    return results
+
+
+def listar_devices(db_path: str) -> list[dict]:
+    with _connect(db_path) as conn:
+        cur = conn.execute("SELECT device_id, meta, created_at FROM devices ORDER BY created_at DESC")
+        rows = cur.fetchall()
+    results: list[dict] = []
+    for row in rows:
+        try:
+            meta_parsed = None if row["meta"] is None else json.loads(row["meta"])
+        except Exception:
+            meta_parsed = None
+        results.append({
+            "device_id": row["device_id"],
+            "meta": meta_parsed,
+            "created_at": row["created_at"],
+        })
+    return results
+
+
+def delete_device_event(db_path: str, event_id: int, processed_at: str | None = None) -> int:
+    """Mark a device_events row as processed (set processed_at). Returns number of rows updated.
+
+    This preserves the payload for auditability. If `processed_at` is None, current UTC timestamp is used.
+    """
+    if processed_at is None:
+        processed_at = _utc_now_iso()
+    with _connect(db_path) as conn:
+        cur = conn.execute("UPDATE device_events SET processed_at = ? WHERE id = ? AND processed_at IS NULL", (processed_at, int(event_id)))
+        return cur.rowcount
