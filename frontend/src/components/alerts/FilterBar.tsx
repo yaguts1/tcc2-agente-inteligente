@@ -250,114 +250,141 @@ export function FilterBar({
         )}
 
         {/* Filter Controls - Grid when expanded */}
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-2">
+        <div className="space-y-3">
           {/* Search */}
           <div>
+            <Label htmlFor="filter-search" className="text-xs font-medium mb-1 block">
+              Buscar por título, descrição ou paciente
+            </Label>
             <Input
-              placeholder="Buscar..."
+              id="filter-search"
+              placeholder="Digite para buscar..."
               value={filters.searchText || ''}
               onChange={handleSearchChange}
               className="h-9"
             />
           </div>
 
-          {/* Severity */}
-          <Select
-            value={filters.severity || 'all'}
-            onValueChange={(value: string) =>
-              onFilterChange('severity', value === 'all' ? undefined : value)
-            }
-          >
-            <SelectTrigger className="h-9">
-              <SelectValue placeholder="Severidade" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todas</SelectItem>
-              {SEVERITY_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {/* Status */}
-          <Select
-            value={filters.status || 'all'}
-            onValueChange={(value: string) =>
-              onFilterChange('status', value === 'all' ? undefined : value)
-            }
-          >
-            <SelectTrigger className="h-9">
-              <SelectValue placeholder="Status" />
-            </SelectTrigger>
-            <SelectContent>
-              <SelectItem value="all">Todos</SelectItem>
-              {STATUS_OPTIONS.map((option) => (
-                <SelectItem key={option.value} value={option.value}>
-                  {option.label}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
-
-          {/* Patient - only show if we have patients */}
-          {patients.length > 0 && (
-            <Select
-              value={filters.patientId || 'all'}
-              onValueChange={(value: string) =>
-                onFilterChange('patientId', value === 'all' ? undefined : value)
-              }
-            >
-              <SelectTrigger className="h-9">
-                <SelectValue placeholder="Paciente" />
-              </SelectTrigger>
-              <SelectContent>
-                <SelectItem value="all">Todos</SelectItem>
-                {patients.map((patient) => (
-                  <SelectItem key={patient.id} value={patient.id}>
-                    {patient.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-          )}
-
-          {/* Date Range Compact */}
-          <Popover>
-            <PopoverTrigger asChild>
-              <Button
-                variant="outline"
-                size="sm"
-                className="h-9 justify-start text-left font-normal"
+          {/* Filter Grid */}
+          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+            {/* Severity */}
+            <div>
+              <Label htmlFor="filter-severity" className="text-xs font-medium mb-1 block">
+                Severidade
+              </Label>
+              <Select
+                value={filters.severity || 'all'}
+                onValueChange={(value: string) =>
+                  onFilterChange('severity', value === 'all' ? undefined : value)
+                }
               >
-                <Calendar className="mr-1.5 h-3 w-3" />
-                Data
-              </Button>
-            </PopoverTrigger>
-            <PopoverContent className="w-64 p-3">
-              <div className="space-y-2">
-                <div>
-                  <Label className="text-xs">De</Label>
-                  <Input
-                    type="date"
-                    value={dateFromValue}
-                    onChange={handleDateFromChange}
-                    className="h-8 text-xs mt-1"
-                  />
-                </div>
-                <div>
-                  <Label className="text-xs">Até</Label>
-                  <Input
-                    type="date"
-                    value={dateToValue}
-                    onChange={handleDateToChange}
-                    className="h-8 text-xs mt-1"
-                  />
-                </div>
+                <SelectTrigger id="filter-severity" className="h-9">
+                  <SelectValue placeholder="Todas" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todas</SelectItem>
+                  {SEVERITY_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Status */}
+            <div>
+              <Label htmlFor="filter-status" className="text-xs font-medium mb-1 block">
+                Status
+              </Label>
+              <Select
+                value={filters.status || 'all'}
+                onValueChange={(value: string) =>
+                  onFilterChange('status', value === 'all' ? undefined : value)
+                }
+              >
+                <SelectTrigger id="filter-status" className="h-9">
+                  <SelectValue placeholder="Todos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos</SelectItem>
+                  {STATUS_OPTIONS.map((option) => (
+                    <SelectItem key={option.value} value={option.value}>
+                      {option.label}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+
+            {/* Patient - only show if we have patients */}
+            {patients.length > 0 && (
+              <div>
+                <Label htmlFor="filter-patient" className="text-xs font-medium mb-1 block">
+                  Paciente
+                </Label>
+                <Select
+                  value={filters.patientId || 'all'}
+                  onValueChange={(value: string) =>
+                    onFilterChange('patientId', value === 'all' ? undefined : value)
+                  }
+                >
+                  <SelectTrigger id="filter-patient" className="h-9">
+                    <SelectValue placeholder="Todos" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">Todos</SelectItem>
+                    {patients.map((patient) => (
+                      <SelectItem key={patient.id} value={patient.id}>
+                        {patient.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
               </div>
-            </PopoverContent>
-          </Popover>
+            )}
+
+            {/* Date Range Compact */}
+            <Popover>
+              <PopoverTrigger asChild>
+                <div>
+                  <Label className="text-xs font-medium mb-1 block">
+                    Período
+                  </Label>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    className="h-9 justify-start text-left font-normal w-full"
+                  >
+                    <Calendar className="mr-1.5 h-3 w-3" />
+                    Data
+                  </Button>
+                </div>
+              </PopoverTrigger>
+              <PopoverContent className="w-64 p-3">
+                <div className="space-y-2">
+                  <div>
+                    <Label className="text-xs">De</Label>
+                    <Input
+                      type="date"
+                      value={dateFromValue}
+                      onChange={handleDateFromChange}
+                      className="h-8 text-xs mt-1"
+                    />
+                  </div>
+                  <div>
+                    <Label className="text-xs">Até</Label>
+                    <Input
+                      type="date"
+                      value={dateToValue}
+                      onChange={handleDateToChange}
+                      className="h-8 text-xs mt-1"
+                    />
+                  </div>
+                </div>
+              </PopoverContent>
+            </Popover>
+          </div>
         </div>
       </CollapsibleContent>
     </Collapsible>

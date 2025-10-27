@@ -28,6 +28,7 @@ export function PatientForm({ patient, onSuccess, onCancel }: PatientFormProps) 
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSimulation, setShowSimulation] = useState(false);
+  const [createdPatient, setCreatedPatient] = useState<Patient | null>(null);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -38,13 +39,12 @@ export function PatientForm({ patient, onSuccess, onCancel }: PatientFormProps) 
       if (patient) {
         await patientsApi.updatePatient(patient.id, formData);
         toast.success('Paciente atualizado com sucesso');
-        setShowSimulation(true); // Mostrar painel de simulação após edição
+        setShowSimulation(true);
       } else {
         const newPatient = await patientsApi.createPatient(formData);
         toast.success('Paciente criado com sucesso');
-        // Para novo paciente, salvar o ID antes de mostrar simulação
-        patient = newPatient;
-        setShowSimulation(true); // Mostrar painel de simulação após criação
+        setCreatedPatient(newPatient);
+        setShowSimulation(true);
       }
     } catch (err) {
       if (err instanceof ApiException) {
@@ -61,14 +61,17 @@ export function PatientForm({ patient, onSuccess, onCancel }: PatientFormProps) 
     toast.success('Dados simulados carregados na Timeline!');
   };
 
+  // Use createdPatient if we just created one, otherwise use the prop
+  const displayPatient = createdPatient || patient;
+
   return (
     <Card>
       <CardContent className="p-6">
-        {showSimulation && patient ? (
+        {showSimulation && displayPatient ? (
           <div className="space-y-6">
             <div>
               <h2 className="text-lg font-semibold text-foreground mb-2">
-                {patient.name}
+                {displayPatient.name}
               </h2>
               <p className="text-sm text-muted-foreground">
                 Paciente criado/editado. Agora você pode simular dados para testes.
@@ -76,7 +79,7 @@ export function PatientForm({ patient, onSuccess, onCancel }: PatientFormProps) 
             </div>
 
             <SimulationPanel
-              patientId={patient.id}
+              patientId={displayPatient.id}
               onSuccess={handleSimulationSuccess}
             />
 
