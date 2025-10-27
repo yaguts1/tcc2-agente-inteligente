@@ -99,7 +99,12 @@ class AgendaApi {
       throw new Error("Erro ao listar agendas");
     }
 
-    return response.json();
+    // Backend retorna array diretamente, converter para formato esperado
+    const agendas = await response.json();
+    return {
+      agendas: Array.isArray(agendas) ? agendas : [],
+      total: Array.isArray(agendas) ? agendas.length : 0,
+    };
   }
 
   /**
