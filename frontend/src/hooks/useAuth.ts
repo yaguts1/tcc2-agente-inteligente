@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { authApi, ApiException } from '../lib/api';
+import { getStoredUser, getStoredToken, getSessionTimeRemaining } from '../lib/storage';
 
 export function useAuth() {
   const [user, setUser] = useState<{ username: string } | null>(null);
@@ -12,15 +13,35 @@ export function useAuth() {
 
   const checkAuth = async () => {
     try {
-      const data = await authApi.me();
-      setUser(data);
+      // First, try to use stored user and token
+      const storedUser = getStoredUser();
+      const storedToken = getStoredToken();
+
+      if (storedUser && storedToken) {
+        // Check session validity by calling /me endpoint
+        try {
+          const data = await authApi.me();
+          setUser(data);
+          setError(null);
+          return;
+        } catch (err) {
+          // If /me fails with 401, stored token is invalid
+          if (err instanceof ApiException && err.status === 401) {
+            setUser(null);
+            setError(null);
+          } else {
+            setError('Erro ao verificar autenticação');
+          }
+          return;
+        }
+      }
+
+      // If no stored user/token, set user to null
+      setUser(null);
       setError(null);
     } catch (err) {
-      if (err instanceof ApiException && err.status === 401) {
-        setUser(null);
-      } else {
-        setError('Erro ao verificar autenticação');
-      }
+      setError('Erro ao verificar autenticação');
+      console.error('[useAuth] checkAuth error:', err);
     } finally {
       setIsLoading(false);
     }
@@ -45,6 +66,7 @@ export function useAuth() {
       } else {
         setError('Erro de conexão');
       }
+      setUser(null);
       return false;
     } finally {
       setIsLoading(false);
@@ -72,6 +94,7 @@ export function useAuth() {
       } else {
         setError('Erro de conexão');
       }
+      setUser(null);
       return false;
     } finally {
       setIsLoading(false);
@@ -81,11 +104,17 @@ export function useAuth() {
   const logout = async () => {
     try {
       await authApi.logout();
-      setUser(null);
     } catch (err) {
-      console.error('Erro ao fazer logout:', err);
+      console.error('[useAuth] Erro ao fazer logout:', err);
+    } finally {
+      setUser(null);
     }
   };
+
+  const getSessionInfo = () => ({
+    timeRemaining: getSessionTimeRemaining(),
+    isValid: !!getStoredToken(),
+  });
 
   return {
     user,
@@ -95,5 +124,6 @@ export function useAuth() {
     register,
     logout,
     isAuthenticated: !!user,
+    getSessionInfo,
   };
 }

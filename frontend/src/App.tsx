@@ -9,6 +9,7 @@ import { TimelinePage } from './components/pages/TimelinePage';
 import { PatientsPage } from './components/pages/PatientsPage';
 import { AdminPage } from './components/pages/AdminPage';
 import { FullPageSpinner } from './components/shared/Spinner';
+import { SessionExpirationAlert } from './components/common/SessionExpirationAlert';
 import { Toaster } from './components/ui/sonner';
 
 type Page = 'dashboard' | 'timeline' | 'patients' | 'admin';
@@ -90,6 +91,7 @@ export default function App() {
       >
         {renderPage()}
       </AppLayout>
+      <SessionExpirationAlert showWarning={true} />
       <Toaster />
     </>
   );
