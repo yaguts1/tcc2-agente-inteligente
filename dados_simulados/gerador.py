@@ -14,6 +14,7 @@ from .contextos import (
     adicionar_contextos_na_grade,
     validar_eventos_contextuais,
 )
+from .validador import validar_sessao
 
 POSTURAS = ["supino", "lateral_direito", "lateral_esquerdo", "prono"]
 
@@ -254,6 +255,51 @@ def gerar_eventos_sessao(
     df["inicio"] = pd.to_datetime(df["timestamp"])
     df["fim"] = df["inicio"] + pd.to_timedelta(df["duracao_min"], unit="m")
     return df
+
+
+def validar_sessao_gerada(
+    df_eventos: pd.DataFrame,
+    df_grade: pd.DataFrame | None = None,
+    verbose: bool = True,
+) -> dict:
+    """
+    Valida coerência de eventos gerados (Problema 6).
+    
+    Detecta problemas comuns como:
+    - Timestamps fora de ordem
+    - Durações inválidas (≤ 0)
+    - Posturas inválidas
+    - Transições inválidas entre posturas
+    - Cobertura temporal inconsistente
+    - Registros duplicados
+    
+    Args:
+        df_eventos: DataFrame com colunas timestamp, postura, duracao_min
+        df_grade: (Opcional) DataFrame da grade para comparação
+        verbose: Se True, imprime resultado colorido
+    
+    Returns:
+        Dicionário com resultado detalhado da validação
+    """
+    # Mapear posturas do modelo interno para modelo simplificado
+    mapa_posturas = {
+        "supino": "deitado",
+        "lateral_direito": "deitado",
+        "lateral_esquerdo": "deitado",
+        "prono": "deitado",
+    }
+    
+    # Criar cópia com posturas mapeadas
+    df_validar = df_eventos.copy()
+    if "postura" in df_validar.columns:
+        df_validar["postura"] = df_validar["postura"].map(
+            lambda x: mapa_posturas.get(x, x)
+        )
+    
+    # Chamar validador
+    resultado = validar_sessao(df_validar, df_grade=df_grade, verbose=verbose)
+    
+    return resultado
 
 
 def gerar_sessao_multi(
