@@ -42,6 +42,8 @@ struct ReplayConfig {
   // Retry
   uint8_t  tentativasMax;        // Nº máximo de retries por pacote
   uint32_t backoffBaseMs;        // Backoff inicial (exponencial)
+  uint32_t backoffMaxMs;         // Teto para backoff (ms)
+  bool     backoffWithJitter;    // aplicar jitter ao backoff
 
   // Armazenamento
   bool usarSd;                   // true -> SD, false -> SPIFFS
@@ -55,6 +57,8 @@ struct ReplayConfig {
   String pacienteId;
   String camaId;
   String perfilPaciente;
+  // Enviar o arquivo inteiro como multipart/form-data para /api/grade
+  bool enviarComoArquivo;
 };
 
 // -------------------------------

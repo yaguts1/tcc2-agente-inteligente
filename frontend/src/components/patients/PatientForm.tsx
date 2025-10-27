@@ -9,6 +9,7 @@ import { Spinner } from '../shared/Spinner';
 import { Alert, AlertDescription } from '../ui/alert';
 import { AlertCircle } from 'lucide-react';
 import { toast } from 'sonner';
+import { SimulationPanel } from './SimulationPanel';
 
 interface PatientFormProps {
   patient?: Patient;
@@ -26,6 +27,7 @@ export function PatientForm({ patient, onSuccess, onCancel }: PatientFormProps) 
   });
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [showSimulation, setShowSimulation] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -36,11 +38,14 @@ export function PatientForm({ patient, onSuccess, onCancel }: PatientFormProps) 
       if (patient) {
         await patientsApi.updatePatient(patient.id, formData);
         toast.success('Paciente atualizado com sucesso');
+        setShowSimulation(true); // Mostrar painel de simulação após edição
       } else {
-        await patientsApi.createPatient(formData);
+        const newPatient = await patientsApi.createPatient(formData);
         toast.success('Paciente criado com sucesso');
+        // Para novo paciente, salvar o ID antes de mostrar simulação
+        patient = newPatient;
+        setShowSimulation(true); // Mostrar painel de simulação após criação
       }
-      onSuccess();
     } catch (err) {
       if (err instanceof ApiException) {
         setError(err.message);
@@ -52,10 +57,43 @@ export function PatientForm({ patient, onSuccess, onCancel }: PatientFormProps) 
     }
   };
 
+  const handleSimulationSuccess = () => {
+    toast.success('Dados simulados carregados na Timeline!');
+  };
+
   return (
     <Card>
       <CardContent className="p-6">
-        <form onSubmit={handleSubmit} className="space-y-4">
+        {showSimulation && patient ? (
+          <div className="space-y-6">
+            <div>
+              <h2 className="text-lg font-semibold text-foreground mb-2">
+                {patient.name}
+              </h2>
+              <p className="text-sm text-muted-foreground">
+                Paciente criado/editado. Agora você pode simular dados para testes.
+              </p>
+            </div>
+
+            <SimulationPanel
+              patientId={patient.id}
+              onSuccess={handleSimulationSuccess}
+            />
+
+            <Button
+              type="button"
+              variant="outline"
+              onClick={() => {
+                setShowSimulation(false);
+                onSuccess();
+              }}
+              className="w-full"
+            >
+              Voltar à Lista
+            </Button>
+          </div>
+        ) : (
+          <form onSubmit={handleSubmit} className="space-y-4">
           {error && (
             <Alert variant="destructive">
               <AlertCircle className="h-4 w-4" />
@@ -176,7 +214,8 @@ export function PatientForm({ patient, onSuccess, onCancel }: PatientFormProps) 
               Cancelar
             </Button>
           </div>
-        </form>
+          </form>
+        )}
       </CardContent>
     </Card>
   );

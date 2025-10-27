@@ -43,6 +43,8 @@ from interface.dao import (
     criar_paciente,
     atualizar_paciente,
 )
+from dados_simulados.gerador import gerar_sessao_simulada, PerfilPaciente
+from modulo_alerta.engine import processar_alertas
 from quality.filtro import FiltroResultado, filtrar as filtrar_evento, flush_filtro, reset_filtro
 from servicos import metricas
 from servicos.processamento_incremental import ProcessadorIncremental
@@ -1343,6 +1345,129 @@ async def api_delete_paciente(paciente_id: str):
     if not removed:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"code": "not_found", "message": "Paciente nao encontrado."})
     return None
+
+
+# Simulation models
+class SimulationRequest(BaseModel):
+    """Requisição para gerar dados simulados."""
+    duracao_horas: int = Field(..., ge=1, le=72, description="Duração em horas (1-72)")
+    seed: int | None = Field(default=42, description="Seed para reproduzibilidade")
+    perfil: str = Field(..., description="Perfil de risco: baixo, medio, alto")
+
+    @field_validator('perfil')
+    def validate_perfil(cls, v):
+        if v not in ['baixo', 'medio', 'alto']:
+            raise ValueError('Perfil deve ser: baixo, medio ou alto')
+        return v
+
+
+class SimulationResult(BaseModel):
+    """Resultado da simulação."""
+    success: bool
+    eventos: int
+    alertas: int
+    duracao: int
+    error: str | None = None
+    message: str | None = None
+
+
+@router.post("/pacientes/{paciente_id}/simular", status_code=status.HTTP_200_OK, response_model=SimulationResult)
+async def api_simular_paciente(paciente_id: str, payload: SimulationRequest) -> SimulationResult:
+    """Gera dados simulados para um paciente.
+    
+    Isso cria:
+    1. N horas de dados de postura (1 evento a cada 5 minutos)
+    2. Processa alertas baseado no perfil
+    3. Salva tudo no banco de dados
+    
+    Args:
+        paciente_id: ID do paciente
+        payload: Requisição com duração, seed e perfil
+        
+    Returns:
+        SimulationResult com números de eventos e alertas gerados
+    """
+    logger = structlog.get_logger(__name__)
+    
+    try:
+        # 1. Verificar se paciente existe
+        ficha = obter_ficha_paciente(DB_PATH, paciente_id)
+        if ficha is None:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND,
+                detail={"code": "paciente_nao_encontrado", "message": f"Paciente {paciente_id} nao encontrado."}
+            )
+        
+        logger.info("simulacao_iniciada", paciente_id=paciente_id, duracao_horas=payload.duracao_horas, perfil=payload.perfil)
+        
+        # 2. Gerar dados simulados
+        try:
+            df_grade, contextos = gerar_sessao_simulada(
+                duracao_horas=payload.duracao_horas,
+                seed=payload.seed or 42,
+                passo_min=5,
+                perfil=PerfilPaciente(perfil=payload.perfil),
+                incluir_contexto=True
+            )
+        except Exception as e:
+            logger.error("simulacao_gerar_erro", error=str(e), paciente_id=paciente_id)
+            raise HTTPException(
+                status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail={"code": "simulacao_erro", "message": f"Erro ao gerar dados: {str(e)}"}
+            ) from e
+        
+        # 3. Adicionar ID do paciente ao DataFrame
+        df_grade.insert(0, "paciente_id", paciente_id)
+        
+        # 4. Salvar grades no banco de dados
+        try:
+            inserir_grade(DB_PATH, df_grade)
+            logger.info("simulacao_grade_salva", paciente_id=paciente_id, num_eventos=len(df_grade))
+        except Exception as e:
+            logger.error("simulacao_salvar_grade_erro", error=str(e), paciente_id=paciente_id)
+            raise HTTPException(
+                status.HTTP_500_INTERNAL_SERVER_ERROR,
+                detail={"code": "db_error", "message": f"Erro ao salvar grades: {str(e)}"}
+            ) from e
+        
+        # 5. Processar alertas
+        try:
+            _, alertas = processar_alertas(
+                df_grade[["timestamp", "postura"]],
+                payload.perfil,
+                paciente_id
+            )
+            logger.info("simulacao_alertas_processados", paciente_id=paciente_id, num_alertas=len(alertas))
+        except Exception as e:
+            logger.error("simulacao_processar_alertas_erro", error=str(e), paciente_id=paciente_id)
+            alertas = []
+        
+        # 6. Salvar alertas no banco de dados
+        if alertas:
+            try:
+                inserir_alertas(DB_PATH, alertas)
+                logger.info("simulacao_alertas_salvos", paciente_id=paciente_id, num_alertas=len(alertas))
+            except Exception as e:
+                logger.warning("simulacao_salvar_alertas_erro", error=str(e), paciente_id=paciente_id)
+        
+        logger.info("simulacao_concluida", paciente_id=paciente_id, eventos=len(df_grade), alertas=len(alertas))
+        
+        return SimulationResult(
+            success=True,
+            eventos=len(df_grade),
+            alertas=len(alertas),
+            duracao=payload.duracao_horas,
+            message=f"Simulacao concluida: {len(df_grade)} eventos, {len(alertas)} alertas"
+        )
+        
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error("simulacao_erro_desconhecido", error=str(e), paciente_id=paciente_id)
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"code": "internal_error", "message": f"Erro interno: {str(e)}"}
+        ) from e
 
 
 # WebSocket endpoint for ESP32 firmware real-time event ingestion

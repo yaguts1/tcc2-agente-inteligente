@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, Bell, Calendar } from 'lucide-react';
-import { alertsApi, Alert, ApiException } from '../../lib/api';
+import { alertsApi, Alert, ApiException, statsApi, DashboardStats } from '../../lib/api';
 import { usePolling } from '../../hooks/usePolling';
+import { useWebSocket } from '../../hooks/useWebSocket';
 import { Card } from '../ui/card';
 import { ErrorBanner } from '../shared/ErrorBanner';
 import { PollIndicator } from '../shared/PollIndicator';
@@ -9,18 +10,22 @@ import { AlertsTable } from '../alerts/AlertsTable';
 import { Skeleton } from '../ui/skeleton';
 import { toast } from 'sonner';
 
-const POLL_INTERVAL = 30000; // 30 seconds
+const POLL_INTERVAL = 30000; // 30 seconds - fallback to polling if WebSocket unavailable
 
 export function DashboardPage() {
   const [alerts, setAlerts] = useState<Alert[]>([]);
+  const [stats, setStats] = useState<DashboardStats | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isOffline, setIsOffline] = useState(false);
 
   const fetchAlerts = useCallback(async () => {
+    setIsLoading(true);
     try {
-      const data = await alertsApi.getAlerts();
-      setAlerts(data);
+      const alertsData = await alertsApi.getAlerts();
+      const statsData = await statsApi.getStats();
+      setAlerts(alertsData);
+      setStats(statsData);
       setError(null);
       setIsOffline(false);
     } catch (err) {
@@ -39,17 +44,46 @@ export function DashboardPage() {
     }
   }, []);
 
+  // WebSocket handler for real-time alert updates
+  const handleWebSocketMessage = useCallback((message: any) => {
+    if (message.type === 'alert_update') {
+      // Update alert status based on WebSocket message
+      const { alert_id, status } = message;
+      if (alert_id && status) {
+        setAlerts((prev) =>
+          prev.map((alert) =>
+            alert.id === alert_id
+              ? { ...alert, status: status as Alert['status'] }
+              : alert
+          )
+        );
+        
+        // Also refresh stats to keep them in sync
+        statsApi.getStats().then(setStats).catch(console.error);
+      }
+    }
+  }, []);
+
+  // WebSocket connection for real-time updates
+  const { isConnected: wsConnected } = useWebSocket({
+    enabled: true,
+    onMessage: handleWebSocketMessage,
+  });
+
   useEffect(() => {
     fetchAlerts();
   }, [fetchAlerts]);
 
+  // Polling as fallback (disabled if WebSocket is working, but kept for resilience)
   const { isPolling, stop, start } = usePolling({
     interval: POLL_INTERVAL,
-    enabled: true,
+    enabled: !wsConnected, // Only enable polling if WebSocket not connected
     onPoll: fetchAlerts,
   });
 
   const handleAcknowledge = async (alertId: string) => {
+    // pause polling while we perform the action to avoid races
+    stop();
     try {
       // Optimistic update
       setAlerts((prev) =>
@@ -62,6 +96,9 @@ export function DashboardPage() {
 
       await alertsApi.acknowledge(alertId);
       toast.success('Alerta reconhecido');
+
+      // refresh shortly to reconcile any server-side changes
+      setTimeout(() => fetchAlerts(), 800);
     } catch (err) {
       // Revert on error
       await fetchAlerts();
@@ -70,10 +107,14 @@ export function DashboardPage() {
       } else {
         toast.error('Erro ao reconhecer alerta');
       }
+    } finally {
+      start();
     }
   };
 
   const handleComplete = async (alertId: string) => {
+    // pause polling while we perform the action
+    stop();
     try {
       // Optimistic update
       setAlerts((prev) =>
@@ -90,9 +131,9 @@ export function DashboardPage() {
 
       await alertsApi.complete(alertId);
       toast.success('Paciente reposicionado com sucesso');
-      
+
       // Refresh after a short delay to get updated data
-      setTimeout(fetchAlerts, 1000);
+      setTimeout(() => fetchAlerts(), 1000);
     } catch (err) {
       // Revert on error
       await fetchAlerts();
@@ -101,6 +142,8 @@ export function DashboardPage() {
       } else {
         toast.error('Erro ao completar alerta');
       }
+    } finally {
+      start();
     }
   };
 
@@ -159,7 +202,7 @@ export function DashboardPage() {
               </div>
               <div>
                 <p className="text-muted-foreground">Alertas Ativos</p>
-                <p className="text-foreground">{activeAlerts.length}</p>
+                <p className="text-foreground">{stats?.activeAlerts ?? 0}</p>
               </div>
             </div>
           </Card>
@@ -170,8 +213,8 @@ export function DashboardPage() {
                 <AlertTriangle className="w-5 h-5 text-danger" />
               </div>
               <div>
-                <p className="text-muted-foreground">Atrasados</p>
-                <p className="text-danger">{overdueAlerts.length}</p>
+                <p className="text-muted-foreground">Reconhecidos</p>
+                <p className="text-danger">{stats?.acknowledgedAlerts ?? 0}</p>
               </div>
             </div>
           </Card>
@@ -182,8 +225,8 @@ export function DashboardPage() {
                 <Calendar className="w-5 h-5 text-warning" />
               </div>
               <div>
-                <p className="text-muted-foreground">Reconhecidos</p>
-                <p className="text-foreground">{acknowledgedAlerts.length}</p>
+                <p className="text-muted-foreground">Completados Hoje</p>
+                <p className="text-foreground">{stats?.completedToday ?? 0}</p>
               </div>
             </div>
           </Card>
@@ -194,17 +237,8 @@ export function DashboardPage() {
                 <Calendar className="w-5 h-5 text-success" />
               </div>
               <div>
-                <p className="text-muted-foreground">Taxa de Sucesso</p>
-                <p className="text-foreground">
-                  {alerts.length > 0
-                    ? Math.round(
-                        (alerts.filter((a) => a.status === 'completed').length /
-                          alerts.length) *
-                          100
-                      )
-                    : 0}
-                  %
-                </p>
+                <p className="text-muted-foreground">Taxa de Conclusão</p>
+                <p className="text-foreground">{stats?.completionRate ?? 0}%</p>
               </div>
             </div>
           </Card>

@@ -62,6 +62,15 @@ def _ensure_cama_column(conn: sqlite3.Connection) -> None:
     )
 
 
+def _ensure_users_role_column(conn: sqlite3.Connection) -> None:
+    """Add role column to users table if it doesn't exist."""
+    info = conn.execute("PRAGMA table_info(users)").fetchall()
+    colunas = {str(row["name"]) for row in info}
+    if "role" not in colunas:
+        conn.execute("ALTER TABLE users ADD COLUMN role TEXT DEFAULT 'staff'")
+    conn.commit()
+
+
 def _generate_paciente_id(conn: sqlite3.Connection, prefix: str = PACIENTE_ID_PREFIX) -> str:
     existing_ids = {str(row[0]) for row in conn.execute("SELECT id FROM pacientes")}
     pattern = re.compile(rf"^{re.escape(prefix)}-(\d+)$")
@@ -417,6 +426,7 @@ def criar_esquema(db_path: str = "dados.db") -> None:
             """
         )
         _ensure_cama_column(conn)
+        _ensure_users_role_column(conn)
         conn.commit()
 
 
@@ -443,7 +453,7 @@ def obter_usuario_por_nome(db_path: str, username: str) -> dict | None:
     if not uname:
         return None
     with _connect(db_path) as conn:
-        cur = conn.execute("SELECT username, password_hash, display_name, created_at FROM users WHERE username = ?", (uname,))
+        cur = conn.execute("SELECT username, password_hash, display_name, created_at, role FROM users WHERE username = ?", (uname,))
         row = cur.fetchone()
     return None if row is None else dict(row)
 
@@ -1197,6 +1207,47 @@ def inserir_device_event(db_path: str, device_id: str, ts: str, ts_ms: int, payl
         return int(cursor.lastrowid)
 
 
+def ensure_minimal_paciente_ficha(db_path: str, paciente_id: str, nome: str | None = None, perfil: str | None = None, cama_id: str | None = None) -> None:
+    """Ensure a minimal paciente_fichas record exists for `paciente_id`.
+
+    If the ficha is missing, inserts a minimal record with provided `nome` (or paciente_id),
+    `perfil` (defaults to 'medio') and optional `cama_id`.
+    This is intentionally conservative and will not override an existing ficha.
+    """
+    if not paciente_id:
+        raise ValueError("paciente_id deve ser informado.")
+
+    perfil_val = None if perfil is None else str(perfil).strip().lower()
+    if perfil_val not in PERFIS_VALIDOS:
+        perfil_val = 'medio'
+
+    cama_norm = _normalize_cama_id(cama_id)
+    nome_val = None if nome is None else str(nome).strip() or None
+
+    with _connect(db_path) as conn:
+        # ensure base pacientes table has the id
+        _ensure_paciente(conn, paciente_id)
+        cur = conn.execute("SELECT paciente_id FROM paciente_fichas WHERE paciente_id = ?", (paciente_id,))
+        if cur.fetchone() is not None:
+            return
+        agora_iso = _utc_now_iso()
+        conn.execute(
+            "INSERT INTO paciente_fichas (paciente_id, nome, perfil, cama_id, observacoes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+            (paciente_id, nome_val or paciente_id, perfil_val, cama_norm, None, agora_iso, agora_iso),
+        )
+        # If cama was provided, also create initial paciente_cama_history entry
+        if cama_norm is not None:
+            try:
+                start_ms = int(pd.to_datetime(agora_iso).timestamp() * 1000)
+                conn.execute(
+                    "INSERT INTO paciente_cama_history (paciente_id, cama_id, start_ts, start_ms) VALUES (?, ?, ?, ?)",
+                    (paciente_id, cama_norm, agora_iso, start_ms),
+                )
+            except Exception:
+                pass
+        conn.commit()
+
+
 def listar_device_events(db_path: str, device_id: str | None = None, limit: int = 100, include_processed: bool = False) -> list[dict]:
     """List device_events. By default only returns events where processed_at IS NULL.
 
@@ -1263,3 +1314,28 @@ def delete_device_event(db_path: str, event_id: int, processed_at: str | None = 
     with _connect(db_path) as conn:
         cur = conn.execute("UPDATE device_events SET processed_at = ? WHERE id = ? AND processed_at IS NULL", (processed_at, int(event_id)))
         return cur.rowcount
+
+
+def remover_paciente(db_path: str, paciente_id: str) -> int:
+    """Remove a patient and all related records from the DB.
+
+    Returns the number of rows removed from `paciente_fichas` (0 if not found, 1 if removed).
+    This helper centralizes cleanup logic instead of issuing ad-hoc DELETEs elsewhere.
+    """
+    if not paciente_id:
+        raise ValueError("paciente_id deve ser informado")
+    with _connect(db_path) as conn:
+        cur = conn.execute("SELECT paciente_id FROM paciente_fichas WHERE paciente_id = ?", (paciente_id,))
+        if cur.fetchone() is None:
+            return 0
+        # delete dependent records first to respect foreign keys and avoid orphans
+        conn.execute("DELETE FROM paciente_rotinas WHERE paciente_id = ?", (paciente_id,))
+        conn.execute("DELETE FROM paciente_documentos WHERE paciente_id = ?", (paciente_id,))
+        conn.execute("DELETE FROM paciente_cama_history WHERE paciente_id = ?", (paciente_id,))
+        conn.execute("DELETE FROM device_assignments WHERE paciente_id = ?", (paciente_id,))
+        conn.execute("DELETE FROM timeline_events WHERE paciente_id = ?", (paciente_id,))
+        # remove ficha and base pacientes row
+        conn.execute("DELETE FROM paciente_fichas WHERE paciente_id = ?", (paciente_id,))
+        conn.execute("DELETE FROM pacientes WHERE id = ?", (paciente_id,))
+        conn.commit()
+    return 1
