@@ -1309,13 +1309,22 @@ def reset_processador() -> None:
     reset_filtro()
 
 
-@router.get("/timeline", status_code=status.HTTP_200_OK)
+class TimelineEventResponse(BaseModel):
+    id: int
+    paciente_id: str
+    ts: str
+    ts_ms: int
+    tipo: str
+    descricao: str | None = None
+
+
+@router.get("/timeline", status_code=status.HTTP_200_OK, response_model=list[TimelineEventResponse])
 async def timeline_endpoint(
     paciente_id: str | None = None,
     start_ms: int | None = None,
     end_ms: int | None = None,
     limit: int = 1000,
-) -> list[dict]:
+) -> list[TimelineEventResponse]:
     """Retorna eventos da timeline. Campos retornados incluem `ts` (ISO) e `ts_ms` (epoch ms).
 
     Filtros opcionais: paciente_id, start_ms, end_ms (todos inclusive).
@@ -1323,7 +1332,18 @@ async def timeline_endpoint(
     if limit is None or limit <= 0:
         limit = 1000
     events = selecionar_timeline(DB_PATH, paciente_id=paciente_id, start_ms=start_ms, end_ms=end_ms, limit=limit)
-    return events
+    # Filter to only return expected fields
+    return [
+        {
+            "id": e["id"],
+            "paciente_id": e["paciente_id"],
+            "ts": e["ts"],
+            "ts_ms": e["ts_ms"],
+            "tipo": e["tipo"],
+            "descricao": e["descricao"],
+        }
+        for e in events
+    ]
 
 
 class TimelineRecord(BaseModel):

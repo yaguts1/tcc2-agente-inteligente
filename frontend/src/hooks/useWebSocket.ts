@@ -20,7 +20,7 @@ interface UseWebSocketOptions {
 export function useWebSocket({
   enabled = true,
   onMessage,
-  reconnectInterval = 3000,
+  reconnectInterval = 5000, // Aumentado de 3s para 5s
   maxReconnectAttempts = 5,
 }: UseWebSocketOptions = {}) {
   const { isAuthenticated } = useAuth();
@@ -99,7 +99,13 @@ export function useWebSocket({
             // Attempt to reconnect if enabled and authenticated
             if (enabled && isAuthenticated && reconnectAttemptsRef.current < maxReconnectAttempts) {
               reconnectAttemptsRef.current += 1;
-              console.log(`Attempting to reconnect (${reconnectAttemptsRef.current}/${maxReconnectAttempts})...`);
+              
+              // Exponential backoff: 1x, 2x, 4x, 8x, 16x
+              const exponentialDelay = reconnectInterval * Math.pow(2, reconnectAttemptsRef.current - 1);
+              const maxDelay = 30000; // Max 30 segundos
+              const delayMs = Math.min(exponentialDelay, maxDelay);
+              
+              console.log(`Attempting to reconnect (${reconnectAttemptsRef.current}/${maxReconnectAttempts})... waiting ${delayMs}ms`);
               
               if (reconnectTimeoutRef.current) {
                 clearTimeout(reconnectTimeoutRef.current);
@@ -107,7 +113,7 @@ export function useWebSocket({
               
               reconnectTimeoutRef.current = setTimeout(() => {
                 connect();
-              }, reconnectInterval);
+              }, delayMs);
             } else if (reconnectAttemptsRef.current >= maxReconnectAttempts) {
               setLastError('Máximo de tentativas de reconexão atingido');
               toast.error('Conexão com alertas em tempo real perdida. Por favor, recarregue a página.');
