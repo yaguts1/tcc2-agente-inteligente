@@ -44,6 +44,10 @@ from interface.dao import (
     criar_paciente,
     atualizar_paciente,
 )
+from interface.ws_manager_optimized import (
+    ws_manager_optimized,
+    WebSocketFilter,
+)
 from dados_simulados.gerador import gerar_sessao_simulada, PerfilPaciente
 from modulo_alerta.engine import processar_alertas
 from quality.filtro import FiltroResultado, filtrar as filtrar_evento, flush_filtro, reset_filtro
@@ -1783,13 +1787,37 @@ async def export_alerts_pdf(
 
 # WebSocket endpoint for real-time alerts
 @router.websocket("/ws/alerts")
-async def websocket_alerts(websocket: WebSocket):
-    """WebSocket endpoint for real-time alert updates.
+async def websocket_alerts(
+    websocket: WebSocket,
+    severity: Optional[str] = Query(None),
+    patient_id: Optional[str] = Query(None),
+    alert_types: Optional[str] = Query(None),
+):
+    """WebSocket endpoint for real-time alert updates with filtering.
     
     Connects a client to the alert broadcast stream. New alerts will be pushed
-    to the client immediately when they are created/updated.
+    to the client immediately when they are created/updated, filtered by the
+    specified criteria.
+    
+    Query Parameters:
+        severity: Comma-separated list of severities (e.g., "high,critical")
+        patient_id: Filter by specific patient (e.g., "PAC-0001")
+        alert_types: Comma-separated list of alert types (e.g., "heart_rate,pressure")
+    
+    Example:
+        ws://localhost:8000/api/ws/alerts?severity=high,critical&patient_id=PAC-0001
     """
-    await ws_manager.connect(websocket)
+    # Parse filters
+    severities = severity.split(",") if severity else None
+    types = alert_types.split(",") if alert_types else None
+    
+    filters = WebSocketFilter(
+        severities=severities,
+        patient_id=patient_id,
+        alert_types=types,
+    )
+    
+    await ws_manager_optimized.connect(websocket, filters=filters)
     try:
         while True:
             # Keep connection alive - receive heartbeat messages from client
@@ -1799,9 +1827,9 @@ async def websocket_alerts(websocket: WebSocket):
             if data:
                 structlog.get_logger(__name__).debug("ws_received", data=data)
     except WebSocketDisconnect:
-        await ws_manager.disconnect(websocket)
+        await ws_manager_optimized.disconnect(websocket)
     except Exception as e:
         structlog.get_logger(__name__).error("ws_error", error=str(e))
-        await ws_manager.disconnect(websocket)
+        await ws_manager_optimized.disconnect(websocket)
 
 
