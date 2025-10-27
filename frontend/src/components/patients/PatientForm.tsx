@@ -13,7 +13,7 @@ import { SimulationPanel } from './SimulationPanel';
 
 interface PatientFormProps {
   patient?: Patient;
-  onSuccess: () => void;
+  onSuccess: () => void | Promise<void>;
   onCancel: () => void;
 }
 
@@ -92,10 +92,11 @@ export function PatientForm({ patient, onSuccess, onCancel }: PatientFormProps) 
             <Button
               type="button"
               variant="outline"
-              onClick={() => {
+              onClick={async () => {
                 console.log('[PatientForm] "Voltar à Lista" clicked, calling onSuccess()');
                 setShowSimulation(false);
-                onSuccess();
+                await onSuccess();
+                console.log('[PatientForm] onSuccess() completed');
               }}
               className="w-full"
             >

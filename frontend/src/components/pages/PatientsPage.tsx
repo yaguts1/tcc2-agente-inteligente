@@ -56,7 +56,7 @@ export function PatientsPage() {
       await patientsApi.deletePatient(patient.id);
       toast.success('Paciente removido com sucesso');
       setDeletingPatient(null);
-      fetchPatients();
+      await fetchPatients();
     } catch (err) {
       if (err instanceof ApiException) {
         toast.error(err.message);
@@ -108,12 +108,13 @@ export function PatientsPage() {
 
         <PatientForm
           patient={editingPatient || undefined}
-          onSuccess={() => {
+          onSuccess={async () => {
             console.log('[PatientsPage] PatientForm.onSuccess() called');
+            console.log('[PatientsPage] Calling fetchPatients() after form success');
+            await fetchPatients();
+            console.log('[PatientsPage] fetchPatients() completed, hiding form');
             setShowForm(false);
             setEditingPatient(null);
-            console.log('[PatientsPage] Calling fetchPatients() after form success');
-            fetchPatients();
           }}
           onCancel={() => {
             setShowForm(false);
