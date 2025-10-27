@@ -12,7 +12,7 @@ from typing import Any, AsyncIterator, Dict, Iterable, List, Mapping
 
 import pandas as pd
 import structlog
-from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status
+from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status, WebSocket, WebSocketDisconnect
 from passlib.hash import bcrypt
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
@@ -38,6 +38,10 @@ from interface.dao import (
     alterar_status_alerta,
     criar_usuario,
     obter_usuario_por_nome,
+    ensure_minimal_paciente_ficha,
+    remover_paciente,
+    criar_paciente,
+    atualizar_paciente,
 )
 from quality.filtro import FiltroResultado, filtrar as filtrar_evento, flush_filtro, reset_filtro
 from servicos import metricas
@@ -48,10 +52,92 @@ DEFAULT_PERFIL = "medio"
 
 router = APIRouter(prefix="/api", tags=["api"])
 
+# Rate limiting for auth endpoints (5 attempts per minute per IP)
+_auth_attempts: Dict[str, List[float]] = {}
+_auth_lock = asyncio.Lock()
 
-# Simple session-based auth for the SPA.
+
+def _reset_auth_rate_limits() -> None:
+    """Reset auth rate limits (for testing only)."""
+    global _auth_attempts
+    _auth_attempts.clear()
+
+
+async def _check_auth_rate_limit(request: Request) -> None:
+    """Rate limiting for login/register (5 attempts per minute per IP)."""
+    client_ip = request.client.host if request.client else "unknown"
+    agora = time.time()
+    
+    async with _auth_lock:
+        # Remove old attempts (> 60s)
+        if client_ip in _auth_attempts:
+            _auth_attempts[client_ip] = [ts for ts in _auth_attempts[client_ip] if agora - ts < 60]
+        
+        # Count attempts in last minute
+        attempts = len(_auth_attempts.get(client_ip, []))
+        
+        if attempts >= 5:
+            raise HTTPException(
+                status.HTTP_429_TOO_MANY_REQUESTS,
+                detail={"code": "rate_limited", "message": "Muitas tentativas. Tente novamente em 1 minuto."}
+            )
+        
+        # Record new attempt
+        if client_ip not in _auth_attempts:
+            _auth_attempts[client_ip] = []
+        _auth_attempts[client_ip].append(agora)
+
+
+# WebSocket Connection Manager for real-time alerts
+class ConnectionManager:
+    """Manages WebSocket connections for real-time alert broadcasts."""
+    
+    def __init__(self):
+        self.active_connections: List[WebSocket] = []
+        self._lock = asyncio.Lock()
+    
+    async def connect(self, websocket: WebSocket) -> None:
+        """Accept a new WebSocket connection."""
+        await websocket.accept()
+        async with self._lock:
+            self.active_connections.append(websocket)
+        structlog.get_logger(__name__).info("ws_connected", connections=len(self.active_connections))
+    
+    async def disconnect(self, websocket: WebSocket) -> None:
+        """Remove a closed WebSocket connection."""
+        async with self._lock:
+            if websocket in self.active_connections:
+                self.active_connections.remove(websocket)
+        structlog.get_logger(__name__).info("ws_disconnected", connections=len(self.active_connections))
+    
+    async def broadcast(self, message: dict) -> None:
+        """Broadcast a message to all connected clients."""
+        async with self._lock:
+            connections_copy = self.active_connections.copy()
+        
+        disconnected = []
+        for connection in connections_copy:
+            try:
+                await connection.send_json(message)
+            except Exception as e:
+                structlog.get_logger(__name__).warning("ws_send_failed", error=str(e))
+                disconnected.append(connection)
+        
+        # Clean up failed connections
+        if disconnected:
+            async with self._lock:
+                for conn in disconnected:
+                    if conn in self.active_connections:
+                        self.active_connections.remove(conn)
+
+
+# Global WebSocket connection manager
+ws_manager = ConnectionManager()
+
+
+
 @router.post("/auth/login", status_code=status.HTTP_200_OK)
-async def api_login(request: Request) -> dict:
+async def api_login(request: Request, _: None = Depends(_check_auth_rate_limit)) -> dict:
     body = await request.json()
     username = str(body.get("username") or "").strip()
     password = str(body.get("password") or "")
@@ -97,7 +183,7 @@ class RegisterRequest(BaseModel):
 
 
 @router.post("/auth/register", status_code=status.HTTP_201_CREATED)
-async def api_register(req: RegisterRequest) -> dict:
+async def api_register(request: Request, req: RegisterRequest, _: None = Depends(_check_auth_rate_limit)) -> dict:
     username = str(req.username or "").strip()
     password = str(req.password or "")
     display = None if req.display_name is None else str(req.display_name).strip() or None
@@ -108,19 +194,23 @@ async def api_register(req: RegisterRequest) -> dict:
     try:
         password_hash = bcrypt.hash(password)
     except Exception as exc:
+        structlog.get_logger(__name__).exception("hash_error", erro=str(exc))
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={"code": "hash_error", "message": str(exc)})
 
     try:
+        structlog.get_logger(__name__).info("register_attempt", username=username)
         criar_usuario(DB_PATH, username, password_hash, display)
     except ValueError as exc:
+        structlog.get_logger(__name__).warning("register_failed_user_exists", username=username, motivo=str(exc))
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={"code": "user_exists", "message": str(exc)})
     except Exception as exc:
+        structlog.get_logger(__name__).exception("register_db_error", username=username, erro=str(exc))
         raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={"code": "db_error", "message": str(exc)})
 
     # auto-login after register: set cookie
     from fastapi import Response
 
-    resp = {"username": username}
+    resp = {"username": username, "display_name": display}
     response = Response(content=json.dumps(resp), media_type="application/json", status_code=status.HTTP_201_CREATED)
     response.set_cookie("session_user", username, max_age=8 * 3600, httponly=True)
     return response
@@ -140,7 +230,65 @@ async def api_me(request: Request) -> dict:
     user = request.cookies.get("session_user")
     if not user:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail={"code": "not_authenticated"})
-    return {"username": user}
+    # try to include display_name and role when available
+    try:
+        u = obter_usuario_por_nome(DB_PATH, user)
+        display = None if u is None else u.get("display_name")
+        role = "staff" if u is None else (u.get("role") or "staff")
+    except Exception:
+        display = None
+        role = "staff"
+    return {"username": user, "display_name": display, "role": role}
+
+
+@router.get("/stats", status_code=status.HTTP_200_OK)
+async def get_stats() -> dict:
+    """Retorna estatísticas do dashboard para o frontend.
+    
+    Retorna: activeAlerts, acknowledgedAlerts, completedToday, totalPatients, completionRate
+    """
+    try:
+        # Buscar alertas da última semana
+        all_alerts = selecionar_alertas_janela(DB_PATH, horas=168)  # 1 semana
+        
+        # Contar alertas abertos (pending)
+        active_alerts = len([a for a in all_alerts if a.get("status") == "aberto"])
+        
+        # Contar alertas reconhecidos (acknowledged)
+        acked_alerts = len([a for a in all_alerts if a.get("status") == "reconhecido"])
+        
+        # Contar alertas fechados (completed) de hoje
+        agora = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+        completed_today = len([
+            a for a in all_alerts 
+            if a.get("status") == "fechado" and a.get("fim") is not None
+            and datetime.fromisoformat(a.get("fim")[:19]) >= agora
+        ])
+        
+        # Contar pacientes totais
+        fichas = listar_fichas_pacientes(DB_PATH, incluir_rotinas=False)
+        total_patients = len(fichas)
+        
+        # Calcular taxa de conclusão (fechados / (abertos + reconhecidos + fechados))
+        total_relevant = active_alerts + acked_alerts + completed_today
+        completion_rate = (
+            (completed_today / total_relevant * 100) 
+            if total_relevant > 0 else 0
+        )
+        
+        return {
+            "activeAlerts": active_alerts,
+            "acknowledgedAlerts": acked_alerts,
+            "completedToday": completed_today,
+            "totalPatients": total_patients,
+            "completionRate": round(completion_rate, 1)
+        }
+    except Exception as exc:
+        logger.exception("stats_error", erro=str(exc))
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"code": "stats_error", "message": str(exc)}
+        ) from exc
 
 _TOKEN_BUCKET_CAPACITY = 30.0
 _TOKEN_BUCKET_REFILL_RATE = 10.0  # tokens por segundo
@@ -194,6 +342,25 @@ class ApiResponse(BaseModel):
     code: str
     message: str
     ids: dict[str, Any]
+
+
+class FrontendCreatePatient(BaseModel):
+    name: str
+    room: str | None = None
+    bed: str | None = None
+    riskLevel: str
+    repositioningInterval: int | None = None
+
+
+class FrontendPatient(BaseModel):
+    id: str
+    name: str
+    room: str | None = None
+    bed: str | None = None
+    riskLevel: str
+    repositioningInterval: int | None = None
+    createdAt: str | None = None
+    updatedAt: str | None = None
 
 
 class DeviceRegisterRequest(BaseModel):
@@ -314,8 +481,23 @@ async def api_list_device_events(device_id: str | None = None, limit: int = 100)
     return listar_device_events(DB_PATH, device_id=device_id, limit=limit)
 
 @router.get("/frontend/alerts", status_code=status.HTTP_200_OK)
-async def frontend_alerts(horas: int | None = 24) -> list[dict]:
-    """Return alerts in a shape convenient for the React frontend.
+async def frontend_alerts(
+    horas: int | None = 24,
+    riskLevel: str | None = None,
+    status_filter: str | None = None,
+    room: str | None = None,
+    limit: int = 100,
+    offset: int = 0
+) -> list[dict]:
+    """Return alerts in a shape convenient for the React frontend with optional filters.
+
+    Query Parameters:
+    - horas: int (default 24) - Time window in hours
+    - riskLevel: 'high'|'medium'|'low' - Filter by risk level
+    - status_filter: 'pending'|'acknowledged'|'completed' - Filter by status
+    - room: str - Filter by room number (fuzzy match)
+    - limit: int (default 100) - Pagination limit
+    - offset: int (default 0) - Pagination offset
 
     Each alert contains: id, patientName, room, bed, lastRepositioning (ISO),
     nextRepositioning (ISO), riskLevel (high|medium|low), status (pending|acknowledged|completed)
@@ -337,11 +519,11 @@ async def frontend_alerts(horas: int | None = 24) -> list[dict]:
         patient_name = ficha.get("nome") if ficha else paciente_id
         cama_id = (ficha.get("cama_id") if ficha else None) or ""
         # split room/bed if possible (format like '201A / Leito 1' or '201A')
-        room = cama_id
+        room_val = cama_id
         bed = ""
         if cama_id and "/" in cama_id:
             parts = [p.strip() for p in cama_id.split("/")]
-            room = parts[0]
+            room_val = parts[0]
             if len(parts) > 1:
                 bed = parts[1]
 
@@ -375,11 +557,19 @@ async def frontend_alerts(horas: int | None = 24) -> list[dict]:
         status_map = {"aberto": "pending", "reconhecido": "acknowledged", "fechado": "completed"}
         status_val = status_map.get(status_raw, "pending")
 
+        # Apply filters
+        if riskLevel and risk_level != riskLevel:
+            continue
+        if status_filter and status_val != status_filter:
+            continue
+        if room and room.lower() not in room_val.lower():
+            continue
+
         results.append(
             {
                 "id": aid,
                 "patientName": patient_name,
-                "room": room,
+                "room": room_val,
                 "bed": bed,
                 "lastRepositioning": last_ts,
                 "nextRepositioning": next_iso,
@@ -387,7 +577,9 @@ async def frontend_alerts(horas: int | None = 24) -> list[dict]:
                 "status": status_val,
             }
         )
-    return results
+    
+    # Apply pagination
+    return results[offset : offset + limit]
 
 @router.post("/frontend/alerts/{alert_id}/acknowledge", status_code=status.HTTP_200_OK)
 async def frontend_acknowledge(alert_id: str) -> dict:
@@ -397,6 +589,14 @@ async def frontend_acknowledge(alert_id: str) -> dict:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={"code": "invalid_alert_id", "message": "Invalid alert id"})
     try:
         alterar_status_alerta(DB_PATH, paciente_id, inicio, "reconhecido")
+        
+        # Broadcast update via WebSocket
+        await ws_manager.broadcast({
+            "type": "alert_update",
+            "alert_id": alert_id,
+            "status": "acknowledged",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        })
     except LookupError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"code": "not_found", "message": "Alert not found"})
     return {"ok": True}
@@ -409,9 +609,104 @@ async def frontend_complete(alert_id: str) -> dict:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={"code": "invalid_alert_id", "message": "Invalid alert id"})
     try:
         alterar_status_alerta(DB_PATH, paciente_id, inicio, "fechado", definir_fim=True)
+        
+        # Broadcast update via WebSocket
+        await ws_manager.broadcast({
+            "type": "alert_update",
+            "alert_id": alert_id,
+            "status": "completed",
+            "timestamp": datetime.now(timezone.utc).isoformat()
+        })
     except LookupError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"code": "not_found", "message": "Alert not found"})
     return {"ok": True}
+
+
+class BatchAlertRequest(BaseModel):
+    """Request body for batch alert operations."""
+    alert_ids: List[str]
+
+
+@router.post("/frontend/alerts/batch/acknowledge", status_code=status.HTTP_200_OK)
+async def batch_acknowledge(payload: BatchAlertRequest) -> dict:
+    """Acknowledge multiple alerts at once.
+    
+    Request:
+    {
+      "alert_ids": ["paciente_id__inicio", "paciente_id2__inicio2", ...]
+    }
+    
+    Response:
+    {
+      "ok": true,
+      "processed": 2,
+      "failed": 0,
+      "errors": []
+    }
+    """
+    processed = 0
+    failed = 0
+    errors: List[dict] = []
+    
+    for alert_id in payload.alert_ids:
+        try:
+            paciente_id, inicio = alert_id.split("__", 1)
+            alterar_status_alerta(DB_PATH, paciente_id, inicio, "reconhecido")
+            processed += 1
+            
+            # Broadcast update via WebSocket
+            await ws_manager.broadcast({
+                "type": "alert_update",
+                "alert_id": alert_id,
+                "status": "acknowledged",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+        except Exception as exc:
+            failed += 1
+            errors.append({"alert_id": alert_id, "error": str(exc)})
+    
+    return {"ok": True, "processed": processed, "failed": failed, "errors": errors}
+
+
+@router.post("/frontend/alerts/batch/complete", status_code=status.HTTP_200_OK)
+async def batch_complete(payload: BatchAlertRequest) -> dict:
+    """Complete multiple alerts at once.
+    
+    Request:
+    {
+      "alert_ids": ["paciente_id__inicio", "paciente_id2__inicio2", ...]
+    }
+    
+    Response:
+    {
+      "ok": true,
+      "processed": 2,
+      "failed": 0,
+      "errors": []
+    }
+    """
+    processed = 0
+    failed = 0
+    errors: List[dict] = []
+    
+    for alert_id in payload.alert_ids:
+        try:
+            paciente_id, inicio = alert_id.split("__", 1)
+            alterar_status_alerta(DB_PATH, paciente_id, inicio, "fechado", definir_fim=True)
+            processed += 1
+            
+            # Broadcast update via WebSocket
+            await ws_manager.broadcast({
+                "type": "alert_update",
+                "alert_id": alert_id,
+                "status": "completed",
+                "timestamp": datetime.now(timezone.utc).isoformat()
+            })
+        except Exception as exc:
+            failed += 1
+            errors.append({"alert_id": alert_id, "error": str(exc)})
+    
+    return {"ok": True, "processed": processed, "failed": failed, "errors": errors}
 
 
 @router.post("/device_events/reconcile", status_code=status.HTTP_200_OK)
@@ -799,6 +1094,84 @@ async def receber_grade(
     )
 
 
+def import_alerts_list(alerts: list[dict], db_path: str | None = None) -> int:
+    """Helper to import a list of alert dicts into the DB via DAO.
+
+    Returns the number of inserted alerts. This helper is intended to be used
+    by the admin import endpoint and by tests.
+    """
+    if db_path is None:
+        db_path = DB_PATH
+    # Delegate to DAO which performs validation and timeline logging
+    try:
+        inserted = inserir_alertas(db_path, alerts)
+    except ValueError as exc:
+        # normalize to HTTP-like error when used by endpoints; caller can catch
+        raise
+    return int(inserted)
+
+
+@router.post("/admin/import_alerts", status_code=status.HTTP_200_OK)
+async def api_admin_import_alerts(
+    request: Request,
+    arquivo: UploadFile | None = File(None),
+    body: list[dict] | None = None,
+    x_admin_token: str | None = None,
+) -> dict:
+    """Admin endpoint to import alerts in bulk.
+
+    Security: If environment var UPP_ADMIN_TOKEN is set, callers must send the
+    same value in header `X-Admin-Token`. If the env var is not set (dev), the
+    endpoint falls back to checking that the request has a `session_user`
+    cookie (i.e., a logged-in user).
+    """
+    # Authorization
+    admin_token_env = os.getenv("UPP_ADMIN_TOKEN")
+    if admin_token_env:
+        # Prefer header-based token
+        hdr = request.headers.get("X-Admin-Token") or x_admin_token
+        if hdr != admin_token_env:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, detail={"code": "forbidden"})
+    else:
+        # dev fallback: require session cookie
+        if not request.cookies.get("session_user"):
+            raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail={"code": "not_authenticated"})
+
+    alerts: list[dict] = []
+    # If multipart file provided, treat as JSONL
+    if arquivo is not None:
+        try:
+            async for linha in _iterar_jsonl(arquivo):
+                alerts.append(json.loads(linha))
+        finally:
+            await arquivo.close()
+    elif body is not None:
+        if not isinstance(body, list):
+            raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={"code": "invalid_payload", "message": "Expected an array of alert objects"})
+        alerts = body
+    else:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={"code": "no_payload", "message": "Provide JSON body or upload a JSONL file"})
+
+    # Ensure minimal paciente_fichas exist so frontend can display patientName and cama
+    try:
+        pacientes = {str(a.get('paciente_id')) for a in alerts if a.get('paciente_id')}
+        for pid in pacientes:
+            try:
+                ensure_minimal_paciente_ficha(DB_PATH, pid)
+            except Exception:
+                # non-fatal: continue
+                pass
+    except Exception:
+        # If computing pacientes fails, proceed to validation step which will catch malformed alerts
+        pass
+
+    try:
+        inserted = import_alerts_list(alerts, db_path=DB_PATH)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={"code": "invalid_alerts", "message": str(exc)}) from exc
+    return {"received": len(alerts), "inserted": inserted}
+
+
 def reset_rate_limiter() -> None:
     """Limpa o estado do rate limiter (uso em testes)."""
     _rate_buckets.clear()
@@ -863,3 +1236,251 @@ async def api_listar_pacientes(incluir_rotinas: bool = False) -> list[dict]:
     """
     fichas = listar_fichas_pacientes(DB_PATH, incluir_rotinas=incluir_rotinas)
     return fichas
+
+
+def _map_perfil_from_frontend(risk: str) -> str:
+    mapping = {"high": "alto", "medium": "medio", "low": "baixo"}
+    return mapping.get(str(risk).lower(), DEFAULT_PERFIL)
+
+
+def _map_perfil_to_frontend(perf: str) -> str:
+    mapping = {"alto": "high", "medio": "medium", "baixo": "low"}
+    return mapping.get(str(perf).lower(), "medium")
+
+
+def _split_cama(cama: str | None) -> tuple[str | None, str | None]:
+    if not cama:
+        return None, None
+    if "/" in cama:
+        parts = [p.strip() for p in cama.split("/")]
+        room = parts[0] if parts else None
+        bed = parts[1] if len(parts) > 1 else None
+        return room, bed
+    return cama, None
+
+
+def _join_cama(room: str | None, bed: str | None) -> str | None:
+    if room and bed:
+        return f"{room} / {bed}"
+    if room:
+        return room
+    return None
+
+
+def _ficha_to_frontend(ficha: dict) -> FrontendPatient:
+    room, bed = _split_cama(ficha.get("cama_id"))
+    return FrontendPatient(
+        id=str(ficha.get("paciente_id") or ficha.get("paciente_id") or ""),
+        name=ficha.get("nome") or "",
+        room=room,
+        bed=bed,
+        riskLevel=_map_perfil_to_frontend(str(ficha.get("perfil") or DEFAULT_PERFIL)),
+        repositioningInterval=None,
+        createdAt=ficha.get("created_at"),
+        updatedAt=ficha.get("updated_at"),
+    )
+
+
+@router.post("/pacientes", status_code=status.HTTP_201_CREATED, response_model=FrontendPatient)
+async def api_criar_paciente(payload: FrontendCreatePatient) -> FrontendPatient:
+    # map frontend DTO to DAO fields
+    nome = payload.name
+    perfil = _map_perfil_from_frontend(payload.riskLevel)
+    cama = _join_cama(payload.room, payload.bed)
+    try:
+        ficha = criar_paciente(DB_PATH, nome=nome, perfil=perfil, cama_id=cama, observacoes=None, rotinas=None)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={"code": "invalid_request", "message": str(exc)}) from exc
+    except Exception as exc:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={"code": "db_error", "message": str(exc)}) from exc
+    return _ficha_to_frontend(ficha)
+
+
+class FrontendUpdatePatient(BaseModel):
+    name: str | None = None
+    room: str | None = None
+    bed: str | None = None
+    riskLevel: str | None = None
+    repositioningInterval: int | None = None
+
+
+@router.get("/pacientes/{paciente_id}", status_code=status.HTTP_200_OK, response_model=FrontendPatient)
+async def api_get_paciente(paciente_id: str) -> FrontendPatient:
+    ficha = obter_ficha_paciente(DB_PATH, paciente_id, incluir_rotinas=True)
+    if ficha is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"code": "paciente_nao_encontrado", "message": "Paciente nao encontrado."})
+    return _ficha_to_frontend(ficha)
+
+
+@router.patch("/pacientes/{paciente_id}", status_code=status.HTTP_200_OK, response_model=FrontendPatient)
+async def api_update_paciente(paciente_id: str, payload: FrontendUpdatePatient) -> FrontendPatient:
+    # fetch existing ficha to fill defaults
+    existing = obter_ficha_paciente(DB_PATH, paciente_id, incluir_rotinas=True)
+    if existing is None:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"code": "paciente_nao_encontrado", "message": "Paciente nao encontrado."})
+    nome = payload.name if payload.name is not None else existing.get("nome")
+    perfil = _map_perfil_from_frontend(payload.riskLevel) if payload.riskLevel is not None else existing.get("perfil")
+    cama = _join_cama(payload.room, payload.bed) if (payload.room is not None or payload.bed is not None) else existing.get("cama_id")
+    try:
+        ficha = atualizar_paciente(DB_PATH, paciente_id, nome=nome, perfil=perfil, cama_id=cama, observacoes=existing.get("observacoes"), rotinas=None)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={"code": "invalid_request", "message": str(exc)}) from exc
+    except LookupError as exc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"code": "not_found", "message": str(exc)}) from exc
+    except Exception as exc:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={"code": "db_error", "message": str(exc)}) from exc
+    return _ficha_to_frontend(ficha)
+
+
+@router.delete("/pacientes/{paciente_id}", status_code=status.HTTP_204_NO_CONTENT)
+async def api_delete_paciente(paciente_id: str):
+    try:
+        removed = remover_paciente(DB_PATH, paciente_id)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={"code": "invalid_request", "message": str(exc)}) from exc
+    except Exception as exc:
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={"code": "delete_error", "message": str(exc)}) from exc
+    if not removed:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"code": "not_found", "message": "Paciente nao encontrado."})
+    return None
+
+
+# WebSocket endpoint for ESP32 firmware real-time event ingestion
+@router.websocket("/ws/eventos")
+async def websocket_eventos(websocket: WebSocket):
+    """WebSocket endpoint para ingesto de eventos em tempo real do ESP32.
+    
+    Protocolo:
+    1. ESP32 envia JSON de autenticação: {"device_id": "DEV-001", "cama_id": "C-01"}
+    2. Servidor responde com ACK
+    3. ESP32 envia eventos JSON linha por linha
+    4. Servidor processa incrementalmente
+    5. Servidor responde com {"status": "ok", "seq": <seq>} para cada evento
+    
+    Exemplo de evento:
+    {
+        "seq": 1,
+        "device_id": "DEV-001",
+        "paciente_id": "PAC-001",
+        "cama_id": "C-01",
+        "ts_utc": "2025-10-27T14:30:00Z",
+        "tipo": "postura",
+        "valor": 1,
+        "confianca": 0.95
+    }
+    """
+    await websocket.accept()
+    device_id = None
+    paciente_id = None
+    logger = structlog.get_logger(__name__)
+    
+    try:
+        # 1. Receber autenticação
+        auth_msg = await websocket.receive_text()
+        auth = json.loads(auth_msg)
+        device_id = auth.get("device_id")
+        cama_id = auth.get("cama_id")
+        
+        if not device_id or not cama_id:
+            await websocket.send_json({"error": "device_id e cama_id obrigatórios"})
+            await websocket.close()
+            return
+        
+        logger.info("ws_eventos_conectado", device_id=device_id, cama_id=cama_id)
+        
+        # 2. Registrar dispositivo e resolver paciente
+        try:
+            registrar_device(DB_PATH, device_id, meta={"cama_id": cama_id})
+        except Exception as e:
+            logger.warning("ws_registrar_device_erro", error=str(e))
+        
+        # 3. Tentar resolver paciente da câmara
+        try:
+            paciente_id = resolver_paciente_por_device_em(DB_PATH, device_id, int(time.time() * 1000))
+        except Exception:
+            pass
+        
+        # 4. Enviar ACK de conexão
+        await websocket.send_json({
+            "status": "connected",
+            "device_id": device_id,
+            "paciente_id": paciente_id,
+            "message": "Conectado ao servidor de eventos"
+        })
+        
+        # 5. Loop de processamento de eventos
+        eventos_processados = 0
+        while True:
+            data = await websocket.receive_text()
+            try:
+                evento_json = json.loads(data)
+                seq = evento_json.get("seq", 0)
+                
+                # Normalizar evento
+                if "device_id" not in evento_json:
+                    evento_json["device_id"] = device_id
+                if "paciente_id" not in evento_json and paciente_id:
+                    evento_json["paciente_id"] = paciente_id
+                
+                # Processar evento através do filtro
+                resultado = filtrar_evento(evento_json)
+                
+                if not resultado.descartado and resultado.prontos:
+                    # Inserir no banco de dados
+                    try:
+                        inserir_eventos(DB_PATH, evento_json["paciente_id"], [evento_json])
+                        metricas.registrar_recebido()
+                        eventos_processados += 1
+                    except Exception as e:
+                        logger.warning("ws_insert_erro", device_id=device_id, seq=seq, error=str(e))
+                
+                # Enviar ACK
+                await websocket.send_json({
+                    "status": "ok",
+                    "seq": seq,
+                    "processados": eventos_processados,
+                    "descartado": resultado.descartado
+                })
+                
+            except json.JSONDecodeError as e:
+                logger.warning("ws_json_erro", device_id=device_id, error=str(e))
+                await websocket.send_json({
+                    "status": "error",
+                    "error": "JSON inválido"
+                })
+            except Exception as e:
+                logger.warning("ws_evento_erro", device_id=device_id, error=str(e))
+                await websocket.send_json({
+                    "status": "error",
+                    "error": str(e)
+                })
+    
+    except WebSocketDisconnect:
+        logger.info("ws_eventos_desconectado", device_id=device_id, eventos=eventos_processados if device_id else 0)
+    except Exception as e:
+        logger.error("ws_eventos_erro", device_id=device_id, error=str(e))
+
+
+# WebSocket endpoint for real-time alerts
+@router.websocket("/ws/alerts")
+async def websocket_alerts(websocket: WebSocket):
+    """WebSocket endpoint for real-time alert updates.
+    
+    Connects a client to the alert broadcast stream. New alerts will be pushed
+    to the client immediately when they are created/updated.
+    """
+    await ws_manager.connect(websocket)
+    try:
+        while True:
+            # Keep connection alive - receive heartbeat messages from client
+            data = await websocket.receive_text()
+            # Optional: handle client commands (e.g., "ping", "subscribe", "unsubscribe")
+            # For now, just acknowledge receipt
+            if data:
+                structlog.get_logger(__name__).debug("ws_received", data=data)
+    except WebSocketDisconnect:
+        await ws_manager.disconnect(websocket)
+    except Exception as e:
+        structlog.get_logger(__name__).error("ws_error", error=str(e))
+        await ws_manager.disconnect(websocket)
+
