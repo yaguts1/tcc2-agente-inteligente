@@ -24,6 +24,8 @@ from fastapi.templating import Jinja2Templates
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from contextlib import asynccontextmanager
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
+from starlette.middleware.base import BaseHTTPMiddleware
 
 from interface.api import router as api_router
 from interface.api import reconcile_device_events
@@ -45,9 +47,28 @@ from interface.dao import (
     inserir_timeline_event,
     inserir_timeline_event as _dao_inserir_timeline_event,
     listar_device_events,
+    inserir_grade,
+    inserir_alertas,
 )
 
+from dados_simulados.gerador import (
+    gerar_sessao_simulada,
+    PerfilPaciente,
+)
+
+from modulo_alerta.engine import processar_alertas
+
 DB_PATH = os.getenv("UPP_DB_PATH", "dados.db")
+
+# Security headers middleware
+class SecurityHeadersMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request, call_next):
+        response = await call_next(request)
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "DENY"
+        response.headers["X-XSS-Protection"] = "1; mode=block"
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+        return response
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
@@ -101,6 +122,28 @@ async def _lifespan(app: FastAPI):
 
 app = FastAPI(title="Monitor de Alertas UPP", lifespan=_lifespan)
 app.include_router(api_router)
+
+# Add security headers middleware
+app.add_middleware(SecurityHeadersMiddleware)
+
+# Enable CORS for local frontend development and common dev ports
+_allowed_origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+]
+try:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_allowed_origins,
+        allow_credentials=True,
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+except Exception:
+    # do not fail startup if middleware cannot be added for some reason
+    pass
 # Serve built SPA (if present) under /site-ui. Support multiple possible build locations
 # (legacy `site_ui/dist`, or `frontend/build` produced by this repo's Vite config).
 _ROOT = Path(__file__).resolve().parents[1]
@@ -1026,6 +1069,134 @@ def paciente_documento_remover(request: Request, documento_id: int) -> HTMLRespo
         {"paciente_id": paciente_id, "removido": documento_id},
     )
     return response
+
+
+# ============================================================================
+# ENDPOINTS DE SIMULAÇÃO (novos)
+# ============================================================================
+
+@app.get("/pacientes/{paciente_id}/simulacao-panel", response_class=HTMLResponse)
+async def paciente_simulacao_panel(request: Request, paciente_id: str) -> HTMLResponse:
+    """Retorna o painel de simulação para um paciente."""
+    try:
+        ficha = obter_ficha_paciente(DB_PATH, paciente_id)
+        if not ficha:
+            raise HTTPException(status_code=404, detail="Paciente não encontrado")
+        
+        contexto = {
+            "request": request,
+            "paciente_id": paciente_id,
+            "perfil": ficha.get("perfil", "medio"),
+        }
+        return templates.TemplateResponse("pacientes/partials/simulacao_panel.html", contexto)
+    except Exception as e:
+        logger.exception("simulacao_panel_erro", paciente_id=paciente_id, error=str(e))
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/pacientes/{paciente_id}/simular", response_class=HTMLResponse)
+async def paciente_simular(
+    request: Request,
+    paciente_id: str,
+) -> HTMLResponse:
+    """
+    Gera dados simulados para um paciente específico.
+    
+    Form data:
+    - duracao_horas: int (1-72)
+    - seed: int (optional, default=42)
+    - perfil: str (baixo/medio/alto)
+    
+    Retorna HTML com feedback + trigger HTMX para recarregar dashboard
+    """
+    try:
+        # 1. Validar paciente existe
+        ficha = obter_ficha_paciente(DB_PATH, paciente_id)
+        if not ficha:
+            contexto = {
+                "request": request,
+                "success": False,
+                "error": "Paciente não encontrado",
+            }
+            response = templates.TemplateResponse("pacientes/partials/simulacao_feedback.html", contexto)
+            return response
+        
+        # 2. Extrair parâmetros do formulário
+        form = await request.form()
+        try:
+            duracao_horas = min(max(int(form.get("duracao_horas", 24)), 1), 72)
+        except (ValueError, TypeError):
+            duracao_horas = 24
+        
+        try:
+            seed = int(form.get("seed", 42))
+        except (ValueError, TypeError):
+            seed = 42
+        
+        perfil_form = form.get("perfil", ficha.get("perfil", "medio"))
+        perfil = str(perfil_form).lower()
+        if perfil not in ["baixo", "medio", "alto"]:
+            perfil = "medio"
+        
+        logger.info(
+            "simulacao_iniciada",
+            paciente_id=paciente_id,
+            duracao=duracao_horas,
+            seed=seed,
+            perfil=perfil,
+        )
+        
+        # 3. Gerar dados simulados
+        df_grade, contextos = gerar_sessao_simulada(
+            duracao_horas=duracao_horas,
+            seed=seed,
+            passo_min=5,
+            perfil=PerfilPaciente(perfil=perfil),
+            incluir_contexto=True,
+        )
+        df_grade.insert(0, "paciente_id", paciente_id)
+        
+        # 4. Salvar grade no DB
+        inserir_grade(DB_PATH, df_grade)
+        logger.info("simulacao_grade_salva", paciente_id=paciente_id, linhas=len(df_grade))
+        
+        # 5. Processar alertas
+        _, alertas = processar_alertas(
+            df_grade[["timestamp", "postura"]],
+            perfil,
+            paciente_id,
+        )
+        if alertas:
+            inserir_alertas(DB_PATH, alertas)
+            logger.info("simulacao_alertas_salva", paciente_id=paciente_id, quantidade=len(alertas))
+        
+        # 6. Retornar feedback com trigger HTMX
+        contexto = {
+            "request": request,
+            "success": True,
+            "duracao": duracao_horas,
+            "eventos": len(df_grade),
+            "alertas": len(alertas),
+            "paciente_id": paciente_id,
+        }
+        response = templates.TemplateResponse("pacientes/partials/simulacao_feedback.html", contexto)
+        _set_hx_trigger(response, "simulacao-concluida", {
+            "paciente_id": paciente_id,
+            "eventos": len(df_grade),
+            "alertas": len(alertas),
+        })
+        logger.info("simulacao_concluida", paciente_id=paciente_id, sucesso=True)
+        return response
+        
+    except Exception as e:
+        logger.exception("simulacao_erro", paciente_id=paciente_id, error=str(e))
+        contexto = {
+            "request": request,
+            "success": False,
+            "error": str(e),
+        }
+        response = templates.TemplateResponse("pacientes/partials/simulacao_feedback.html", contexto)
+        return response
 
 
 @app.get("/pacientes/documentos/{documento_id}/download")

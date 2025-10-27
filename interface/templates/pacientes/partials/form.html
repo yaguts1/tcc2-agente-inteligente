@@ -173,7 +173,18 @@
       <p class="hint">Nenhuma rotina registrada. Utilize a rotina sugerida ou personalize as pausas acima.</p>
     {% endif %}
   </section>
+
+  <!-- Painel de Simulação (novo) -->
+  {% if paciente.paciente_id %}
+  <div id="simulacao-panel"
+       hx-get="/pacientes/{{ paciente.paciente_id }}/simulacao-panel"
+       hx-trigger="load"
+       hx-swap="outerHTML">
+    <!-- Painel carregado dinamicamente -->
+  </div>
+  {% endif %}
 </div>
+
 
 
 
