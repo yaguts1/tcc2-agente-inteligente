@@ -235,9 +235,21 @@ async def api_logout() -> dict:
 
 @router.get("/auth/me", status_code=status.HTTP_200_OK)
 async def api_me(request: Request) -> dict:
+    # Try to get user from cookie first (from httpOnly cookie)
     user = request.cookies.get("session_user")
+    
+    # If no cookie, try to get from Authorization header (Bearer token)
+    if not user:
+        auth_header = request.headers.get("Authorization", "")
+        if auth_header.startswith("Bearer "):
+            token = auth_header[7:]  # Remove "Bearer " prefix
+            # Token format is "username:timestamp"
+            if ":" in token:
+                user = token.split(":")[0]
+    
     if not user:
         raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail={"code": "not_authenticated"})
+    
     # try to include display_name and role when available
     try:
         u = obter_usuario_por_nome(DB_PATH, user)
