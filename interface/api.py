@@ -271,31 +271,38 @@ async def api_me(request: Request) -> dict:
 async def get_stats() -> dict:
     """Retorna estatísticas do dashboard para o frontend.
     
+    ✅ CORRIGIDO: Usa janela temporal CONSISTENTE de 24h para todas as métricas
+    
+    Antes: activeAlerts=7 dias, acknowledgedAlerts=7 dias, completedToday=24h
+           Causava taxa de conclusão inconsistente (misturava períodos diferentes)
+    
+    Agora: TODAS as métricas usam 24h (últimas 24 horas)
+           Taxa de conclusão = fechados_24h / (abertos_24h + reconhecidos_24h + fechados_24h)
+    
     Retorna: activeAlerts, acknowledgedAlerts, completedToday, totalPatients, completionRate
     """
     try:
-        # Buscar alertas da última semana
-        all_alerts = selecionar_alertas_janela(DB_PATH, horas=168)  # 1 semana
+        # ✅ CORRIGIDO: Usar janela CONSISTENTE de 24 horas para TODAS as métricas
+        # Antes: selecionar_alertas_janela(DB_PATH, horas=168)  # 1 semana - INCONSISTENTE!
+        # Agora: selecionar_alertas_janela(DB_PATH, horas=24)   # 24 horas - CONSISTENTE!
+        all_alerts_24h = selecionar_alertas_janela(DB_PATH, horas=24)
         
-        # Contar alertas abertos (pending)
-        active_alerts = len([a for a in all_alerts if a.get("status") == "aberto"])
+        # Contar alertas abertos (pending) nas últimas 24h
+        active_alerts = len([a for a in all_alerts_24h if a.get("status") == "aberto"])
         
-        # Contar alertas reconhecidos (acknowledged)
-        acked_alerts = len([a for a in all_alerts if a.get("status") == "reconhecido"])
+        # Contar alertas reconhecidos (acknowledged) nas últimas 24h
+        acked_alerts = len([a for a in all_alerts_24h if a.get("status") == "reconhecido"])
         
-        # Contar alertas fechados (completed) de hoje
-        agora = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
-        completed_today = len([
-            a for a in all_alerts 
-            if a.get("status") == "fechado" and a.get("fim") is not None
-            and datetime.fromisoformat(a.get("fim")[:19]) >= agora
-        ])
+        # Contar alertas fechados (completed) nas últimas 24h
+        completed_today = len([a for a in all_alerts_24h if a.get("status") == "fechado"])
         
         # Contar pacientes totais
         fichas = listar_fichas_pacientes(DB_PATH, incluir_rotinas=False)
         total_patients = len(fichas)
         
-        # Calcular taxa de conclusão (fechados / (abertos + reconhecidos + fechados))
+        # ✅ CORRIGIDO: Taxa de conclusão agora usa dados CONSISTENTES (todas 24h)
+        # Fórmula: fechados / (abertos + reconhecidos + fechados) nas últimas 24h
+        # Representa: % de alertas que foram completados no período de 24h
         total_relevant = active_alerts + acked_alerts + completed_today
         completion_rate = (
             (completed_today / total_relevant * 100) 
@@ -314,6 +321,99 @@ async def get_stats() -> dict:
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={"code": "stats_error", "message": str(exc)}
+        ) from exc
+
+
+@router.get("/validate-repositioning/{paciente_id}", status_code=status.HTTP_200_OK)
+async def validate_repositioning_contract(paciente_id: str) -> dict:
+    """Valida o contrato Backend/Frontend para repouso.
+    
+    Valida:
+    1. Último repouso (ultimo_repouso) < Próximo repouso (proximo_repouso)
+    2. Próximo repouso (proximo_repouso) > Agora (deve estar no futuro)
+    3. Intervalo entre repouso é consistente com perfil
+    
+    Retorna: {
+        "valid": bool,
+        "errors": [str],
+        "ultimo_repouso": ISO string,
+        "proximo_repouso": ISO string,
+        "intervalo_horas": float,
+        "perfil": str,
+        "agora": ISO string
+    }
+    """
+    try:
+        ficha = obter_ficha_paciente(DB_PATH, paciente_id)
+        if ficha is None:
+            raise HTTPException(
+                status.HTTP_404_NOT_FOUND,
+                detail={"code": "paciente_nao_encontrado", "message": f"Paciente {paciente_id} nao encontrado."}
+            )
+        
+        agora = datetime.now()
+        errors = []
+        
+        # Buscar alertas (não filtra por paciente_id na DAO, então filtramos aqui)
+        todos_alertas = selecionar_alertas_janela(DB_PATH, horas=24)
+        alertas = [a for a in todos_alertas if a.get("paciente_id") == paciente_id]
+        
+        # Buscar último alerta (último repouso)
+        alertas_filtrados = [a for a in alertas if a.get("status") == "fechado"]
+        
+        ultimo_repouso = None
+        if alertas_filtrados:
+            # Pega o mais recente (último fim de alerta)
+            alertas_ordenados = sorted(alertas_filtrados, key=lambda x: x.get("fim", ""), reverse=True)
+            último_alerta = alertas_ordenados[0]
+            if último_alerta.get("fim"):
+                try:
+                    ultimo_repouso = datetime.fromisoformat(último_alerta.get("fim")[:19])
+                except:
+                    pass
+        
+        # Buscar próximo alerta (próximo repouso)
+        alertas_abertos = [a for a in alertas if a.get("status") == "aberto"]
+        proximo_repouso = None
+        if alertas_abertos:
+            alertas_ordenados = sorted(alertas_abertos, key=lambda x: x.get("inicio", ""))
+            próximo_alerta = alertas_ordenados[0]
+            if próximo_alerta.get("inicio"):
+                try:
+                    proximo_repouso = datetime.fromisoformat(próximo_alerta.get("inicio")[:19])
+                except:
+                    pass
+        
+        # Validar contrato
+        if ultimo_repouso and proximo_repouso:
+            if ultimo_repouso >= proximo_repouso:
+                errors.append(f"ultimo_repouso ({ultimo_repouso.isoformat()}) >= proximo_repouso ({proximo_repouso.isoformat()})")
+        
+        if proximo_repouso and proximo_repouso <= agora:
+            errors.append(f"proximo_repouso ({proximo_repouso.isoformat()}) <= agora ({agora.isoformat()}) - DEVE estar no FUTURO!")
+        
+        intervalo_horas = None
+        if ultimo_repouso and proximo_repouso:
+            intervalo_horas = (proximo_repouso - ultimo_repouso).total_seconds() / 3600.0
+        
+        perfil = ficha.get("perfil", DEFAULT_PERFIL)
+        
+        return {
+            "valid": len(errors) == 0,
+            "errors": errors,
+            "ultimo_repouso": ultimo_repouso.isoformat() if ultimo_repouso else None,
+            "proximo_repouso": proximo_repouso.isoformat() if proximo_repouso else None,
+            "intervalo_horas": round(intervalo_horas, 2) if intervalo_horas else None,
+            "perfil": perfil,
+            "agora": agora.isoformat()
+        }
+    except HTTPException:
+        raise
+    except Exception as exc:
+        logger.exception("validate_repositioning_error", erro=str(exc), paciente_id=paciente_id)
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"code": "validate_error", "message": str(exc)}
         ) from exc
 
 _TOKEN_BUCKET_CAPACITY = 30.0

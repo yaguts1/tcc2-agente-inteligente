@@ -177,7 +177,7 @@ def gerar_sessao_simulada(
         duracao_horas: Duração da simulação em horas
         seed: Seed para reproducibilidade
         passo_min: Intervalo da grade em minutos
-        inicio: Timestamp inicial (se None, usa agora - duracao_horas)
+        inicio: Timestamp inicial (se None, usa AGORA para simular FUTURO)
         perfil: PerfilPaciente (se None, usa padrão)
         incluir_contexto: Se True, inclui eventos agendados (refeições, cirurgias, etc)
         tipos_eventos: Dict indicando quais tipos de eventos incluir
@@ -194,7 +194,10 @@ def gerar_sessao_simulada(
     """
     agora = datetime.now().replace(second=0, microsecond=0)
     if inicio is None:
-        inicio = agora - timedelta(hours=duracao_horas)
+        # ✅ CORRIGIDO: Simular para FUTURO (não passado)
+        # Antes: inicio = agora - timedelta(hours=duracao_horas)  # ❌ Passado
+        # Agora: inicio = agora  # ✅ Começa AGORA, vai para futuro
+        inicio = agora
     fim = inicio + timedelta(hours=duracao_horas)
 
     if perfil is None:
