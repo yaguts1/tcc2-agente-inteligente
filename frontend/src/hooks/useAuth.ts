@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { authApi, ApiException } from '../lib/api';
-import { getStoredUser, getStoredToken, getSessionTimeRemaining } from '../lib/storage';
+import { getStoredUser, getStoredToken, getSessionTimeRemaining, storeUser, clearAuth } from '../lib/storage';
 
 export function useAuth() {
   const [user, setUser] = useState<{ username: string } | null>(null);
@@ -13,32 +13,38 @@ export function useAuth() {
 
   const checkAuth = async () => {
     try {
-      // First, try to use stored user and token
-      const storedUser = getStoredUser();
-      const storedToken = getStoredToken();
-
-      if (storedUser && storedToken) {
-        // Check session validity by calling /me endpoint
-        try {
-          const data = await authApi.me();
-          setUser(data);
-          setError(null);
-          return;
-        } catch (err) {
-          // If /me fails with 401, stored token is invalid
-          if (err instanceof ApiException && err.status === 401) {
-            setUser(null);
-            setError(null);
-          } else {
-            setError('Erro ao verificar autenticação');
-          }
-          return;
+      // Try to validate session with backend (uses cookie from server)
+      // The backend sets httpOnly cookie which is auto-sent with requests
+      try {
+        const data = await authApi.me();
+        setUser(data);
+        
+        // Also restore localStorage from backend response for consistency
+        const storedUser = getStoredUser();
+        if (!storedUser) {
+          // Re-populate localStorage from /me response
+          storeUser({
+            username: data.username,
+            display_name: data.display_name,
+            role: data.role,
+          });
         }
+        setError(null);
+        return;
+      } catch (err) {
+        // If /me fails with 401, session is invalid or expired
+        if (err instanceof ApiException && err.status === 401) {
+          clearAuth();
+          setUser(null);
+          setError(null);
+        } else {
+          // Other errors (network, etc) - don't force logout
+          // User will be treated as unauthenticated but localStorage stays for retry
+          setUser(null);
+          setError(null);
+        }
+        return;
       }
-
-      // If no stored user/token, set user to null
-      setUser(null);
-      setError(null);
     } catch (err) {
       setError('Erro ao verificar autenticação');
       console.error('[useAuth] checkAuth error:', err);

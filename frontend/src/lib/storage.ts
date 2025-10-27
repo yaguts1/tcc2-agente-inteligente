@@ -9,6 +9,7 @@ const SESSION_EXPIRY_KEY = 'auth_session_expiry';
 
 /**
  * Get stored authentication token
+ * Falls back to cookie-based session if token not available
  */
 export function getStoredToken(): string | null {
   try {
@@ -33,9 +34,9 @@ export function getStoredToken(): string | null {
 /**
  * Store authentication token and session info
  * @param token Auth token/session ID
- * @param expiryHours How many hours until token expires (default: 24)
+ * @param expiryHours How many hours until token expires (default: 8)
  */
-export function storeToken(token: string, expiryHours: number = 24): void {
+export function storeToken(token: string, expiryHours: number = 8): void {
   try {
     localStorage.setItem(TOKEN_KEY, token);
 

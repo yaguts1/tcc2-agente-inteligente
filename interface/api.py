@@ -168,8 +168,11 @@ async def api_login(request: Request, _: None = Depends(_check_auth_rate_limit))
         if password != admin_pass:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail={"code": "invalid_credentials", "message": "Usuario ou senha invalidos"})
 
+    # Generate token (use username + timestamp as simple token)
+    token = f"{username}:{int(time.time())}"
+    
     # set cookie for session (simple)
-    resp = {"username": username}
+    resp = {"username": username, "token": token, "display_name": user.get("display_name") if user else None, "role": user.get("role", "staff") if user else "staff"}
     from fastapi import Response
 
     response = Response(content=json.dumps(resp), media_type="application/json", status_code=status.HTTP_200_OK)
@@ -211,8 +214,11 @@ async def api_register(request: Request, req: RegisterRequest, _: None = Depends
 
     # auto-login after register: set cookie
     from fastapi import Response
+    
+    # Generate token (use username + timestamp as simple token)
+    token = f"{username}:{int(time.time())}"
 
-    resp = {"username": username, "display_name": display}
+    resp = {"username": username, "display_name": display, "token": token, "role": "staff"}
     response = Response(content=json.dumps(resp), media_type="application/json", status_code=status.HTTP_201_CREATED)
     response.set_cookie("session_user", username, max_age=8 * 3600, httponly=True)
     return response
