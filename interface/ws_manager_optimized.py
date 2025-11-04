@@ -5,6 +5,7 @@ from fastapi import WebSocket
 import structlog
 from datetime import datetime
 from enum import Enum
+from servicos import metricas
 
 
 class AlertSeverity(str, Enum):
@@ -110,6 +111,9 @@ class ConnectionManagerOptimized:
             total_clients=len(self.active_connections),
             filters=str(self.active_connections[websocket]["filters"]),
         )
+        
+        # Update Prometheus metrics
+        metricas.atualizar_websocket_connections(len(self.active_connections))
     
     async def disconnect(self, websocket: WebSocket):
         """Remove conexão."""
@@ -126,6 +130,9 @@ class ConnectionManagerOptimized:
                 messages_filtered=stats["messages_filtered"],
                 total_clients=len(self.active_connections),
             )
+            
+            # Update Prometheus metrics
+            metricas.atualizar_websocket_connections(len(self.active_connections))
     
     async def broadcast(self, message: dict):
         """
@@ -156,6 +163,9 @@ class ConnectionManagerOptimized:
                 # Enviar apenas se passou no filtro
                 await websocket.send_json(message)
                 client_data["messages_sent"] += 1
+                
+                # Record metric
+                metricas.registrar_websocket_message()
                 
             except Exception as e:
                 self.logger.warning(

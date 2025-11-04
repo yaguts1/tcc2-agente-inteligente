@@ -210,5 +210,14 @@ __marimo__/
 tcc.db
 tcc.db.*
 frontend/build/
+frontend/dist/
 verify_production.py
 check_db.py
+
+# Cleanup and temporary files
+cleanup_backup/
+remove_legacy_code.py
+cleanup_project.py
+remove_template_functions.py
+tmp_*.py
+test_websocket_flow.py

@@ -235,14 +235,33 @@ export const alertsApi = {
 export interface TimelineEvent {
   id: number;
   paciente_id: string;
+  paciente_name: string | null;
   ts: string;
   ts_ms: number;
   tipo: string;
   descricao: string | null;
 }
 
+export interface TimelineFilters {
+  paciente_id?: string;
+  tipo?: string;
+  start_ms?: number;
+  end_ms?: number;
+  limit?: number;
+}
+
 export const timelineApi = {
-  getEvents: () => request<TimelineEvent[]>('/api/timeline'),
+  getEvents: (filters?: TimelineFilters) => {
+    const params = new URLSearchParams();
+    if (filters?.paciente_id) params.append('paciente_id', filters.paciente_id);
+    if (filters?.tipo) params.append('tipo', filters.tipo);
+    if (filters?.start_ms) params.append('start_ms', filters.start_ms.toString());
+    if (filters?.end_ms) params.append('end_ms', filters.end_ms.toString());
+    if (filters?.limit) params.append('limit', filters.limit.toString());
+    
+    const queryString = params.toString();
+    return request<TimelineEvent[]>(`/api/timeline${queryString ? `?${queryString}` : ''}`);
+  },
 };
 
 // Patients API
@@ -314,22 +333,49 @@ export const patientsApi = {
 export interface DeviceEvent {
   id: number;
   device_id: string;
-  event_type: string;
-  event_data: any;
+  ts: string;
+  ts_ms: number;
+  payload: any;
   processed_at: string | null;
   created_at: string;
+}
+
+export interface BedStats {
+  cama_id: string;
+  count: number;
+  first_event: string;
+  last_event: string;
+  current_patient: {
+    id: string;
+    name: string;
+  } | null;
+}
+
+export interface DeviceEventsStats {
+  total_orphans: number;
+  beds: BedStats[];
+}
+
+export interface ReconcileResponse {
+  processed: number;
+  skipped: number;
+  patient_name?: string;
+  cama_id?: string;
+  error?: string;
 }
 
 export const deviceEventsApi = {
   getEvents: () => request<DeviceEvent[]>('/api/device_events'),
 
+  getStats: () => request<DeviceEventsStats>('/api/device_events/stats'),
+
   reconcile: () =>
-    request<void>('/api/device_events/reconcile', {
+    request<ReconcileResponse>('/api/device_events/reconcile', {
       method: 'POST',
     }),
 
-  reconcileAdmin: () =>
-    request<void>('/admin/device_events/reconcile', {
+  reconcileBed: (camaId: string) =>
+    request<ReconcileResponse>(`/api/device_events/reconcile_bed/${camaId}`, {
       method: 'POST',
     }),
 };

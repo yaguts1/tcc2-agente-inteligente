@@ -194,10 +194,9 @@ def gerar_sessao_simulada(
     """
     agora = datetime.now().replace(second=0, microsecond=0)
     if inicio is None:
-        # ✅ CORRIGIDO: Simular para FUTURO (não passado)
-        # Antes: inicio = agora - timedelta(hours=duracao_horas)  # ❌ Passado
-        # Agora: inicio = agora  # ✅ Começa AGORA, vai para futuro
-        inicio = agora
+        # Simular dados PASSADOS para aparecer no Dashboard/Timeline
+        # Começa X horas no passado e vai até AGORA
+        inicio = agora - timedelta(hours=duracao_horas)
     fim = inicio + timedelta(hours=duracao_horas)
 
     if perfil is None:

@@ -365,6 +365,17 @@ def criar_esquema(db_path: str = "dados.db") -> None:
                 ON alertas (paciente_id, inicio);
             CREATE INDEX IF NOT EXISTS idx_eventos_inicio
                 ON eventos (inicio);
+            
+            -- Índices compostos adicionais para queries frequentes
+            CREATE INDEX IF NOT EXISTS idx_alertas_status_inicio
+                ON alertas (status, inicio DESC);
+            CREATE INDEX IF NOT EXISTS idx_alertas_paciente_status_inicio
+                ON alertas (paciente_id, status, inicio DESC);
+            CREATE INDEX IF NOT EXISTS idx_grade_paciente_ts_desc
+                ON grade (paciente_id, ts DESC);
+            CREATE INDEX IF NOT EXISTS idx_eventos_paciente_inicio
+                ON eventos (paciente_id, inicio DESC);
+            
             CREATE TABLE IF NOT EXISTS timeline_events (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 paciente_id TEXT,
@@ -375,7 +386,7 @@ def criar_esquema(db_path: str = "dados.db") -> None:
                 meta TEXT,
                 created_at TEXT NOT NULL DEFAULT (datetime('now'))
             );
-            CREATE INDEX IF NOT EXISTS idx_timeline_paciente_ts ON timeline_events (paciente_id, ts);
+            CREATE INDEX IF NOT EXISTS idx_timeline_paciente_ts_ms_desc ON timeline_events (paciente_id, ts_ms DESC);
             CREATE TABLE IF NOT EXISTS devices (
                 device_id TEXT PRIMARY KEY,
                 meta TEXT,
@@ -867,24 +878,37 @@ def listar_alertas_abertos(db_path: str) -> List[dict]:
     return [dict(row) for row in rows]
 
 def selecionar_alertas_janela(db_path: str, horas: int | None = 24) -> list[dict]:
-    """ Busca alertas (qualquer status) com inicio >= agora - horas (se horas for None, traz todos), ordenados por inicio ASC. Retorna lista de dicts. """
-    limite_inferior: str | None = None
-    if horas is not None:
-        agora = datetime.now().replace(microsecond=0)
-        limite_inferior = (agora - timedelta(hours=horas)).strftime("%Y-%m-%dT%H:%M:%S")
-
-    with _connect(db_path) as conn:
-        if limite_inferior is None:
+    """Busca alertas (qualquer status) dentro de uma janela de tempo.
+    
+    Args:
+        db_path: Caminho do banco de dados
+        horas: Janela de tempo em horas (se None, traz todos)
+              Busca alertas de (agora - horas) até (agora + horas)
+              
+    Returns:
+        Lista de dicts com dados dos alertas ordenados por inicio ASC
+    """
+    if horas is None:
+        # Sem filtro de tempo - retorna todos
+        with _connect(db_path) as conn:
             cursor = conn.execute(
                 "SELECT paciente_id, inicio, fim, tipo, perfil, janela_min, status, duracao_min "
                 "FROM alertas ORDER BY inicio ASC"
             )
-        else:
-            cursor = conn.execute(
-                "SELECT paciente_id, inicio, fim, tipo, perfil, janela_min, status, duracao_min "
-                "FROM alertas WHERE inicio >= ? ORDER BY inicio ASC",
-                (limite_inferior,),
-            )
+            rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+    
+    # Com filtro de tempo - busca passado e futuro próximo
+    agora = datetime.now().replace(microsecond=0)
+    limite_inferior = (agora - timedelta(hours=horas)).strftime("%Y-%m-%dT%H:%M:%S")
+    limite_superior = (agora + timedelta(hours=horas)).strftime("%Y-%m-%dT%H:%M:%S")
+
+    with _connect(db_path) as conn:
+        cursor = conn.execute(
+            "SELECT paciente_id, inicio, fim, tipo, perfil, janela_min, status, duracao_min "
+            "FROM alertas WHERE inicio >= ? AND inicio <= ? ORDER BY inicio ASC",
+            (limite_inferior, limite_superior),
+        )
         rows = cursor.fetchall()
     return [dict(row) for row in rows]
 
@@ -1078,73 +1102,6 @@ def _to_ms(ts_iso: str | None, fallback_now: bool = True) -> int | None:
         return int(pd.Timestamp.now().timestamp() * 1000)
 
 
-def start_device_assignment(
-    db_path: str,
-    device_id: str,
-    cama_id: str | None = None,
-    paciente_id: str | None = None,
-    start_ts: str | None = None,
-    start_ms: int | None = None,
-) -> int:
-    """Inicia uma atribuição do device para uma cama/paciente no momento fornecido.
-
-    Retorna o id do registro inserido em `device_assignments`.
-    Se já existir uma atribuição aberta para o mesmo device, ela será finalizada com o mesmo start_ts.
-    """
-    if not device_id:
-        raise ValueError("device_id deve ser informado.")
-    if start_ms is None:
-        start_ms = _to_ms(start_ts, fallback_now=True)
-    if start_ts is None:
-        start_ts = _utc_now_iso()
-    cama_norm = _normalize_cama_id(cama_id)
-    paciente_norm = None if paciente_id is None else str(paciente_id)
-    with _connect(db_path) as conn:
-        # ensure device exists
-        conn.execute("INSERT OR IGNORE INTO devices (device_id) VALUES (?)", (device_id,))
-        # close any previous open assignment for this device
-        cur = conn.execute(
-            "SELECT id FROM device_assignments WHERE device_id = ? AND end_ms IS NULL ORDER BY start_ms DESC LIMIT 1",
-            (device_id,),
-        )
-        row = cur.fetchone()
-        if row is not None:
-            aid = int(row["id"])
-            conn.execute(
-                "UPDATE device_assignments SET end_ts = ?, end_ms = ? WHERE id = ?",
-                (start_ts, int(start_ms), aid),
-            )
-        cursor = conn.execute(
-            "INSERT INTO device_assignments (device_id, cama_id, paciente_id, start_ts, start_ms) VALUES (?, ?, ?, ?, ?)",
-            (device_id, cama_norm, paciente_norm, start_ts, int(start_ms)),
-        )
-        return int(cursor.lastrowid)
-
-
-def end_device_assignment(db_path: str, device_id: str, end_ts: str | None = None, end_ms: int | None = None) -> int:
-    """Encerra a última atribuição aberta para o device e retorna o número de linhas afetadas."""
-    if not device_id:
-        raise ValueError("device_id deve ser informado.")
-    if end_ms is None:
-        end_ms = _to_ms(end_ts, fallback_now=True)
-    if end_ts is None:
-        end_ts = _utc_now_iso()
-    with _connect(db_path) as conn:
-        cur = conn.execute(
-            "SELECT id FROM device_assignments WHERE device_id = ? AND end_ms IS NULL ORDER BY start_ms DESC LIMIT 1",
-            (device_id,),
-        )
-        row = cur.fetchone()
-        if row is None:
-            return 0
-        aid = int(row["id"])
-        conn.execute(
-            "UPDATE device_assignments SET end_ts = ?, end_ms = ? WHERE id = ?",
-            (end_ts, int(end_ms), aid),
-        )
-        return 1
-
-
 def resolver_paciente_por_device_em(db_path: str, device_id: str, ts_ms: int) -> str | None:
     """Resolve qual paciente (se houver) estava associado ao device no instante `ts_ms`.
 
@@ -1162,33 +1119,6 @@ def resolver_paciente_por_device_em(db_path: str, device_id: str, ts_ms: int) ->
             return None
         pid = row["paciente_id"]
         return None if pid is None else str(pid)
-
-
-def listar_device_assignments(db_path: str, device_id: str | None = None, limit: int = 100) -> list[dict]:
-    sql = "SELECT id, device_id, cama_id, paciente_id, start_ts, start_ms, end_ts, end_ms, created_at FROM device_assignments"
-    params: list = []
-    if device_id:
-        sql = f"{sql} WHERE device_id = ?"
-        params.append(device_id)
-    sql = f"{sql} ORDER BY start_ms DESC LIMIT ?"
-    params.append(int(limit))
-    with _connect(db_path) as conn:
-        cur = conn.execute(sql, tuple(params))
-        rows = cur.fetchall()
-    results: list[dict] = []
-    for row in rows:
-        results.append({
-            "id": row["id"],
-            "device_id": row["device_id"],
-            "cama_id": row["cama_id"],
-            "paciente_id": row["paciente_id"],
-            "start_ts": row["start_ts"],
-            "start_ms": int(row["start_ms"]),
-            "end_ts": row["end_ts"],
-            "end_ms": (None if row["end_ms"] is None else int(row["end_ms"])),
-            "created_at": row["created_at"],
-        })
-    return results
 
 
 def inserir_device_event(db_path: str, device_id: str, ts: str, ts_ms: int, payload: dict) -> int:

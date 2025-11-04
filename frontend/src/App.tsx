@@ -11,6 +11,7 @@ import { AdminPage } from './components/pages/AdminPage';
 import { FullPageSpinner } from './components/shared/Spinner';
 import { SessionExpirationAlert } from './components/common/SessionExpirationAlert';
 import { Toaster } from './components/ui/sonner';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 type Page = 'dashboard' | 'timeline' | 'patients' | 'admin';
 
@@ -36,7 +37,7 @@ export default function App() {
 
   if (!isAuthenticated) {
     return (
-      <>
+      <ErrorBoundary>
         <AuthLayout
           title={authMode === 'login' ? 'Sistema de Alertas de Reposicionamento' : 'Criar Conta'}
           description={
@@ -62,7 +63,7 @@ export default function App() {
           )}
         </AuthLayout>
         <Toaster />
-      </>
+      </ErrorBoundary>
     );
   }
 
@@ -82,7 +83,7 @@ export default function App() {
   };
 
   return (
-    <>
+    <ErrorBoundary>
       <AppLayout
         currentUser={user?.username || 'Usuário'}
         onLogout={logout}
@@ -93,6 +94,6 @@ export default function App() {
       </AppLayout>
       <SessionExpirationAlert showWarning={true} />
       <Toaster />
-    </>
+    </ErrorBoundary>
   );
 }

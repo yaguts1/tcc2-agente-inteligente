@@ -31,9 +31,6 @@ from interface.dao import (
     listar_devices,
     resolver_paciente_por_device_em,
     inserir_device_event,
-    listar_device_assignments,
-    start_device_assignment,
-    end_device_assignment,
     listar_device_events,
     delete_device_event,
     alterar_status_alerta,
@@ -53,95 +50,144 @@ from modulo_alerta.engine import processar_alertas
 from quality.filtro import FiltroResultado, filtrar as filtrar_evento, flush_filtro, reset_filtro
 from servicos import metricas
 from servicos.processamento_incremental import ProcessadorIncremental
+from servicos.backup import BackupService, scheduled_backup_task
 from ferramentas.exportador import ExportService, ExportFilters, generate_csv_filename, generate_pdf_filename
 
 DB_PATH = os.getenv("UPP_DB_PATH", "dados.db")
 DEFAULT_PERFIL = "medio"
+APP_VERSION = "1.0.0"
+APP_START_TIME = time.time()
 
 router = APIRouter(prefix="/api", tags=["api"])
 
-# Rate limiting for auth endpoints (5 attempts per minute per IP)
-_auth_attempts: Dict[str, List[float]] = {}
-_auth_lock = asyncio.Lock()
+# Enhanced rate limiting system
+class RateLimiter:
+    """Flexible rate limiter with configurable windows and limits."""
+    
+    def __init__(self):
+        self._attempts: Dict[str, Dict[str, List[float]]] = defaultdict(lambda: defaultdict(list))
+        self._lock = asyncio.Lock()
+    
+    async def check_limit(self, key: str, limit: int, window_seconds: int, request: Request) -> None:
+        """
+        Check if request exceeds rate limit.
+        
+        Args:
+            key: Rate limit category (e.g., 'auth', 'api', 'batch')
+            limit: Maximum requests allowed in window
+            window_seconds: Time window in seconds
+            request: FastAPI request object
+        """
+        client_ip = request.client.host if request.client else "unknown"
+        now = time.time()
+        
+        async with self._lock:
+            # Clean old attempts
+            if client_ip in self._attempts[key]:
+                self._attempts[key][client_ip] = [
+                    ts for ts in self._attempts[key][client_ip] 
+                    if now - ts < window_seconds
+                ]
+            
+            # Count attempts in window
+            attempts = len(self._attempts[key].get(client_ip, []))
+            
+            if attempts >= limit:
+                retry_after = window_seconds
+                raise HTTPException(
+                    status.HTTP_429_TOO_MANY_REQUESTS,
+                    detail={
+                        "code": "rate_limited",
+                        "message": f"Muitas requisições. Tente novamente em {window_seconds}s.",
+                        "retry_after": retry_after
+                    },
+                    headers={"Retry-After": str(retry_after)}
+                )
+            
+            # Record new attempt
+            self._attempts[key][client_ip].append(now)
+    
+    def reset(self, key: str | None = None) -> None:
+        """Reset rate limits (for testing)."""
+        if key is None:
+            self._attempts.clear()
+        elif key in self._attempts:
+            self._attempts[key].clear()
+
+
+# Global rate limiter instance
+rate_limiter = RateLimiter()
 
 
 def _reset_auth_rate_limits() -> None:
     """Reset auth rate limits (for testing only)."""
-    global _auth_attempts
-    _auth_attempts.clear()
+    rate_limiter.reset('auth')
 
 
 async def _check_auth_rate_limit(request: Request) -> None:
     """Rate limiting for login/register (5 attempts per minute per IP)."""
-    client_ip = request.client.host if request.client else "unknown"
-    agora = time.time()
-    
-    async with _auth_lock:
-        # Remove old attempts (> 60s)
-        if client_ip in _auth_attempts:
-            _auth_attempts[client_ip] = [ts for ts in _auth_attempts[client_ip] if agora - ts < 60]
-        
-        # Count attempts in last minute
-        attempts = len(_auth_attempts.get(client_ip, []))
-        
-        if attempts >= 5:
-            raise HTTPException(
-                status.HTTP_429_TOO_MANY_REQUESTS,
-                detail={"code": "rate_limited", "message": "Muitas tentativas. Tente novamente em 1 minuto."}
-            )
-        
-        # Record new attempt
-        if client_ip not in _auth_attempts:
-            _auth_attempts[client_ip] = []
-        _auth_attempts[client_ip].append(agora)
+    await rate_limiter.check_limit('auth', limit=5, window_seconds=60, request=request)
 
 
-# WebSocket Connection Manager for real-time alerts
-class ConnectionManager:
-    """Manages WebSocket connections for real-time alert broadcasts."""
+async def _check_api_rate_limit(request: Request) -> None:
+    """Rate limiting for general API endpoints (100 requests per minute per IP)."""
+    await rate_limiter.check_limit('api', limit=100, window_seconds=60, request=request)
+
+
+async def _check_batch_rate_limit(request: Request) -> None:
+    """Rate limiting for batch operations (10 requests per minute per IP)."""
+    await rate_limiter.check_limit('batch', limit=10, window_seconds=60, request=request)
+
+
+# Simple in-memory cache with TTL
+class SimpleCache:
+    """Simple in-memory cache with TTL (Time To Live)."""
     
     def __init__(self):
-        self.active_connections: List[WebSocket] = []
+        self._cache: Dict[str, tuple[Any, float]] = {}
         self._lock = asyncio.Lock()
     
-    async def connect(self, websocket: WebSocket) -> None:
-        """Accept a new WebSocket connection."""
-        await websocket.accept()
+    async def get(self, key: str) -> Any | None:
+        """Get cached value if not expired."""
         async with self._lock:
-            self.active_connections.append(websocket)
-        structlog.get_logger(__name__).info("ws_connected", connections=len(self.active_connections))
+            if key not in self._cache:
+                return None
+            
+            value, expires_at = self._cache[key]
+            if time.time() > expires_at:
+                del self._cache[key]
+                return None
+            
+            return value
     
-    async def disconnect(self, websocket: WebSocket) -> None:
-        """Remove a closed WebSocket connection."""
+    async def set(self, key: str, value: Any, ttl_seconds: int = 60) -> None:
+        """Set cached value with TTL."""
         async with self._lock:
-            if websocket in self.active_connections:
-                self.active_connections.remove(websocket)
-        structlog.get_logger(__name__).info("ws_disconnected", connections=len(self.active_connections))
+            expires_at = time.time() + ttl_seconds
+            self._cache[key] = (value, expires_at)
     
-    async def broadcast(self, message: dict) -> None:
-        """Broadcast a message to all connected clients."""
+    async def delete(self, key: str) -> None:
+        """Delete cached value."""
         async with self._lock:
-            connections_copy = self.active_connections.copy()
-        
-        disconnected = []
-        for connection in connections_copy:
-            try:
-                await connection.send_json(message)
-            except Exception as e:
-                structlog.get_logger(__name__).warning("ws_send_failed", error=str(e))
-                disconnected.append(connection)
-        
-        # Clean up failed connections
-        if disconnected:
-            async with self._lock:
-                for conn in disconnected:
-                    if conn in self.active_connections:
-                        self.active_connections.remove(conn)
+            if key in self._cache:
+                del self._cache[key]
+    
+    async def clear(self) -> None:
+        """Clear all cached values."""
+        async with self._lock:
+            self._cache.clear()
+    
+    async def cleanup_expired(self) -> None:
+        """Remove all expired entries."""
+        async with self._lock:
+            now = time.time()
+            expired_keys = [k for k, (_, exp) in self._cache.items() if now > exp]
+            for k in expired_keys:
+                del self._cache[k]
 
 
-# Global WebSocket connection manager
-ws_manager = ConnectionManager()
-
+# Global cache instance
+api_cache = SimpleCache()
 
 
 @router.post("/auth/login", status_code=status.HTTP_200_OK)
@@ -185,6 +231,19 @@ async def api_login(request: Request, _: None = Depends(_check_auth_rate_limit))
     # cookie lasts for 8 hours
     response.set_cookie("session_user", username, max_age=8 * 3600, httponly=True)
     return response
+
+
+@router.get("/metrics", status_code=status.HTTP_200_OK)
+async def prometheus_metrics():
+    """
+    Endpoint para exportar métricas no formato Prometheus.
+    Usado para scraping pelo Prometheus server.
+    """
+    from prometheus_client import generate_latest, CONTENT_TYPE_LATEST
+    from fastapi.responses import Response
+    
+    metrics_output = generate_latest()
+    return Response(content=metrics_output, media_type=CONTENT_TYPE_LATEST)
 
 
 class RegisterRequest(BaseModel):
@@ -237,6 +296,90 @@ async def api_logout() -> dict:
     response = Response(content=json.dumps({"ok": True}), media_type="application/json", status_code=status.HTTP_200_OK)
     response.delete_cookie("session_user")
     return response
+
+
+# Backup endpoints
+backup_service = BackupService(DB_PATH)
+
+
+@router.post("/admin/backup/create", status_code=status.HTTP_200_OK)
+async def create_backup() -> dict:
+    """Cria um backup manual do banco de dados."""
+    try:
+        backup_path = await asyncio.to_thread(backup_service.create_backup)
+        return {"ok": True, "backup_path": backup_path}
+    except Exception as e:
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"code": "backup_failed", "message": str(e)}
+        )
+
+
+@router.get("/admin/backup/list", status_code=status.HTTP_200_OK)
+async def list_backups() -> dict:
+    """Lista todos os backups disponíveis."""
+    backups = await asyncio.to_thread(backup_service.list_backups)
+    return {"backups": backups, "count": len(backups)}
+
+
+@router.post("/admin/backup/cleanup", status_code=status.HTTP_200_OK)
+async def cleanup_backups(keep_days: int = 7) -> dict:
+    """Remove backups mais antigos que keep_days dias."""
+    try:
+        removed = await asyncio.to_thread(backup_service.cleanup_old_backups, keep_days)
+        return {"ok": True, "removed_count": removed}
+    except Exception as e:
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"code": "cleanup_failed", "message": str(e)}
+        )
+
+
+@router.get("/health", status_code=status.HTTP_200_OK)
+async def health_check() -> dict:
+    """
+    Comprehensive health check endpoint.
+    Returns service status, database connectivity, WebSocket connections, version, and uptime.
+    """
+    import sqlite3
+    
+    uptime_seconds = time.time() - APP_START_TIME
+    uptime_hours = uptime_seconds / 3600
+    
+    # Check database connectivity
+    db_status = "unknown"
+    db_error = None
+    try:
+        conn = sqlite3.connect(DB_PATH)
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM alertas")
+        alert_count = cursor.fetchone()[0]
+        conn.close()
+        db_status = "healthy"
+    except Exception as e:
+        db_status = "unhealthy"
+        db_error = str(e)
+        alert_count = None
+    
+    # Get WebSocket connection count
+    ws_connections = len(ws_manager_optimized.active_connections)
+    
+    return {
+        "status": "healthy" if db_status == "healthy" else "degraded",
+        "version": APP_VERSION,
+        "uptime_seconds": round(uptime_seconds, 2),
+        "uptime_hours": round(uptime_hours, 2),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "database": {
+            "status": db_status,
+            "path": DB_PATH,
+            "alert_count": alert_count,
+            "error": db_error
+        },
+        "websocket": {
+            "active_connections": ws_connections
+        }
+    }
 
 
 @router.get("/auth/me", status_code=status.HTTP_200_OK)
@@ -494,14 +637,6 @@ class DeviceRegisterRequest(BaseModel):
     meta: dict | None = None
 
 
-class AssignmentRequest(BaseModel):
-    cama_id: str | None = None
-    paciente_id: str | None = None
-    start_ts: str | None = None
-    start_ms: int | None = None
-
-
-
 def _resolver_perfil(paciente_id: str) -> str:
     ficha = obter_ficha_paciente(DB_PATH, paciente_id, incluir_rotinas=False)
     perfil = None if ficha is None else str(ficha.get("perfil") or "").strip().lower()
@@ -579,32 +714,90 @@ async def api_list_devices() -> list[dict]:
     return listar_devices(DB_PATH)
 
 
-@router.post("/devices/{device_id}/assign", status_code=status.HTTP_201_CREATED)
-async def api_start_assignment(device_id: str, body: AssignmentRequest) -> dict:
-    try:
-        aid = start_device_assignment(DB_PATH, device_id, cama_id=body.cama_id, paciente_id=body.paciente_id, start_ts=body.start_ts, start_ms=body.start_ms)
-    except Exception as exc:
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={"code": "assignment_error", "message": str(exc)}) from exc
-    return {"assignment_id": aid}
-
-
-@router.post("/devices/{device_id}/assign/end", status_code=status.HTTP_200_OK)
-async def api_end_assignment(device_id: str, body: AssignmentRequest | None = None) -> dict:
-    try:
-        rows = end_device_assignment(DB_PATH, device_id, end_ts=(body.start_ts if body else None), end_ms=(body.start_ms if body else None))
-    except Exception as exc:
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={"code": "assignment_error", "message": str(exc)}) from exc
-    return {"ended": rows}
-
-
-@router.get("/device_assignments", status_code=status.HTTP_200_OK)
-async def api_list_assignments(device_id: str | None = None, limit: int = 100) -> list[dict]:
-    return listar_device_assignments(DB_PATH, device_id=device_id, limit=limit)
-
-
 @router.get("/device_events", status_code=status.HTTP_200_OK)
 async def api_list_device_events(device_id: str | None = None, limit: int = 100) -> list[dict]:
     return listar_device_events(DB_PATH, device_id=device_id, limit=limit)
+
+
+@router.get("/device_events/stats", status_code=status.HTTP_200_OK)
+async def api_device_events_stats() -> dict:
+    """Return statistics about orphan device events grouped by bed (cama_id).
+    
+    Returns:
+    {
+        "total_orphans": int,
+        "beds": [
+            {
+                "cama_id": str,
+                "count": int,
+                "first_event": str (ISO timestamp),
+                "last_event": str (ISO timestamp),
+                "current_patient": {
+                    "id": str,
+                    "name": str
+                } | null
+            }
+        ]
+    }
+    """
+    events = listar_device_events(DB_PATH, device_id=None, limit=10000)
+    
+    # Group by cama_id
+    bed_stats: dict[str, dict] = {}
+    
+    for ev in events:
+        payload = ev.get("payload") or {}
+        cama_id = payload.get("cama_id")
+        
+        if not cama_id:
+            continue
+            
+        if cama_id not in bed_stats:
+            bed_stats[cama_id] = {
+                "cama_id": cama_id,
+                "count": 0,
+                "first_event": None,
+                "last_event": None,
+                "events": []
+            }
+        
+        bed_stats[cama_id]["count"] += 1
+        bed_stats[cama_id]["events"].append(ev.get("ts"))
+    
+    # Process timestamps and find current patients
+    beds_list = []
+    for cama_id, stats in bed_stats.items():
+        timestamps = sorted([t for t in stats["events"] if t])
+        
+        result = {
+            "cama_id": cama_id,
+            "count": stats["count"],
+            "first_event": timestamps[0] if timestamps else None,
+            "last_event": timestamps[-1] if timestamps else None,
+            "current_patient": None
+        }
+        
+        # Try to find current patient in this bed
+        try:
+            paciente = obter_ficha_por_cama(DB_PATH, cama_id, incluir_rotinas=False)
+            if paciente:
+                result["current_patient"] = {
+                    "id": paciente.get("paciente_id"),
+                    "name": paciente.get("nome")
+                }
+        except Exception:
+            pass
+        
+        beds_list.append(result)
+    
+    # Sort by count (descending)
+    beds_list.sort(key=lambda x: x["count"], reverse=True)
+    
+    return {
+        "total_orphans": len(events),
+        "beds": beds_list
+    }
+
 
 @router.get("/frontend/alerts", status_code=status.HTTP_200_OK)
 async def frontend_alerts(
@@ -628,6 +821,15 @@ async def frontend_alerts(
     Each alert contains: id, patientName, room, bed, lastRepositioning (ISO),
     nextRepositioning (ISO), riskLevel (high|medium|low), status (pending|acknowledged|completed)
     """
+    # Create cache key from query parameters
+    cache_key = f"alerts:{horas}:{riskLevel}:{status_filter}:{room}:{limit}:{offset}"
+    
+    # Try to get from cache (30 second TTL)
+    cached_result = await api_cache.get(cache_key)
+    if cached_result is not None:
+        return cached_result
+    
+    # Cache miss - fetch from database
     raw_alerts = selecionar_alertas_janela(DB_PATH, horas)
     results: list[dict] = []
     for a in raw_alerts:
@@ -705,7 +907,12 @@ async def frontend_alerts(
         )
     
     # Apply pagination
-    return results[offset : offset + limit]
+    paginated_results = results[offset : offset + limit]
+    
+    # Cache the result for 30 seconds
+    await api_cache.set(cache_key, paginated_results, ttl_seconds=30)
+    
+    return paginated_results
 
 
 class BatchAlertRequest(BaseModel):
@@ -714,7 +921,7 @@ class BatchAlertRequest(BaseModel):
 
 
 @router.post("/frontend/alerts/batch/acknowledge", status_code=status.HTTP_200_OK)
-async def batch_acknowledge(payload: BatchAlertRequest) -> dict:
+async def batch_acknowledge(payload: BatchAlertRequest, request: Request, _: None = Depends(_check_batch_rate_limit)) -> dict:
     """Acknowledge multiple alerts at once.
     
     Request:
@@ -740,7 +947,10 @@ async def batch_acknowledge(payload: BatchAlertRequest) -> dict:
     
     # Process each alert in thread pool to avoid blocking
     async def _process_alert(alert_id: str) -> tuple[bool, dict]:
-        """Process a single alert and return (success, error_dict_or_none)."""
+        """Process a single alert and return (success, error_dict_or_none).
+        
+        ✅ CORRIGIDO: Agora registra evento alert_ack na timeline.
+        """
         try:
             paciente_id, inicio = alert_id.split("__", 1)
             # Run DB operation in thread pool
@@ -749,9 +959,27 @@ async def batch_acknowledge(payload: BatchAlertRequest) -> dict:
                 DB_PATH, paciente_id, inicio, "reconhecido"
             )
             
+            # ✅ ADICIONAR: Registrar evento na timeline (em thread pool também)
+            try:
+                await asyncio.to_thread(
+                    inserir_timeline_event,
+                    DB_PATH,
+                    paciente_id,
+                    "alert_ack",
+                    f"Alerta reconhecido em lote",
+                    {"alert_id": alert_id, "inicio": inicio, "action": "batch_acknowledge"}
+                )
+            except Exception as timeline_err:
+                # Não falhar operação se timeline der erro
+                logger.warning(
+                    "batch_ack_timeline_failed",
+                    alert_id=alert_id,
+                    error=str(timeline_err)
+                )
+            
             # Queue WebSocket broadcast as background task
             try:
-                task = asyncio.create_task(ws_manager.broadcast({
+                task = asyncio.create_task(ws_manager_optimized.broadcast({
                     "type": "alert_update",
                     "alert_id": alert_id,
                     "status": "acknowledged",
@@ -792,11 +1020,19 @@ async def batch_acknowledge(payload: BatchAlertRequest) -> dict:
     except Exception:
         pass
     
+    # Invalidate alerts cache since data changed
+    await api_cache.clear()
+    
+    # Record metrics
+    metricas.registrar_batch_operation('acknowledge', processed)
+    for _ in range(processed):
+        metricas.registrar_alert_acknowledged()
+    
     return {"ok": True, "processed": processed, "failed": failed, "errors": errors}
 
 
 @router.post("/frontend/alerts/batch/complete", status_code=status.HTTP_200_OK)
-async def batch_complete(payload: BatchAlertRequest) -> dict:
+async def batch_complete(payload: BatchAlertRequest, request: Request, _: None = Depends(_check_batch_rate_limit)) -> dict:
     """Complete multiple alerts at once.
     
     Request:
@@ -822,7 +1058,10 @@ async def batch_complete(payload: BatchAlertRequest) -> dict:
     
     # Process each alert in thread pool to avoid blocking
     async def _process_alert(alert_id: str) -> tuple[bool, dict]:
-        """Process a single alert and return (success, error_dict_or_none)."""
+        """Process a single alert and return (success, error_dict_or_none).
+        
+        ✅ CORRIGIDO: Agora registra evento alert_close na timeline.
+        """
         try:
             paciente_id, inicio = alert_id.split("__", 1)
             # Run DB operation in thread pool
@@ -831,9 +1070,27 @@ async def batch_complete(payload: BatchAlertRequest) -> dict:
                 DB_PATH, paciente_id, inicio, "fechado", True
             )
             
+            # ✅ ADICIONAR: Registrar evento na timeline (em thread pool também)
+            try:
+                await asyncio.to_thread(
+                    inserir_timeline_event,
+                    DB_PATH,
+                    paciente_id,
+                    "alert_close",
+                    f"Alerta fechado/completado em lote",
+                    {"alert_id": alert_id, "inicio": inicio, "action": "batch_complete"}
+                )
+            except Exception as timeline_err:
+                # Não falhar operação se timeline der erro
+                logger.warning(
+                    "batch_complete_timeline_failed",
+                    alert_id=alert_id,
+                    error=str(timeline_err)
+                )
+            
             # Queue WebSocket broadcast as background task
             try:
-                task = asyncio.create_task(ws_manager.broadcast({
+                task = asyncio.create_task(ws_manager_optimized.broadcast({
                     "type": "alert_update",
                     "alert_id": alert_id,
                     "status": "completed",
@@ -874,20 +1131,58 @@ async def batch_complete(payload: BatchAlertRequest) -> dict:
     except Exception:
         pass
     
+    # Invalidate alerts cache since data changed
+    await api_cache.clear()
+    
+    # Record metrics
+    metricas.registrar_batch_operation('complete', processed)
+    for _ in range(processed):
+        metricas.registrar_alert_completed()
+    
     return {"ok": True, "processed": processed, "failed": failed, "errors": errors}
 
 
 @router.post("/frontend/alerts/{alert_id}/acknowledge", status_code=status.HTTP_200_OK)
 async def frontend_acknowledge(alert_id: str) -> dict:
+    """Reconhece um alerta e registra evento na timeline.
+    
+    ✅ CORRIGIDO: Agora registra evento 'alert_ack' na timeline para rastreabilidade.
+    """
     try:
         paciente_id, inicio = alert_id.split("__", 1)
     except Exception:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={"code": "invalid_alert_id", "message": "Invalid alert id"})
     try:
+        # Atualizar status do alerta no banco
         alterar_status_alerta(DB_PATH, paciente_id, inicio, "reconhecido")
         
+        # ✅ ADICIONAR: Registrar evento na timeline para auditoria e histórico
+        try:
+            inserir_timeline_event(
+                db_path=DB_PATH,
+                paciente_id=paciente_id,
+                tipo="alert_ack",
+                descricao=f"Alerta reconhecido pela equipe",
+                meta={"alert_id": alert_id, "inicio": inicio, "action": "acknowledge"}
+            )
+            logger.info(
+                "alert_acknowledged",
+                paciente_id=paciente_id,
+                alert_id=alert_id,
+                timeline_event="alert_ack"
+            )
+        except Exception as e:
+            # Não falhar a operação se timeline der erro, mas logar
+            logger.warning(
+                "timeline_event_failed",
+                paciente_id=paciente_id,
+                alert_id=alert_id,
+                tipo="alert_ack",
+                error=str(e)
+            )
+        
         # Broadcast update via WebSocket
-        await ws_manager.broadcast({
+        await ws_manager_optimized.broadcast({
             "type": "alert_update",
             "alert_id": alert_id,
             "status": "acknowledged",
@@ -899,15 +1194,45 @@ async def frontend_acknowledge(alert_id: str) -> dict:
 
 @router.post("/frontend/alerts/{alert_id}/complete", status_code=status.HTTP_200_OK)
 async def frontend_complete(alert_id: str) -> dict:
+    """Completa/fecha um alerta e registra evento na timeline.
+    
+    ✅ CORRIGIDO: Agora registra evento 'alert_close' na timeline para rastreabilidade.
+    """
     try:
         paciente_id, inicio = alert_id.split("__", 1)
     except Exception:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={"code": "invalid_alert_id", "message": "Invalid alert id"})
     try:
+        # Atualizar status do alerta no banco e definir data de fim
         alterar_status_alerta(DB_PATH, paciente_id, inicio, "fechado", definir_fim=True)
         
+        # ✅ ADICIONAR: Registrar evento na timeline para auditoria e histórico
+        try:
+            inserir_timeline_event(
+                db_path=DB_PATH,
+                paciente_id=paciente_id,
+                tipo="alert_close",
+                descricao=f"Alerta fechado/completado pela equipe",
+                meta={"alert_id": alert_id, "inicio": inicio, "action": "complete"}
+            )
+            logger.info(
+                "alert_completed",
+                paciente_id=paciente_id,
+                alert_id=alert_id,
+                timeline_event="alert_close"
+            )
+        except Exception as e:
+            # Não falhar a operação se timeline der erro, mas logar
+            logger.warning(
+                "timeline_event_failed",
+                paciente_id=paciente_id,
+                alert_id=alert_id,
+                tipo="alert_close",
+                error=str(e)
+            )
+        
         # Broadcast update via WebSocket
-        await ws_manager.broadcast({
+        await ws_manager_optimized.broadcast({
             "type": "alert_update",
             "alert_id": alert_id,
             "status": "completed",
@@ -922,8 +1247,8 @@ async def frontend_complete(alert_id: str) -> dict:
 async def api_reconcile_device_events(device_id: str | None = None, limit: int = 100) -> dict:
     """Attempt to reconcile stored raw device events into patient events.
 
-    For each device_event (optionally filtered by device_id), try to resolve the patient
-    using `resolver_paciente_por_device_em`. If a patient is found, re-inject the payload
+    For each device_event (optionally filtered by device_id), try to find the current patient
+    in the bed (cama_id) specified in the payload. If a patient is found, re-inject the payload
     into the normal processing pipeline and remove the raw device_event entry.
     Returns summary of processed and skipped events.
     """
@@ -932,25 +1257,120 @@ async def api_reconcile_device_events(device_id: str | None = None, limit: int =
     return result
 
 
+@router.post("/device_events/reconcile_bed/{cama_id}", status_code=status.HTTP_200_OK)
+async def api_reconcile_bed_events(cama_id: str, limit: int = 1000) -> dict:
+    """Reconcile all orphan events for a specific bed (cama_id) to the current patient.
+    
+    This is useful for bulk reconciliation when a patient was registered late
+    and there are many orphan events from before registration.
+    
+    Returns summary of processed and skipped events.
+    """
+    async with _reconcile_lock:
+        return await asyncio.to_thread(_do_reconcile_bed, cama_id, limit)
+
+
+def _do_reconcile_bed(cama_id: str, limit: int = 1000) -> dict:
+    """Reconcile all events from a specific bed to the current patient in that bed.
+    
+    Returns dict with 'processed', 'skipped', and 'patient_name' keys.
+    """
+    processed = 0
+    skipped = 0
+    patient_name = None
+    
+    # Find current patient in this bed
+    try:
+        paciente = obter_ficha_por_cama(DB_PATH, cama_id, incluir_rotinas=False)
+        pid = paciente.get("paciente_id") if paciente else None
+        patient_name = paciente.get("nome") if paciente else None
+    except Exception:
+        pid = None
+    
+    if not pid:
+        return {
+            "processed": 0,
+            "skipped": 0,
+            "error": f"No patient currently in bed {cama_id}"
+        }
+    
+    # Get all orphan events
+    all_events = listar_device_events(DB_PATH, device_id=None, limit=10000)
+    
+    # Filter events for this cama_id
+    bed_events = []
+    for ev in all_events:
+        payload = ev.get("payload") or {}
+        if payload.get("cama_id") == cama_id:
+            bed_events.append(ev)
+    
+    # Limit if needed
+    if len(bed_events) > limit:
+        bed_events = bed_events[:limit]
+    
+    # Process each event
+    for ev in bed_events:
+        did = ev.get("device_id")
+        payload = ev.get("payload") or {}
+        
+        try:
+            payload["paciente_id"] = pid
+            payload["device_id"] = did
+            evento = _normalizar_payload(payload, None)
+            _registrar_evento(evento)
+            
+            # Delete orphan event
+            try:
+                delete_device_event(DB_PATH, ev.get("id"))
+            except Exception:
+                pass
+            
+            processed += 1
+        except Exception:
+            skipped += 1
+            continue
+    
+    return {
+        "processed": processed,
+        "skipped": skipped,
+        "patient_name": patient_name,
+        "cama_id": cama_id
+    }
+
+
 def _do_reconcile(device_id: str | None = None, limit: int = 100) -> dict:
     """Synchronous reconcile worker. Intended to run in a thread via asyncio.to_thread.
 
     Returns a dict with keys 'processed' and 'skipped'.
+    
+    NEW LOGIC: Extract cama_id from payload and find current patient in that bed.
     """
     processed = 0
     skipped = 0
     events = listar_device_events(DB_PATH, device_id=device_id, limit=limit)
+    
     for ev in events:
         did = ev.get("device_id")
         ts_ms = ev.get("ts_ms")
         payload = ev.get("payload") or {}
+        
+        # Extract cama_id from payload
+        cama_id = payload.get("cama_id")
+        if not cama_id:
+            skipped += 1
+            continue
+            
+        # Find patient currently in this bed
         try:
-            pid = resolver_paciente_por_device_em(DB_PATH, did, int(ts_ms)) if ts_ms is not None else None
+            paciente = obter_ficha_por_cama(DB_PATH, cama_id, incluir_rotinas=False)
+            pid = paciente.get("paciente_id") if paciente else None
         except Exception:
             pid = None
+            
         if not pid:
             skipped += 1
             continue
+            
         # attach paciente_id and try to validate/ingest
         try:
             payload["paciente_id"] = pid
@@ -968,6 +1388,7 @@ def _do_reconcile(device_id: str | None = None, limit: int = 100) -> dict:
         except Exception:
             skipped += 1
             continue
+            
     return {"processed": processed, "skipped": skipped}
 
 
@@ -1395,6 +1816,7 @@ def reset_processador() -> None:
 class TimelineEventResponse(BaseModel):
     id: int
     paciente_id: str
+    paciente_name: str | None = None
     ts: str
     ts_ms: int
     tipo: str
@@ -1404,29 +1826,58 @@ class TimelineEventResponse(BaseModel):
 @router.get("/timeline", status_code=status.HTTP_200_OK, response_model=list[TimelineEventResponse])
 async def timeline_endpoint(
     paciente_id: str | None = None,
+    tipo: str | None = None,
     start_ms: int | None = None,
     end_ms: int | None = None,
-    limit: int = 1000,
+    limit: int = 100,
 ) -> list[TimelineEventResponse]:
-    """Retorna eventos da timeline. Campos retornados incluem `ts` (ISO) e `ts_ms` (epoch ms).
-
-    Filtros opcionais: paciente_id, start_ms, end_ms (todos inclusive).
+    """Retorna eventos da timeline com filtros opcionais.
+    
+    Query Parameters:
+    - paciente_id: str - Filter by patient ID
+    - tipo: str - Filter by event type (alert_open, alert_acknowledged, alert_completed, repositioning)
+    - start_ms: int - Start timestamp in milliseconds
+    - end_ms: int - End timestamp in milliseconds
+    - limit: int (default 100) - Maximum number of events to return
+    
+    Returns events sorted by timestamp descending (newest first).
     """
     if limit is None or limit <= 0:
+        limit = 100
+    if limit > 1000:
         limit = 1000
+        
     events = selecionar_timeline(DB_PATH, paciente_id=paciente_id, start_ms=start_ms, end_ms=end_ms, limit=limit)
-    # Filter to only return expected fields
-    return [
-        {
+    
+    # Filter by tipo if specified
+    if tipo:
+        events = [e for e in events if e.get("tipo") == tipo]
+    
+    # Sort by timestamp descending (newest first)
+    events = sorted(events, key=lambda e: e.get("ts_ms", 0), reverse=True)
+    
+    # Enrich with patient names
+    result = []
+    for e in events:
+        patient_name = None
+        try:
+            ficha = obter_ficha_paciente(DB_PATH, e["paciente_id"], incluir_rotinas=False)
+            if ficha:
+                patient_name = ficha.get("nome")
+        except Exception:
+            pass
+            
+        result.append({
             "id": e["id"],
             "paciente_id": e["paciente_id"],
+            "paciente_name": patient_name,
             "ts": e["ts"],
             "ts_ms": e["ts_ms"],
             "tipo": e["tipo"],
             "descricao": e["descricao"],
-        }
-        for e in events
-    ]
+        })
+    
+    return result
 
 
 class TimelineRecord(BaseModel):
@@ -1498,13 +1949,23 @@ def _join_cama(room: str | None, bed: str | None) -> str | None:
 
 def _ficha_to_frontend(ficha: dict) -> FrontendPatient:
     room, bed = _split_cama(ficha.get("cama_id"))
+    perfil = str(ficha.get("perfil") or DEFAULT_PERFIL)
+    
+    # Calculate repositioning interval based on risk profile (from configuracao.py)
+    interval_map = {
+        "baixo": 2,   # 120 minutes = 2 hours
+        "medio": 2,   # 90 minutes ≈ 1.5 hours (rounded to 2)
+        "alto": 1     # 60 minutes = 1 hour
+    }
+    repositioning_interval = interval_map.get(perfil.lower(), 2)
+    
     return FrontendPatient(
         id=str(ficha.get("paciente_id") or ficha.get("paciente_id") or ""),
         name=ficha.get("nome") or "",
         room=room,
         bed=bed,
-        riskLevel=_map_perfil_to_frontend(str(ficha.get("perfil") or DEFAULT_PERFIL)),
-        repositioningInterval=None,
+        riskLevel=_map_perfil_to_frontend(perfil),
+        repositioningInterval=repositioning_interval,
         createdAt=ficha.get("created_at"),
         updatedAt=ficha.get("updated_at"),
     )
@@ -1653,7 +2114,7 @@ async def api_simular_paciente(paciente_id: str, payload: SimulationRequest) -> 
         
         # 4. Salvar grades no banco de dados
         try:
-            inserir_grade(DB_PATH, df_grade)
+            inserir_grade(DB_PATH, df_grade, paciente_id=paciente_id)
             logger.info("simulacao_grade_salva", paciente_id=paciente_id, num_eventos=len(df_grade))
         except Exception as e:
             logger.error("simulacao_salvar_grade_erro", error=str(e), paciente_id=paciente_id)
@@ -1683,6 +2144,9 @@ async def api_simular_paciente(paciente_id: str, payload: SimulationRequest) -> 
                 logger.warning("simulacao_salvar_alertas_erro", error=str(e), paciente_id=paciente_id)
         
         logger.info("simulacao_concluida", paciente_id=paciente_id, eventos=len(df_grade), alertas=len(alertas))
+        
+        # Invalidate cache so new alerts appear immediately
+        await api_cache.clear()
         
         return SimulationResult(
             success=True,
@@ -1782,21 +2246,86 @@ async def websocket_eventos(websocket: WebSocket):
                 # Processar evento através do filtro
                 resultado = filtrar_evento(evento_json)
                 
+                # DEBUG: Log detalhado do resultado do filtro
+                logger.info(
+                    "ws_filtro_resultado",
+                    device_id=device_id,
+                    seq=seq,
+                    descartado=resultado.descartado,
+                    motivo=resultado.motivo,
+                    prontos_count=len(resultado.prontos),
+                    buffered=resultado.buffered
+                )
+                
+                alertas_gerados = []
                 if not resultado.descartado and resultado.prontos:
                     # Inserir no banco de dados
                     try:
                         inserir_eventos(DB_PATH, evento_json["paciente_id"], [evento_json])
                         metricas.registrar_recebido()
                         eventos_processados += 1
+                        logger.info("ws_evento_salvo", device_id=device_id, seq=seq, paciente_id=evento_json["paciente_id"])
                     except Exception as e:
                         logger.warning("ws_insert_erro", device_id=device_id, seq=seq, error=str(e))
+                    
+                    # ✅ NOVO: Processar alertas incrementalmente
+                    try:
+                        logger.info("ws_processando_alertas", device_id=device_id, eventos_count=len(resultado.prontos))
+                        alertas_gerados = PROCESSADOR.processar_lote(resultado.prontos)
+                        logger.info("ws_alertas_processados", device_id=device_id, alertas_count=len(alertas_gerados))
+                        
+                        if alertas_gerados:
+                            # Salvar alertas no banco de dados
+                            inserir_alertas(DB_PATH, evento_json["paciente_id"], alertas_gerados)
+                            
+                            # Broadcast para clientes conectados em /ws/alerts
+                            for alerta in alertas_gerados:
+                                # Determinar severidade baseado no perfil
+                                perfil = alerta.get("perfil", "medio").lower()
+                                if perfil == "alto":
+                                    severity = "critical"
+                                elif perfil == "medio":
+                                    severity = "high"
+                                else:
+                                    severity = "medium"
+                                
+                                # Criar mensagem de broadcast
+                                broadcast_msg = {
+                                    "type": "alert_new",
+                                    "alert_id": alerta.get("inicio"),
+                                    "patient_id": alerta.get("paciente_id"),
+                                    "timestamp": alerta.get("inicio"),
+                                    "status": "pending",
+                                    "severity": severity,
+                                    "data": alerta
+                                }
+                                
+                                # Enviar via WebSocket (não bloquear)
+                                asyncio.create_task(ws_manager_optimized.broadcast(broadcast_msg))
+                            
+                            logger.info(
+                                "ws_alertas_gerados",
+                                device_id=device_id,
+                                seq=seq,
+                                paciente_id=evento_json["paciente_id"],
+                                quantidade=len(alertas_gerados)
+                            )
+                    
+                    except Exception as e:
+                        logger.error("ws_processar_alertas_erro", device_id=device_id, seq=seq, error=str(e))
+                
+                elif resultado.descartado:
+                    logger.warning("ws_evento_descartado", device_id=device_id, seq=seq, motivo=resultado.motivo)
+                else:
+                    logger.info("ws_evento_bufferizado", device_id=device_id, seq=seq)
                 
                 # Enviar ACK
                 await websocket.send_json({
                     "status": "ok",
                     "seq": seq,
                     "processados": eventos_processados,
-                    "descartado": resultado.descartado
+                    "descartado": resultado.descartado,
+                    "alertas_gerados": len(alertas_gerados)
                 })
                 
             except json.JSONDecodeError as e:

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, Bell, Calendar } from 'lucide-react';
-import { alertsApi, Alert, ApiException, statsApi, DashboardStats } from '../../lib/api';
+import { alertsApi, Alert, ApiException, statsApi, DashboardStats, patientsApi } from '../../lib/api';
 import { usePolling } from '../../hooks/usePolling';
 import { useWebSocket } from '../../hooks/useWebSocket';
 import { useAlertFilters, AlertFilters } from '../../hooks/useAlertFilters';
@@ -43,14 +43,54 @@ export function DashboardPage() {
 
   // Filter alerts based on current filters
   const filteredAlerts = alerts.filter((alert) => {
-    // Convert riskLevel to severity for filtering
-    const severity = alert.riskLevel === 'high' ? 'HIGH' : alert.riskLevel === 'medium' ? 'MEDIUM' : 'LOW';
-    if (filters.severity && severity !== filters.severity) {
-      return false;
+    // Filter by severity (riskLevel)
+    if (filters.severity) {
+      const alertSeverity = alert.riskLevel === 'high' ? 'HIGH' : 
+                           alert.riskLevel === 'medium' ? 'MEDIUM' : 'LOW';
+      if (alertSeverity !== filters.severity) {
+        return false;
+      }
     }
+    
+    // Filter by status (pending, acknowledged, completed)
     if (filters.status && alert.status !== filters.status) {
       return false;
     }
+    
+    // Filter by patient ID
+    if (filters.patientId) {
+      const alertPatientId = alert.id.split('__')[0];
+      if (alertPatientId !== filters.patientId) {
+        return false;
+      }
+    }
+    
+    // Filter by search text
+    if (filters.searchText) {
+      const searchLower = filters.searchText.toLowerCase();
+      const matchesPatient = alert.patientName.toLowerCase().includes(searchLower);
+      const matchesRoom = alert.room.toLowerCase().includes(searchLower);
+      const matchesBed = alert.bed.toLowerCase().includes(searchLower);
+      if (!matchesPatient && !matchesRoom && !matchesBed) {
+        return false;
+      }
+    }
+    
+    // Filter by date range
+    if (filters.dateFrom) {
+      const alertDate = new Date(alert.nextRepositioning);
+      if (alertDate < filters.dateFrom) {
+        return false;
+      }
+    }
+    
+    if (filters.dateTo) {
+      const alertDate = new Date(alert.nextRepositioning);
+      if (alertDate > filters.dateTo) {
+        return false;
+      }
+    }
+    
     return true;
   });
 
@@ -70,10 +110,18 @@ export function DashboardPage() {
   const fetchAlerts = useCallback(async () => {
     setIsLoading(true);
     try {
-      const alertsData = await alertsApi.getAlerts();
-      const statsData = await statsApi.getStats();
-      setAlerts(alertsData);
+      const [alertsData, statsData, patientsData] = await Promise.all([
+        alertsApi.getAlerts(),
+        statsApi.getStats(),
+        patientsApi.getPatients(),
+      ]);
+      
+      // Filter out completed alerts - only show active and acknowledged alerts in the dashboard
+      const activeAlerts = alertsData.filter(alert => alert.status !== 'completed');
+      
+      setAlerts(activeAlerts);
       setStats(statsData);
+      setPatients(patientsData.map((p) => ({ id: p.id, name: p.name })));
       setError(null);
       setIsOffline(false);
     } catch (err) {
@@ -98,13 +146,19 @@ export function DashboardPage() {
       // Update alert status based on WebSocket message
       const { alert_id, status } = message;
       if (alert_id && status) {
-        setAlerts((prev) =>
-          prev.map((alert) =>
-            alert.id === alert_id
-              ? { ...alert, status: status as Alert['status'] }
-              : alert
-          )
-        );
+        if (status === 'completed') {
+          // Remove completed alerts from the list
+          setAlerts((prev) => prev.filter((alert) => alert.id !== alert_id));
+        } else {
+          // Update status for pending/acknowledged
+          setAlerts((prev) =>
+            prev.map((alert) =>
+              alert.id === alert_id
+                ? { ...alert, status: status as Alert['status'] }
+                : alert
+            )
+          );
+        }
         
         // Also refresh stats to keep them in sync
         statsApi.getStats().then(setStats).catch(console.error);
@@ -164,26 +218,17 @@ export function DashboardPage() {
     // pause polling while we perform the action
     stop();
     try {
-      // Optimistic update
-      setAlerts((prev) =>
-        prev.map((alert) =>
-          alert.id === alertId
-            ? {
-                ...alert,
-                status: 'completed' as const,
-                lastRepositioning: new Date().toISOString(),
-              }
-            : alert
-        )
-      );
-
       await alertsApi.complete(alertId);
+      
+      // Remove completed alert from the list immediately
+      setAlerts((prev) => prev.filter((alert) => alert.id !== alertId));
+      
       toast.success('Paciente reposicionado com sucesso');
 
-      // Refresh after a short delay to get updated data
-      setTimeout(() => fetchAlerts(), 1000);
+      // Refresh stats to update metrics
+      statsApi.getStats().then(setStats).catch(console.error);
     } catch (err) {
-      // Revert on error
+      // Refresh on error to get accurate state
       await fetchAlerts();
       if (err instanceof ApiException) {
         toast.error(err.message);
@@ -195,13 +240,16 @@ export function DashboardPage() {
     }
   };
 
-  const activeAlerts = alerts.filter((a) => a.status !== 'completed');
-  const overdueAlerts = activeAlerts.filter(
-    (a) => new Date(a.nextRepositioning) < new Date()
-  );
-  const acknowledgedAlerts = activeAlerts.filter(
-    (a) => a.status === 'acknowledged'
-  );
+  // Calculate metrics from filtered alerts
+  const filteredStats = {
+    activeAlerts: filteredAlerts.filter(a => a.status === 'pending').length,
+    acknowledgedAlerts: filteredAlerts.filter(a => a.status === 'acknowledged').length,
+    completedToday: filteredAlerts.filter(a => a.status === 'completed').length,
+    totalAlerts: filteredAlerts.length,
+    completionRate: filteredAlerts.length > 0 
+      ? Math.round((filteredAlerts.filter(a => a.status === 'completed').length / filteredAlerts.length) * 100)
+      : 0
+  };
 
   return (
     <div className="space-y-6">
@@ -258,20 +306,8 @@ export function DashboardPage() {
                 <Bell className="w-5 h-5 text-primary" />
               </div>
               <div>
-                <p className="text-muted-foreground">Alertas Ativos</p>
-                <p className="text-foreground">{stats?.activeAlerts ?? 0}</p>
-              </div>
-            </div>
-          </Card>
-
-          <Card className="p-6">
-            <div className="flex items-center gap-3">
-              <div className="bg-danger/10 p-2 rounded-lg">
-                <AlertTriangle className="w-5 h-5 text-danger" />
-              </div>
-              <div>
-                <p className="text-muted-foreground">Reconhecidos</p>
-                <p className="text-danger">{stats?.acknowledgedAlerts ?? 0}</p>
+                <p className="text-sm text-muted-foreground">Alertas Ativos</p>
+                <p className="text-2xl font-bold text-foreground">{filteredStats.activeAlerts}</p>
               </div>
             </div>
           </Card>
@@ -279,11 +315,11 @@ export function DashboardPage() {
           <Card className="p-6">
             <div className="flex items-center gap-3">
               <div className="bg-warning/10 p-2 rounded-lg">
-                <Calendar className="w-5 h-5 text-warning" />
+                <AlertTriangle className="w-5 h-5 text-warning" />
               </div>
               <div>
-                <p className="text-muted-foreground">Completados Hoje</p>
-                <p className="text-foreground">{stats?.completedToday ?? 0}</p>
+                <p className="text-sm text-muted-foreground">Reconhecidos</p>
+                <p className="text-2xl font-bold text-warning">{filteredStats.acknowledgedAlerts}</p>
               </div>
             </div>
           </Card>
@@ -294,8 +330,20 @@ export function DashboardPage() {
                 <Calendar className="w-5 h-5 text-success" />
               </div>
               <div>
-                <p className="text-muted-foreground">Taxa de Conclusão</p>
-                <p className="text-foreground">{stats?.completionRate ?? 0}%</p>
+                <p className="text-sm text-muted-foreground">Completados Hoje</p>
+                <p className="text-2xl font-bold text-success">{filteredStats.completedToday}</p>
+              </div>
+            </div>
+          </Card>
+
+          <Card className="p-6">
+            <div className="flex items-center gap-3">
+              <div className="bg-blue-500/10 p-2 rounded-lg">
+                <Calendar className="w-5 h-5 text-blue-500" />
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Taxa de Conclusão</p>
+                <p className="text-2xl font-bold text-foreground">{filteredStats.completionRate}%</p>
               </div>
             </div>
           </Card>

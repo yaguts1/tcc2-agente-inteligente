@@ -39,9 +39,9 @@ const SEVERITY_OPTIONS = [
 ];
 
 const STATUS_OPTIONS = [
-  { value: 'open', label: 'Aberto' },
+  { value: 'pending', label: 'Pendente' },
   { value: 'acknowledged', label: 'Reconhecido' },
-  { value: 'completed', label: 'Completo' },
+  { value: 'completed', label: 'Completado' },
 ];
 
 export function FilterBar({
@@ -97,179 +97,125 @@ export function FilterBar({
     : '';
 
   return (
-    <Collapsible open={isOpen} onOpenChange={setIsOpen} className="space-y-2 mb-4">
-      {/* Compact Header - Always visible */}
-      <CollapsibleTrigger asChild>
-        <Button
-          variant="outline"
-          className="w-full justify-between h-10"
-          size="sm"
-        >
-          <div className="flex items-center gap-2">
-            <Filter className="w-4 h-4" />
-            <span className="text-sm">
-              Filtros {activeFilterCount > 0 && `(${activeFilterCount})`}
-            </span>
-          </div>
-          <ChevronDown
-            className="w-4 h-4 transition-transform"
-            style={{ transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}
-          />
-        </Button>
-      </CollapsibleTrigger>
-
-      {/* Active Filters as inline badges when collapsed */}
-      {!isOpen && activeFilterCount > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {filters.severity && (
-            <Badge
-              variant="secondary"
-              className="cursor-pointer text-xs py-0.5"
-              onClick={() => onFilterChange('severity', undefined)}
+    <div className="bg-card border border-border rounded-lg p-4 space-y-4">
+      <Collapsible open={isOpen} onOpenChange={setIsOpen} className="space-y-3">
+        {/* Compact Header - Always visible */}
+        <div className="flex items-center justify-between">
+          <CollapsibleTrigger asChild>
+            <Button
+              variant="ghost"
+              className="flex items-center gap-2 h-auto p-0 hover:bg-transparent"
+              size="sm"
             >
-              {getSeverityLabel(filters.severity)}
-              <X className="w-3 h-3 ml-1" />
-            </Badge>
-          )}
-          {filters.status && (
-            <Badge
-              variant="secondary"
-              className="cursor-pointer text-xs py-0.5"
-              onClick={() => onFilterChange('status', undefined)}
+              <Filter className="w-4 h-4 text-muted-foreground" />
+              <span className="text-sm font-medium">
+                Filtros {activeFilterCount > 0 && (
+                  <span className="ml-1 text-xs bg-primary text-primary-foreground rounded-full px-2 py-0.5">
+                    {activeFilterCount}
+                  </span>
+                )}
+              </span>
+              <ChevronDown
+                className="w-4 h-4 text-muted-foreground transition-transform"
+                style={{ transform: isOpen ? 'rotate(180deg)' : 'rotate(0deg)' }}
+              />
+            </Button>
+          </CollapsibleTrigger>
+          
+          {activeFilterCount > 0 && (
+            <Button
+              variant="ghost"
+              size="sm"
+              onClick={onClearFilters}
+              className="text-xs text-muted-foreground hover:text-destructive h-7"
             >
-              {getStatusLabel(filters.status)}
-              <X className="w-3 h-3 ml-1" />
-            </Badge>
-          )}
-          {filters.patientId && (
-            <Badge
-              variant="secondary"
-              className="cursor-pointer text-xs py-0.5"
-              onClick={() => onFilterChange('patientId', undefined)}
-            >
-              {getPatientName(filters.patientId).substring(0, 10)}
-              <X className="w-3 h-3 ml-1" />
-            </Badge>
-          )}
-          {filters.searchText && (
-            <Badge
-              variant="secondary"
-              className="cursor-pointer text-xs py-0.5"
-              onClick={() => onFilterChange('searchText', undefined)}
-            >
-              "{filters.searchText.substring(0, 8)}"
-              <X className="w-3 h-3 ml-1" />
-            </Badge>
-          )}
-          {(filters.dateFrom || filters.dateTo) && (
-            <Badge
-              variant="secondary"
-              className="cursor-pointer text-xs py-0.5"
-              onClick={() => {
-                onFilterChange('dateFrom', undefined);
-                onFilterChange('dateTo', undefined);
-              }}
-            >
-              Data
-              <X className="w-3 h-3 ml-1" />
-            </Badge>
+              <X className="w-3 h-3 mr-1" />
+              Limpar todos
+            </Button>
           )}
         </div>
-      )}
 
-      <CollapsibleContent className="pt-2 space-y-3 border-t">
-        {/* Active Filters Display - Full version when expanded */}
-        {activeFilterCount > 0 && (
-          <div className="flex flex-wrap gap-2 p-2 bg-muted/50 rounded">
+        {/* Active Filters as inline badges when collapsed */}
+        {!isOpen && activeFilterCount > 0 && (
+          <div className="flex flex-wrap gap-2 mt-2">
             {filters.severity && (
               <Badge
                 variant="secondary"
-                className="cursor-pointer"
+                className="cursor-pointer hover:bg-secondary/80 transition-colors"
                 onClick={() => onFilterChange('severity', undefined)}
               >
                 Severidade: {getSeverityLabel(filters.severity)}
-                <X className="w-3 h-3 ml-2" />
+                <X className="w-3 h-3 ml-1.5" />
               </Badge>
             )}
             {filters.status && (
               <Badge
                 variant="secondary"
-                className="cursor-pointer"
+                className="cursor-pointer hover:bg-secondary/80 transition-colors"
                 onClick={() => onFilterChange('status', undefined)}
               >
                 Status: {getStatusLabel(filters.status)}
-                <X className="w-3 h-3 ml-2" />
+                <X className="w-3 h-3 ml-1.5" />
               </Badge>
             )}
             {filters.patientId && (
               <Badge
                 variant="secondary"
-                className="cursor-pointer"
+                className="cursor-pointer hover:bg-secondary/80 transition-colors"
                 onClick={() => onFilterChange('patientId', undefined)}
               >
                 Paciente: {getPatientName(filters.patientId)}
-                <X className="w-3 h-3 ml-2" />
+                <X className="w-3 h-3 ml-1.5" />
               </Badge>
             )}
             {filters.searchText && (
               <Badge
                 variant="secondary"
-                className="cursor-pointer"
+                className="cursor-pointer hover:bg-secondary/80 transition-colors"
                 onClick={() => onFilterChange('searchText', undefined)}
               >
-                Busca: "{filters.searchText}"
-                <X className="w-3 h-3 ml-2" />
+                Busca: "{filters.searchText.substring(0, 20)}{filters.searchText.length > 20 ? '...' : ''}"
+                <X className="w-3 h-3 ml-1.5" />
               </Badge>
             )}
             {(filters.dateFrom || filters.dateTo) && (
               <Badge
                 variant="secondary"
-                className="cursor-pointer"
+                className="cursor-pointer hover:bg-secondary/80 transition-colors"
                 onClick={() => {
                   onFilterChange('dateFrom', undefined);
                   onFilterChange('dateTo', undefined);
                 }}
               >
-                Data: {filters.dateFrom ? new Date(filters.dateFrom).toLocaleDateString('pt-BR') : 'início'} a{' '}
-                {filters.dateTo ? new Date(filters.dateTo).toLocaleDateString('pt-BR') : 'hoje'}
-                <X className="w-3 h-3 ml-2" />
+                <Calendar className="w-3 h-3 mr-1" />
+                Período
+                <X className="w-3 h-3 ml-1.5" />
               </Badge>
-            )}
-            {activeFilterCount > 0 && (
-              <Button
-                variant="ghost"
-                size="sm"
-                onClick={onClearFilters}
-                className="text-destructive hover:text-destructive hover:bg-destructive/10 h-7 text-xs"
-              >
-                <X className="w-3 h-3 mr-1" />
-                Limpar
-              </Button>
             )}
           </div>
         )}
 
-        {/* Filter Controls - Grid when expanded */}
-        <div className="space-y-3">
+        <CollapsibleContent className="space-y-4">
           {/* Search */}
           <div>
-            <Label htmlFor="filter-search" className="text-xs font-medium mb-1 block">
-              Buscar por título, descrição ou paciente
+            <Label htmlFor="filter-search" className="text-sm font-medium mb-2 block">
+              <Search className="w-4 h-4 inline mr-1.5 text-muted-foreground" />
+              Buscar
             </Label>
             <Input
               id="filter-search"
-              placeholder="Digite para buscar..."
+              placeholder="Buscar por paciente, quarto, leito..."
               value={filters.searchText || ''}
               onChange={handleSearchChange}
-              className="h-9"
+              className="h-10"
             />
           </div>
 
           {/* Filter Grid */}
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-3">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
             {/* Severity */}
             <div>
-              <Label htmlFor="filter-severity" className="text-xs font-medium mb-1 block">
+              <Label htmlFor="filter-severity" className="text-sm font-medium mb-2 block">
                 Severidade
               </Label>
               <Select
@@ -278,7 +224,7 @@ export function FilterBar({
                   onFilterChange('severity', value === 'all' ? undefined : value)
                 }
               >
-                <SelectTrigger id="filter-severity" className="h-9">
+                <SelectTrigger id="filter-severity" className="h-10">
                   <SelectValue placeholder="Todas" />
                 </SelectTrigger>
                 <SelectContent>
@@ -294,7 +240,7 @@ export function FilterBar({
 
             {/* Status */}
             <div>
-              <Label htmlFor="filter-status" className="text-xs font-medium mb-1 block">
+              <Label htmlFor="filter-status" className="text-sm font-medium mb-2 block">
                 Status
               </Label>
               <Select
@@ -303,7 +249,7 @@ export function FilterBar({
                   onFilterChange('status', value === 'all' ? undefined : value)
                 }
               >
-                <SelectTrigger id="filter-status" className="h-9">
+                <SelectTrigger id="filter-status" className="h-10">
                   <SelectValue placeholder="Todos" />
                 </SelectTrigger>
                 <SelectContent>
@@ -317,76 +263,80 @@ export function FilterBar({
               </Select>
             </div>
 
-            {/* Patient - only show if we have patients */}
-            {patients.length > 0 && (
-              <div>
-                <Label htmlFor="filter-patient" className="text-xs font-medium mb-1 block">
-                  Paciente
-                </Label>
-                <Select
-                  value={filters.patientId || 'all'}
-                  onValueChange={(value: string) =>
-                    onFilterChange('patientId', value === 'all' ? undefined : value)
-                  }
-                >
-                  <SelectTrigger id="filter-patient" className="h-9">
-                    <SelectValue placeholder="Todos" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">Todos</SelectItem>
-                    {patients.map((patient) => (
-                      <SelectItem key={patient.id} value={patient.id}>
-                        {patient.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
+            {/* Patient */}
+            <div>
+              <Label htmlFor="filter-patient" className="text-sm font-medium mb-2 block">
+                Paciente
+              </Label>
+              <Select
+                value={filters.patientId || 'all'}
+                onValueChange={(value: string) =>
+                  onFilterChange('patientId', value === 'all' ? undefined : value)
+                }
+              >
+                <SelectTrigger id="filter-patient" className="h-10">
+                  <SelectValue placeholder="Todos" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="all">Todos os pacientes</SelectItem>
+                  {patients.map((patient) => (
+                    <SelectItem key={patient.id} value={patient.id}>
+                      {patient.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
 
             {/* Date Range Compact */}
-            <Popover>
-              <PopoverTrigger asChild>
-                <div>
-                  <Label className="text-xs font-medium mb-1 block">
-                    Período
-                  </Label>
+            <div>
+              <Label className="text-sm font-medium mb-2 block">
+                Período
+              </Label>
+              <Popover>
+                <PopoverTrigger asChild>
                   <Button
                     variant="outline"
                     size="sm"
-                    className="h-9 justify-start text-left font-normal w-full"
+                    className="h-10 justify-start text-left font-normal w-full"
                   >
-                    <Calendar className="mr-1.5 h-3 w-3" />
-                    Data
+                    <Calendar className="mr-2 h-4 w-4" />
+                    {filters.dateFrom || filters.dateTo ? (
+                      <span className="text-sm">
+                        {filters.dateFrom ? new Date(filters.dateFrom).toLocaleDateString('pt-BR') : 'início'} - {filters.dateTo ? new Date(filters.dateTo).toLocaleDateString('pt-BR') : 'hoje'}
+                      </span>
+                    ) : (
+                      'Selecionar período'
+                    )}
                   </Button>
-                </div>
-              </PopoverTrigger>
-              <PopoverContent className="w-64 p-3">
-                <div className="space-y-2">
-                  <div>
-                    <Label className="text-xs">De</Label>
-                    <Input
-                      type="date"
-                      value={dateFromValue}
-                      onChange={handleDateFromChange}
-                      className="h-8 text-xs mt-1"
-                    />
+                </PopoverTrigger>
+                <PopoverContent className="w-72 p-4">
+                  <div className="space-y-3">
+                    <div>
+                      <Label className="text-sm font-medium mb-1.5 block">Data inicial</Label>
+                      <Input
+                        type="date"
+                        value={dateFromValue}
+                        onChange={handleDateFromChange}
+                        className="h-9"
+                      />
+                    </div>
+                    <div>
+                      <Label className="text-sm font-medium mb-1.5 block">Data final</Label>
+                      <Input
+                        type="date"
+                        value={dateToValue}
+                        onChange={handleDateToChange}
+                        className="h-9"
+                      />
+                    </div>
                   </div>
-                  <div>
-                    <Label className="text-xs">Até</Label>
-                    <Input
-                      type="date"
-                      value={dateToValue}
-                      onChange={handleDateToChange}
-                      className="h-8 text-xs mt-1"
-                    />
-                  </div>
-                </div>
-              </PopoverContent>
-            </Popover>
+                </PopoverContent>
+              </Popover>
+            </div>
           </div>
-        </div>
-      </CollapsibleContent>
-    </Collapsible>
+        </CollapsibleContent>
+      </Collapsible>
+    </div>
   );
 }

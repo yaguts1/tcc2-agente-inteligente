@@ -164,32 +164,74 @@ class ExportService:
         """
         Busca alertas do banco com os filtros aplicados.
         
+        ✅ CORRIGIDO: Agora usa janela de 24h por padrão (consistente com dashboard)
+        
+        Comportamento:
+        - Se start_date OU end_date especificados → busca todos e filtra manualmente
+        - Senão → usa janela de 24h (padrão do dashboard)
+        
         Args:
             filters: Filtros de exportação
         
         Returns:
             Lista de alertas como dicts
         """
-        # Buscar alertas usando a função do DAO
-        alerts = selecionar_alertas_janela(
-            db_path=self.db_path,
-            inicio=filters.start_date,
-            fim=filters.end_date,
-            limit=filters.limit,
-        )
+        # ✅ CORRIGIDO: Usar janela consistente com dashboard
+        # Se usuário especificar range de datas customizado, buscar todos
+        # Senão, usar padrão de 24h (igual ao dashboard)
+        if filters.start_date or filters.end_date:
+            # Usuário quer range customizado - buscar todos e filtrar
+            all_alerts = selecionar_alertas_janela(
+                db_path=self.db_path,
+                horas=None,  # Buscar todos para permitir filtro customizado
+            )
+        else:
+            # Usar padrão de 24h (CONSISTENTE com dashboard e lista de alertas)
+            all_alerts = selecionar_alertas_janela(
+                db_path=self.db_path,
+                horas=24,  # ✅ Mesma janela que dashboard usa
+            )
         
-        # Aplicar filtros de status e paciente
+        # Aplicar filtros de data, status e paciente
         filtered_alerts = []
-        for alert in alerts:
+        for alert in all_alerts:
+            # Filtrar por data se especificado (apenas quando range customizado)
+            if filters.start_date:
+                try:
+                    alert_dt = datetime.fromisoformat(alert.get('inicio', '').replace('Z', '+00:00'))
+                    if alert_dt.date() < filters.start_date.date():
+                        continue
+                except (ValueError, AttributeError):
+                    continue
+            
+            if filters.end_date:
+                try:
+                    alert_dt = datetime.fromisoformat(alert.get('inicio', '').replace('Z', '+00:00'))
+                    if alert_dt.date() > filters.end_date.date():
+                        continue
+                except (ValueError, AttributeError):
+                    continue
+            
             # Filtrar por status se especificado
-            if filters.status and alert.get('status') != filters.status:
+            # Mapear status do banco ('aberto', 'reconhecido', 'fechado') para o esperado ('pending', 'acknowledged', 'completed')
+            status_map = {
+                'aberto': 'pending',
+                'reconhecido': 'acknowledged',
+                'fechado': 'completed'
+            }
+            alert_status = status_map.get(alert.get('status', ''), alert.get('status'))
+            if filters.status and alert_status != filters.status:
                 continue
             
             # Filtrar por patient_id se especificado
-            if filters.patient_id and alert.get('patient_id') != filters.patient_id:
+            if filters.patient_id and alert.get('paciente_id') != filters.patient_id:
                 continue
             
             filtered_alerts.append(alert)
+            
+            # Limitar resultado
+            if len(filtered_alerts) >= filters.limit:
+                break
         
         return filtered_alerts
     
@@ -296,27 +338,41 @@ class ExportService:
         """Prepara dados para a tabela PDF."""
         # Cabeçalho
         header = [
-            'ID',
-            'Data/Hora',
-            'Tipo',
-            'Severidade',
-            'Status',
             'Paciente',
-            'Observação',
+            'Início',
+            'Fim',
+            'Tipo',
+            'Perfil',
+            'Status',
+            'Duração (min)',
         ]
         
         data = [header]
         
+        # Mapa de tradução de status
+        status_map = {
+            'aberto': 'Pendente',
+            'reconhecido': 'Reconhecido',
+            'fechado': 'Concluído'
+        }
+        
+        # Mapa de tradução de perfil
+        perfil_map = {
+            'baixo': 'Baixo',
+            'medio': 'Médio',
+            'alto': 'Alto'
+        }
+        
         # Dados
         for alert in alerts:
             row = [
-                str(alert.get('alert_id', '')),
-                self._format_timestamp(alert.get('alert_timestamp')),
-                str(alert.get('alert_type', '')),
-                str(alert.get('severity', '')),
-                self._translate_status(alert.get('status', '')),
-                str(alert.get('patient_id', '')),
-                str(alert.get('observacao', ''))[:50],  # Limitar a 50 caracteres
+                str(alert.get('paciente_id', '')),
+                self._format_timestamp(alert.get('inicio')),
+                self._format_timestamp(alert.get('fim')) if alert.get('fim') else '-',
+                str(alert.get('tipo', '')).capitalize(),
+                perfil_map.get(str(alert.get('perfil', '')).lower(), str(alert.get('perfil', ''))),
+                status_map.get(str(alert.get('status', '')).lower(), str(alert.get('status', ''))),
+                str(int(alert.get('duracao_min', 0))) if alert.get('duracao_min') else '-',
             ]
             data.append(row)
         
@@ -324,7 +380,8 @@ class ExportService:
     
     def _create_table(self, data: List[List[str]]) -> Table:
         """Cria tabela formatada para PDF."""
-        table = Table(data, colWidths=[0.6*inch, 1.2*inch, 0.8*inch, 0.8*inch, 0.8*inch, 0.8*inch, 1.8*inch])
+        # Ajustar larguras das colunas: Paciente, Início, Fim, Tipo, Perfil, Status, Duração
+        table = Table(data, colWidths=[1.0*inch, 1.3*inch, 1.3*inch, 1.0*inch, 0.8*inch, 1.0*inch, 0.8*inch])
         
         table.setStyle(TableStyle([
             # Header

@@ -1,7 +1,20 @@
-import { useState, useCallback, useMemo } from 'react';
+import { useState, useCallback, useMemo, useEffect } from 'react';
 
 export function useAlertSelection(alertIds: string[]) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
+
+  // Clear selection of alerts that no longer exist
+  useEffect(() => {
+    setSelectedIds((prev) => {
+      const validIds = new Set(alertIds);
+      const filtered = new Set(Array.from(prev).filter(id => validIds.has(id)));
+      // Only update if something changed
+      if (filtered.size !== prev.size) {
+        return filtered;
+      }
+      return prev;
+    });
+  }, [alertIds]);
 
   const toggleAlert = useCallback((id: string) => {
     setSelectedIds((prev) => {

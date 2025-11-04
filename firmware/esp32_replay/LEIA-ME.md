@@ -1,0 +1,144 @@
+# ESP32 Firmware - Sistema de Monitoramento de Postura
+
+## 📁 Estrutura
+
+- **esp32_replay.ino** - Versão HTTP (POST para /api/eventos)
+- **esp32_replay_websocket.ino** - ✅ **VERSÃO RECOMENDADA** (WebSocket /ws/eventos)
+- **esp32_replay.h** - Header com estruturas e configurações
+- **data/eventos.jsonl** - Dados de exemplo (históricos)
+- **data/eventos_now.jsonl** - Dados de exemplo (tempo atual)
+
+## 🚀 Como Usar
+
+### 1. Configuração Inicial
+
+Edite as variáveis no arquivo `.ino` antes de fazer upload:
+
+```cpp
+ReplayConfig g_config{
+    .arquivoEventos       = "/eventos.jsonl",
+    .hostServidor         = "192.168.0.67",  // ← SEU IP
+    .portaServidor        = 8000,
+    .endpoint             = "/ws/eventos",   // WebSocket
+    .ssid                 = "SUA_REDE_WIFI", // ← SEU WIFI
+    .senha                = "SUA_SENHA",     // ← SUA SENHA
+    .deviceId             = "DEV-001",       // ID único do dispositivo
+    .camaId               = "C-01",          // ID da cama/leito
+};
+```
+
+### 2. Preparar Dados
+
+#### Opção A: Usar dados históricos (para testes)
+Use o arquivo `data/eventos.jsonl` (já existente)
+
+#### Opção B: Gerar dados com timestamp atual
+Execute o script Python para gerar eventos com timestamp atual:
+
+```bash
+python scripts/gerar_eventos_esp32.py --output firmware/esp32_replay/data/eventos_now.jsonl --horas 2
+```
+
+### 3. Upload do Firmware
+
+1. Instale as bibliotecas necessárias via Arduino IDE:
+   - **ArduinoJson** (versão 6.x)
+   - **WebSockets** by Markus Sattler
+
+2. Upload do sistema de arquivos (SPIFFS):
+   - Ferramentas → ESP32 Sketch Data Upload
+   - Isso carrega o arquivo `data/eventos.jsonl` para o ESP32
+
+3. Upload do código:
+   - Compile e faça upload do `esp32_replay_websocket.ino`
+
+### 4. Monitoramento
+
+Abra o Serial Monitor (115200 baud) para ver os logs:
+
+```
+[WIFI] Connected IP=192.168.0.100
+[WS] Conectando a ws://192.168.0.67:8000/ws/eventos...
+[WS] ✅ Conectado ao servidor WebSocket
+[WS] Conexão estabelecida com sucesso
+[ESTADO] -> 1
+[ACK] seq=1 via WebSocket
+[ACK] seq=2 via WebSocket
+...
+```
+
+## 📊 Formato dos Dados
+
+### Formato Atual (CORRETO) ✅
+
+```json
+{
+  "seq": 1,
+  "device_id": "DEV-001",
+  "paciente_id": "PAC-0001",
+  "cama_id": "C-01",
+  "ts_utc": "2025-10-27T14:30:00Z",
+  "tipo": "postura",
+  "valor": 1,
+  "confianca": 0.95
+}
+```
+
+### Mapeamento de Posturas
+
+- `0` = Decúbito lateral direito
+- `1` = Supino (de costas)
+- `2` = Decúbito lateral esquerdo
+- `3` = Prono (de bruços)
+
+## 🔧 Comandos Seriais
+
+Enquanto o ESP32 está rodando, você pode enviar comandos via Serial:
+
+- `CMD_START` - Iniciar replay
+- `CMD_STOP` - Parar replay
+
+## ⚙️ Configurações Avançadas
+
+### Delay entre pacotes
+
+```cpp
+.delayEntrePacotesMs  = 500,  // 500ms entre eventos
+.respeitarTimestamp   = false, // true = usa delta real dos timestamps
+```
+
+### Retry e Backoff
+
+```cpp
+.tentativasMax        = 5,     // Máximo de tentativas
+.backoffBaseMs        = 500,   // Backoff inicial
+.backoffMaxMs         = 60000, // Backoff máximo (1 min)
+.backoffWithJitter    = true,  // Adicionar jitter
+```
+
+## 🐛 Troubleshooting
+
+### ESP32 não conecta ao WiFi
+- Verifique SSID e senha
+- Confirme que está na mesma rede do servidor
+
+### WebSocket não conecta
+- Confirme que o backend está rodando: `uvicorn interface.web:app --reload`
+- Verifique o IP e porta do servidor
+- Teste o endpoint manualmente: `ws://IP:8000/ws/eventos`
+
+### Eventos não aparecem no dashboard
+- Verifique se o `paciente_id` existe no sistema
+- Confirme que a `cama_id` está associada ao paciente
+- Verifique os timestamps dos eventos (devem estar dentro de ±24h do momento atual)
+
+### Arquivo não encontrado
+- Certifique-se de fazer o upload do SPIFFS (Ferramentas → ESP32 Sketch Data Upload)
+- Verifique o nome do arquivo em `.arquivoEventos`
+
+## 📝 Notas Importantes
+
+1. **Versão WebSocket é mais eficiente** - Use `esp32_replay_websocket.ino`
+2. **Checkpoint automático** - O ESP32 salva a posição do arquivo, pode retomar de onde parou
+3. **Timestamps** - Use dados com timestamps próximos ao atual para ver alertas no dashboard
+4. **Paciente automático** - O firmware consulta `/api/pacientes/cama/{cama_id}` para resolver o paciente
