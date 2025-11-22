@@ -22,10 +22,6 @@ export function AdminPage() {
   const [reconcilingBed, setReconcilingBed] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
 
-  useEffect(() => {
-    fetchStats();
-  }, []);
-
   const fetchStats = async () => {
     try {
       const data = await deviceEventsApi.getStats();
@@ -42,6 +38,10 @@ export function AdminPage() {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchStats();
+  }, []);
 
   const handleReconcileBed = async (camaId: string, patientName: string | null) => {
     if (!patientName) {

@@ -30,10 +30,6 @@ export function PatientsPage() {
   const [deletingPatient, setDeletingPatient] = useState<Patient | null>(null);
   const [selectedPatientForAgenda, setSelectedPatientForAgenda] = useState<Patient | null>(null);
 
-  useEffect(() => {
-    fetchPatients();
-  }, []);
-
   const fetchPatients = async () => {
     try {
       console.log('[PatientsPage] fetchPatients() called');
@@ -52,6 +48,10 @@ export function PatientsPage() {
       setIsLoading(false);
     }
   };
+
+  useEffect(() => {
+    fetchPatients();
+  }, []);
 
   const handleDelete = async (patient: Patient) => {
     try {

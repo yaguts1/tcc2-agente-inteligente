@@ -62,21 +62,6 @@ export function TimelinePage() {
     dateTo: '',
   });
 
-  useEffect(() => {
-    fetchPatients();
-  }, []);
-
-  useEffect(() => {
-    fetchEvents();
-  }, [filters]);
-
-  useEffect(() => {
-    const unsubscribe = subscribe(() => {
-      fetchEvents();
-    });
-    return unsubscribe;
-  }, [subscribe, fetchEvents]);
-
   const fetchPatients = async () => {
     try {
       const data = await patientsApi.getPatients();
@@ -106,6 +91,21 @@ export function TimelinePage() {
       loading(false);
     }
   }, [filters, events.length]);
+
+  useEffect(() => {
+    fetchPatients();
+  }, []);
+
+  useEffect(() => {
+    fetchEvents();
+  }, [filters]);
+
+  useEffect(() => {
+    const unsubscribe = subscribe(() => {
+      fetchEvents();
+    });
+    return unsubscribe;
+  }, [subscribe, fetchEvents]);
 
   const handleApplyFilters = () => {
     const newFilters: TimelineFilters = {
