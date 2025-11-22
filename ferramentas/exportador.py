@@ -4,6 +4,7 @@ import io
 import logging
 from datetime import datetime, timedelta
 from typing import Optional, List, Dict, Any
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 from reportlab.lib import colors
@@ -20,6 +21,9 @@ from interface.dao import (
 )
 
 logger = structlog.get_logger(__name__)
+
+# Timezone configuration
+TZ_BR = ZoneInfo("America/Sao_Paulo")
 
 
 class ExportFilters:
@@ -302,7 +306,7 @@ class ExportService:
         story.append(Spacer(1, 0.2*inch))
         
         # Footer
-        footer_text = f"Gerado em {datetime.now().strftime('%d/%m/%Y %H:%M:%S')}"
+        footer_text = f"Gerado em {datetime.now(TZ_BR).strftime('%d/%m/%Y %H:%M:%S')}"
         story.append(Paragraph(footer_text, subtitle_style))
         
         # Gerar PDF
@@ -406,16 +410,23 @@ class ExportService:
         return table
     
     def _format_timestamp(self, ts: Any) -> str:
-        """Formata timestamp para exibição."""
+        """Formata timestamp para exibição (convertendo para horário local)."""
         if isinstance(ts, str):
             # Tentar fazer parse
             try:
+                # Assumindo que o timestamp do banco está em UTC (termina em Z ou +00:00)
                 dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
-                return dt.strftime("%d/%m/%Y %H:%M")
+                # Converter para horário local
+                dt_local = dt.astimezone(TZ_BR)
+                return dt_local.strftime("%d/%m/%Y %H:%M")
             except:
                 return ts[:16]
         elif isinstance(ts, datetime):
-            return ts.strftime("%d/%m/%Y %H:%M")
+            # Se não tiver timezone, assumir UTC
+            if ts.tzinfo is None:
+                ts = ts.replace(tzinfo=ZoneInfo("UTC"))
+            dt_local = ts.astimezone(TZ_BR)
+            return dt_local.strftime("%d/%m/%Y %H:%M")
         else:
             return str(ts)
     
@@ -442,7 +453,7 @@ def generate_csv_filename(filters: ExportFilters) -> str:
     if filters.patient_id:
         parts.append(filters.patient_id)
     
-    parts.append(datetime.now().strftime("%Y%m%d"))
+    parts.append(datetime.now(TZ_BR).strftime("%Y%m%d_%H%M"))
     
     return "_".join(parts) + ".csv"
 
@@ -454,6 +465,6 @@ def generate_pdf_filename(filters: ExportFilters) -> str:
     if filters.patient_id:
         parts.append(filters.patient_id)
     
-    parts.append(datetime.now().strftime("%Y-%m-%d"))
+    parts.append(datetime.now(TZ_BR).strftime("%Y-%m-%d_%H%M"))
     
     return "_".join(parts) + ".pdf"
