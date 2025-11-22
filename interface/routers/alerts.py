@@ -395,6 +395,9 @@ async def frontend_acknowledge(alert_id: str, user: str = Depends(get_current_us
             "status": "acknowledged",
             "timestamp": datetime.now(timezone.utc).isoformat()
         })
+        
+        # Invalidate alerts cache since data changed
+        await api_cache.clear()
     except LookupError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"code": "not_found", "message": "Alert not found"})
     return {"ok": True}
@@ -448,6 +451,9 @@ async def frontend_complete(alert_id: str, user: str = Depends(get_current_user)
             "status": "completed",
             "timestamp": datetime.now(timezone.utc).isoformat()
         })
+        
+        # Invalidate alerts cache since data changed
+        await api_cache.clear()
     except LookupError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"code": "not_found", "message": "Alert not found"})
     return {"ok": True}
