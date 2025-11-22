@@ -15,6 +15,7 @@ interface UseWebSocketOptions {
   onMessage?: (message: AlertUpdate) => void;
   reconnectInterval?: number;
   maxReconnectAttempts?: number;
+  isAuthenticated?: boolean;
 }
 
 export function useWebSocket({
@@ -22,8 +23,10 @@ export function useWebSocket({
   onMessage,
   reconnectInterval = 5000, // Aumentado de 3s para 5s
   maxReconnectAttempts = 5,
+  isAuthenticated: isAuthenticatedProp,
 }: UseWebSocketOptions = {}) {
-  const { isAuthenticated } = useAuth();
+  const { isAuthenticated: authIsAuthenticated } = useAuth();
+  const isAuthenticated = isAuthenticatedProp ?? authIsAuthenticated;
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);

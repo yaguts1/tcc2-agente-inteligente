@@ -12,6 +12,7 @@ import { FullPageSpinner } from './components/shared/Spinner';
 import { SessionExpirationAlert } from './components/common/SessionExpirationAlert';
 import { Toaster } from './components/ui/sonner';
 import { ErrorBoundary } from './components/ErrorBoundary';
+import { WebSocketProvider } from './contexts/WebSocketContext';
 
 type Page = 'dashboard' | 'timeline' | 'patients' | 'admin';
 
@@ -84,14 +85,16 @@ export default function App() {
 
   return (
     <ErrorBoundary>
-      <AppLayout
-        currentUser={user?.username || 'Usuário'}
-        onLogout={logout}
-        currentPage={currentPage}
-        onNavigate={setCurrentPage}
-      >
-        {renderPage()}
-      </AppLayout>
+      <WebSocketProvider isAuthenticated={isAuthenticated}>
+        <AppLayout
+          currentUser={user?.username || 'Usuário'}
+          onLogout={logout}
+          currentPage={currentPage}
+          onNavigate={setCurrentPage}
+        >
+          {renderPage()}
+        </AppLayout>
+      </WebSocketProvider>
       <SessionExpirationAlert showWarning={true} />
       <Toaster />
     </ErrorBoundary>

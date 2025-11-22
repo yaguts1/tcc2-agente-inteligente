@@ -2,7 +2,7 @@ import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, Bell, Calendar } from 'lucide-react';
 import { alertsApi, Alert, ApiException, statsApi, DashboardStats, patientsApi } from '../../lib/api';
 import { usePolling } from '../../hooks/usePolling';
-import { useWebSocket } from '../../hooks/useWebSocket';
+import { useWebSocketContext } from '../../contexts/WebSocketContext';
 import { useAlertFilters, AlertFilters } from '../../hooks/useAlertFilters';
 import { useCriticalAlerts } from '../../hooks/useCriticalAlerts';
 import { FilterBar } from '../alerts/FilterBar';
@@ -160,10 +160,11 @@ export function DashboardPage() {
   }, []);
 
   // WebSocket connection for real-time updates
-  const { isConnected: wsConnected } = useWebSocket({
-    enabled: true,
-    onMessage: handleWebSocketMessage,
-  });
+  const { isConnected: wsConnected, subscribe } = useWebSocketContext();
+
+  useEffect(() => {
+    return subscribe(handleWebSocketMessage);
+  }, [subscribe, handleWebSocketMessage]);
 
   useEffect(() => {
     fetchAlerts();
