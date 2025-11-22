@@ -15,6 +15,9 @@ RUN npm ci
 # Copy source code
 COPY . .
 
+# Fix permissions for vite
+RUN chmod +x node_modules/.bin/vite
+
 # Build for production
 RUN npm run build
 
