@@ -1024,7 +1024,7 @@ def selecionar_timeline(
         params.append(int(end_ms))
     if where_clauses:
         sql = f"{sql} WHERE {' AND '.join(where_clauses)}"
-    sql = f"{sql} ORDER BY ts_ms ASC LIMIT ?"
+    sql = f"{sql} ORDER BY ts_ms DESC LIMIT ?"
     params.append(int(limit))
     with _connect(db_path) as conn:
         cur = conn.execute(sql, tuple(params))

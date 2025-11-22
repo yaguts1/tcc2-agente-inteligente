@@ -79,8 +79,9 @@ async def test_get_timeline_with_events(api_client):
     assert len(events) == 2
     assert events[0]["paciente_id"] == pid
     assert events[0]["paciente_name"] == "João Silva"
-    assert events[0]["tipo"] == "alert_open"
-    assert events[1]["tipo"] == "alert_close"
+    # Now ordered by DESC (newest first)
+    assert events[0]["tipo"] == "alert_close"
+    assert events[1]["tipo"] == "alert_open"
 
 @pytest.mark.asyncio
 async def test_get_timeline_filter_tipo(api_client):

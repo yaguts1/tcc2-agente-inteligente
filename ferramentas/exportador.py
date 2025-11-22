@@ -340,6 +340,14 @@ class ExportService:
     
     def _prepare_table_data(self, alerts: List[Dict[str, Any]]) -> List[List[str]]:
         """Prepara dados para a tabela PDF."""
+        # Buscar mapa de pacientes para substituir ID por Nome
+        from interface.dao import listar_fichas_pacientes
+        try:
+            pacientes = listar_fichas_pacientes(self.db_path)
+            paciente_map = {p["paciente_id"]: p["nome"] for p in pacientes}
+        except Exception:
+            paciente_map = {}
+
         # Cabeçalho
         header = [
             'Paciente',
@@ -348,7 +356,7 @@ class ExportService:
             'Tipo',
             'Perfil',
             'Status',
-            'Duração (min)',
+            'Duração',
         ]
         
         data = [header]
@@ -369,14 +377,27 @@ class ExportService:
         
         # Dados
         for alert in alerts:
+            pid = str(alert.get('paciente_id', ''))
+            nome_paciente = paciente_map.get(pid, pid)
+            
+            duracao = '-'
+            if alert.get('duracao_min'):
+                mins = int(alert.get('duracao_min'))
+                if mins >= 60:
+                    h = mins // 60
+                    m = mins % 60
+                    duracao = f"{h}h {m}min"
+                else:
+                    duracao = f"{mins} min"
+
             row = [
-                str(alert.get('paciente_id', '')),
+                nome_paciente,
                 self._format_timestamp(alert.get('inicio')),
                 self._format_timestamp(alert.get('fim')) if alert.get('fim') else '-',
                 str(alert.get('tipo', '')).capitalize(),
                 perfil_map.get(str(alert.get('perfil', '')).lower(), str(alert.get('perfil', ''))),
                 status_map.get(str(alert.get('status', '')).lower(), str(alert.get('status', ''))),
-                str(int(alert.get('duracao_min', 0))) if alert.get('duracao_min') else '-',
+                duracao,
             ]
             data.append(row)
         
@@ -385,7 +406,7 @@ class ExportService:
     def _create_table(self, data: List[List[str]]) -> Table:
         """Cria tabela formatada para PDF."""
         # Ajustar larguras das colunas: Paciente, Início, Fim, Tipo, Perfil, Status, Duração
-        table = Table(data, colWidths=[1.0*inch, 1.3*inch, 1.3*inch, 1.0*inch, 0.8*inch, 1.0*inch, 0.8*inch])
+        table = Table(data, colWidths=[2.0*inch, 1.3*inch, 1.3*inch, 1.0*inch, 0.8*inch, 1.0*inch, 1.2*inch])
         
         table.setStyle(TableStyle([
             # Header
