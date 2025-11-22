@@ -1,6 +1,5 @@
 import { useEffect, useRef, useCallback, useState } from 'react';
 import { toast } from 'sonner';
-import { useAuth } from './useAuth';
 
 export interface AlertUpdate {
   type: 'alert_update' | 'alert_new' | string;
@@ -23,10 +22,8 @@ export function useWebSocket({
   onMessage,
   reconnectInterval = 5000, // Aumentado de 3s para 5s
   maxReconnectAttempts = 5,
-  isAuthenticated: isAuthenticatedProp,
+  isAuthenticated = false,
 }: UseWebSocketOptions = {}) {
-  const { isAuthenticated: authIsAuthenticated } = useAuth();
-  const isAuthenticated = isAuthenticatedProp ?? authIsAuthenticated;
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttemptsRef = useRef(0);
   const reconnectTimeoutRef = useRef<NodeJS.Timeout | null>(null);
