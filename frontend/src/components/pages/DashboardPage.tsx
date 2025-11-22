@@ -116,10 +116,8 @@ export function DashboardPage() {
         patientsApi.getPatients(),
       ]);
       
-      // Filter out completed alerts - only show active and acknowledged alerts in the dashboard
-      const activeAlerts = alertsData.filter(alert => alert.status !== 'completed');
-      
-      setAlerts(activeAlerts);
+      // Store all alerts (including completed) to allow correct stats calculation
+      setAlerts(alertsData);
       setStats(statsData);
       setPatients(patientsData.map((p) => ({ id: p.id, name: p.name })));
       setError(null);
@@ -146,19 +144,14 @@ export function DashboardPage() {
       // Update alert status based on WebSocket message
       const { alert_id, status } = message;
       if (alert_id && status) {
-        if (status === 'completed') {
-          // Remove completed alerts from the list
-          setAlerts((prev) => prev.filter((alert) => alert.id !== alert_id));
-        } else {
-          // Update status for pending/acknowledged
-          setAlerts((prev) =>
-            prev.map((alert) =>
-              alert.id === alert_id
-                ? { ...alert, status: status as Alert['status'] }
-                : alert
-            )
-          );
-        }
+        // Update status for all alerts (including completed)
+        setAlerts((prev) =>
+          prev.map((alert) =>
+            alert.id === alert_id
+              ? { ...alert, status: status as Alert['status'] }
+              : alert
+          )
+        );
         
         // Also refresh stats to keep them in sync
         statsApi.getStats().then(setStats).catch(console.error);
@@ -220,8 +213,14 @@ export function DashboardPage() {
     try {
       await alertsApi.complete(alertId);
       
-      // Remove completed alert from the list immediately
-      setAlerts((prev) => prev.filter((alert) => alert.id !== alertId));
+      // Update status to completed (don't remove, so stats stay correct)
+      setAlerts((prev) =>
+        prev.map((alert) =>
+          alert.id === alertId
+            ? { ...alert, status: 'completed' as const }
+            : alert
+        )
+      );
       
       toast.success('Paciente reposicionado com sucesso');
 
@@ -353,7 +352,12 @@ export function DashboardPage() {
       {/* Alerts Table */}
       <Card>
         <AlertsTable
-          alerts={filteredAlerts}
+          alerts={filteredAlerts.filter(a => {
+            // If user explicitly filtered by status, show what they asked for
+            if (filters.status) return true;
+            // Otherwise, hide completed by default to keep table clean
+            return a.status !== 'completed';
+          })}
           onAcknowledge={handleAcknowledge}
           onComplete={handleComplete}
           isLoading={isLoading}
