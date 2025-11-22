@@ -43,6 +43,7 @@ from interface.servicos_view import (
     coletar_alertas as _coletar_alertas,
     carregar_alertas_para_view as _carregar_alertas_para_view,
     montar_timeline_context as _montar_timeline_context,
+    DEFAULT_PACIENTE_PERFIL,
 )
 
 from interface.dao import (
@@ -397,6 +398,12 @@ try:
 except Exception:
     # do not fail startup if middleware cannot be added for some reason
     pass
+
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    if SITE_UI_DIST and (SITE_UI_DIST / "favicon.ico").exists():
+        return FileResponse(str(SITE_UI_DIST / "favicon.ico"))
+    return Response(status_code=404)
 
 # Include routers BEFORE mounting static files to ensure API routes take precedence
 app.include_router(web_router, prefix=APP_PREFIX)

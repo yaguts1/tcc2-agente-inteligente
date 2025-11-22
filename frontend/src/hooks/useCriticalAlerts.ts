@@ -114,8 +114,8 @@ export function useCriticalAlerts(
           body: `📍 ${location}\n⏱️ Imobilizado há ${imobilizadoMin}min\n⚠️ Perfil: ${riskPT}\n🔄 Próximo reposicionamento: ${new Date(
             alert.nextRepositioning
           ).toLocaleTimeString('pt-BR')}`,
-          icon: '/icon-alert.png',
-          badge: '/badge-alert.png',
+          icon: `${import.meta.env.BASE_URL}icon-alert.png`,
+          badge: `${import.meta.env.BASE_URL}badge-alert.png`,
           tag: `critical-alert-${alert.id}`,
           requireInteraction: true,
         };
