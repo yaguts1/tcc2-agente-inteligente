@@ -187,13 +187,14 @@ export function PatientForm({ patient, onSuccess, onCancel }: PatientFormProps) 
                 max="24"
                 step="0.5"
                 placeholder="2"
-                value={formData.repositioningInterval}
-                onChange={(e) =>
+                value={formData.repositioningInterval || ''}
+                onChange={(e) => {
+                  const val = parseFloat(e.target.value);
                   setFormData({
                     ...formData,
-                    repositioningInterval: parseFloat(e.target.value),
-                  })
-                }
+                    repositioningInterval: isNaN(val) ? 0 : val,
+                  });
+                }}
                 disabled={isLoading}
                 required
               />
