@@ -64,7 +64,7 @@ async function handleResponse<T>(response: Response): Promise<T> {
 
 async function request<T>(
   url: string,
-  options: RequestInit = {}
+  options: RequestInit & { responseType?: 'json' | 'blob' } = {}
 ): Promise<T> {
   // DEBUG: log requests to help diagnose why calls to /api/* might not reach backend
   try {
@@ -109,13 +109,22 @@ async function request<T>(
     }
   }
 
+  const { responseType, ...fetchOptions } = options;
+
   const response = await fetch(finalUrl, {
     // rely on same-origin behavior and Vite proxy in dev; use same-origin
     // to ensure cookies are handled by the dev server host.
     credentials: 'same-origin',
     headers,
-    ...options,
+    ...fetchOptions,
   });
+
+  if (responseType === 'blob') {
+    if (!response.ok) {
+      throw new ApiException(response.statusText || 'Erro no download', response.status);
+    }
+    return response.blob() as unknown as T;
+  }
 
   return handleResponse<T>(response);
 }
@@ -427,10 +436,11 @@ export const exportAlertsToCSV = async (params: ExportParams): Promise<void> => 
     headers: {
       'Accept': 'text/csv',
     },
+    responseType: 'blob',
   });
 
   // Create download link
-  const url = window.URL.createObjectURL(new Blob([response as any]));
+  const url = window.URL.createObjectURL(response);
   const link = document.createElement('a');
   link.href = url;
   link.setAttribute('download', `alertas_${new Date().toISOString().split('T')[0]}.csv`);
@@ -450,10 +460,11 @@ export const exportAlertsToPDF = async (params: ExportParams): Promise<void> => 
     headers: {
       'Accept': 'application/pdf',
     },
+    responseType: 'blob',
   });
 
   // Create download link
-  const url = window.URL.createObjectURL(new Blob([response as any], { type: 'application/pdf' }));
+  const url = window.URL.createObjectURL(response);
   const link = document.createElement('a');
   link.href = url;
   link.setAttribute('download', `alertas_${new Date().toISOString().split('T')[0]}.pdf`);

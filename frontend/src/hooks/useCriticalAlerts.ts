@@ -49,6 +49,17 @@ export function useCriticalAlerts(
       }
 
       const ctx = audioContextRef.current;
+
+      // Resume context if suspended (browser policy)
+      if (ctx.state === 'suspended') {
+        try {
+          await ctx.resume();
+        } catch (e) {
+          console.warn('AudioContext resume failed (user interaction needed):', e);
+          return;
+        }
+      }
+
       const now = ctx.currentTime;
       const duration = 0.5;
 
