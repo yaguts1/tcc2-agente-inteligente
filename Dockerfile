@@ -6,7 +6,9 @@ RUN npm ci
 COPY frontend/ .
     # Build with base path /TCC/
     RUN chmod +x node_modules/.bin/vite
-    RUN npm run build -- --base=/TCC/# Stage 2: Python App
+    RUN npm run build -- --base=/TCC/
+
+# Stage 2: Python App
 FROM python:3.11-slim
 
 WORKDIR /app
