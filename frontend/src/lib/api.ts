@@ -401,3 +401,63 @@ export interface DashboardStats {
 export const statsApi = {
   getStats: () => request<DashboardStats>('/api/stats'),
 };
+
+// Export API
+export interface ExportParams {
+  startDate?: string;
+  endDate?: string;
+  status?: 'pending' | 'acknowledged' | 'completed';
+  patientId?: string;
+}
+
+export const formatDateForExport = (dateStr: string): string => {
+  if (!dateStr) return '';
+  const date = new Date(dateStr);
+  return date.toLocaleDateString('pt-BR');
+};
+
+export const exportAlertsToCSV = async (params: ExportParams): Promise<void> => {
+  const queryParams = new URLSearchParams();
+  if (params.startDate) queryParams.append('start_date', params.startDate);
+  if (params.endDate) queryParams.append('end_date', params.endDate);
+  if (params.status) queryParams.append('status', params.status);
+  if (params.patientId) queryParams.append('patient_id', params.patientId);
+
+  const response = await request<Blob>(`/api/alerts/export/csv?${queryParams.toString()}`, {
+    headers: {
+      'Accept': 'text/csv',
+    },
+  });
+
+  // Create download link
+  const url = window.URL.createObjectURL(new Blob([response as any]));
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', `alertas_${new Date().toISOString().split('T')[0]}.csv`);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+};
+
+export const exportAlertsToPDF = async (params: ExportParams): Promise<void> => {
+  const queryParams = new URLSearchParams();
+  if (params.startDate) queryParams.append('start_date', params.startDate);
+  if (params.endDate) queryParams.append('end_date', params.endDate);
+  if (params.status) queryParams.append('status', params.status);
+  if (params.patientId) queryParams.append('patient_id', params.patientId);
+
+  const response = await request<Blob>(`/api/alerts/export/pdf?${queryParams.toString()}`, {
+    headers: {
+      'Accept': 'application/pdf',
+    },
+  });
+
+  // Create download link
+  const url = window.URL.createObjectURL(new Blob([response as any], { type: 'application/pdf' }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.setAttribute('download', `alertas_${new Date().toISOString().split('T')[0]}.pdf`);
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+};
