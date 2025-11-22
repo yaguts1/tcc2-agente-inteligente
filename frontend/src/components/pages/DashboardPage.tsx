@@ -1,26 +1,31 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, Bell, Calendar } from 'lucide-react';
-import { alertsApi, Alert, ApiException, statsApi, DashboardStats, patientsApi } from '../../lib/api';
-import { usePolling } from '../../hooks/usePolling';
-import { useWebSocketContext } from '../../contexts/WebSocketContext';
+import { statsApi, DashboardStats, patientsApi, ApiException } from '../../lib/api';
 import { useAlertFilters, AlertFilters } from '../../hooks/useAlertFilters';
-import { useCriticalAlerts } from '../../hooks/useCriticalAlerts';
+import { useAlerts } from '../../contexts/AlertsContext';
 import { FilterBar } from '../alerts/FilterBar';
 import { Card } from '../ui/card';
 import { ErrorBanner } from '../shared/ErrorBanner';
 import { PollIndicator } from '../shared/PollIndicator';
 import { AlertsTable } from '../alerts/AlertsTable';
 import { Skeleton } from '../ui/skeleton';
-import { toast } from 'sonner';
 
-const POLL_INTERVAL = 30000; // 30 seconds - fallback to polling if WebSocket unavailable
+const POLL_INTERVAL = 30000;
 
 export function DashboardPage() {
-  const [alerts, setAlerts] = useState<Alert[]>([]);
+  const { 
+    alerts, 
+    isLoading: alertsLoading, 
+    error: alertsError, 
+    isOffline: alertsOffline, 
+    fetchAlerts, 
+    acknowledgeAlert, 
+    completeAlert 
+  } = useAlerts();
+
   const [stats, setStats] = useState<DashboardStats | null>(null);
-  const [isLoading, setIsLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-  const [isOffline, setIsOffline] = useState(false);
+  const [isLoadingStats, setIsLoadingStats] = useState(true);
+  const [statsError, setStatsError] = useState<string | null>(null);
   const [patients, setPatients] = useState<Array<{ id: string; name: string }>>([]);
   const [filters, setFilters] = useState<AlertFilters>({});
   const [activeFilterCount, setActiveFilterCount] = useState(0);
@@ -94,150 +99,52 @@ export function DashboardPage() {
     return true;
   });
 
-  // Critical alerts hook
-  const {
-    criticalAlerts,
-    totalCritical,
-    highRisk,
-    acknowledgedMedium,
-    hasNewCritical,
-  } = useCriticalAlerts(alerts, {
-    enabled: true,
-    soundEnabled: true,
-    notificationsEnabled: true,
-  });
-
-  const fetchAlerts = useCallback(async () => {
-    setIsLoading(true);
+  const fetchDashboardData = useCallback(async () => {
+    setIsLoadingStats(true);
     try {
-      const [alertsData, statsData, patientsData] = await Promise.all([
-        alertsApi.getAlerts(),
+      const [statsData, patientsData] = await Promise.all([
         statsApi.getStats(),
         patientsApi.getPatients(),
       ]);
       
-      // Store all alerts (including completed) to allow correct stats calculation
-      setAlerts(alertsData);
       setStats(statsData);
       setPatients(patientsData.map((p) => ({ id: p.id, name: p.name })));
-      setError(null);
-      setIsOffline(false);
+      setStatsError(null);
     } catch (err) {
       if (err instanceof ApiException) {
-        if (err.status === 0 || !navigator.onLine) {
-          setIsOffline(true);
-          setError('Sem conexão com o servidor');
-        } else {
-          setError(err.message);
-        }
+        setStatsError(err.message);
       } else {
-        setError('Erro ao carregar alertas');
+        setStatsError('Erro ao carregar dados do dashboard');
       }
     } finally {
-      setIsLoading(false);
+      setIsLoadingStats(false);
     }
   }, []);
 
-  // WebSocket handler for real-time alert updates
-  const handleWebSocketMessage = useCallback((message: any) => {
-    if (message.type === 'alert_update') {
-      // Update alert status based on WebSocket message
-      const { alert_id, status } = message;
-      if (alert_id && status) {
-        // Update status for all alerts (including completed)
-        setAlerts((prev) =>
-          prev.map((alert) =>
-            alert.id === alert_id
-              ? { ...alert, status: status as Alert['status'] }
-              : alert
-          )
-        );
-        
-        // Also refresh stats to keep them in sync
-        statsApi.getStats().then(setStats).catch(console.error);
-      }
-    }
-  }, []);
-
-  // WebSocket connection for real-time updates
-  const { isConnected: wsConnected, subscribe } = useWebSocketContext();
-
   useEffect(() => {
-    return subscribe(handleWebSocketMessage);
-  }, [subscribe, handleWebSocketMessage]);
+    fetchDashboardData();
+  }, [fetchDashboardData]);
 
+  // Refresh stats when alerts change (e.g. via WebSocket in context)
   useEffect(() => {
+    statsApi.getStats().then(setStats).catch(console.error);
+  }, [alerts]);
+
+  const handleManualRefresh = () => {
     fetchAlerts();
-  }, [fetchAlerts]);
-
-  // Polling as fallback (disabled if WebSocket is working, but kept for resilience)
-  const { isPolling, stop, start } = usePolling({
-    interval: POLL_INTERVAL,
-    enabled: !wsConnected, // Only enable polling if WebSocket not connected
-    onPoll: fetchAlerts,
-  });
+    fetchDashboardData();
+  };
 
   const handleAcknowledge = async (alertId: string) => {
-    // pause polling while we perform the action to avoid races
-    stop();
-    try {
-      // Optimistic update
-      setAlerts((prev) =>
-        prev.map((alert) =>
-          alert.id === alertId
-            ? { ...alert, status: 'acknowledged' as const }
-            : alert
-        )
-      );
-
-      await alertsApi.acknowledge(alertId);
-      toast.success('Alerta reconhecido');
-
-      // refresh shortly to reconcile any server-side changes
-      setTimeout(() => fetchAlerts(), 800);
-    } catch (err) {
-      // Revert on error
-      await fetchAlerts();
-      if (err instanceof ApiException) {
-        toast.error(err.message);
-      } else {
-        toast.error('Erro ao reconhecer alerta');
-      }
-    } finally {
-      start();
-    }
+    await acknowledgeAlert(alertId);
+    // Refresh stats after action
+    statsApi.getStats().then(setStats).catch(console.error);
   };
 
   const handleComplete = async (alertId: string) => {
-    // pause polling while we perform the action
-    stop();
-    try {
-      await alertsApi.complete(alertId);
-      
-      // Update status to completed (don't remove, so stats stay correct)
-      setAlerts((prev) =>
-        prev.map((alert) =>
-          alert.id === alertId
-            ? { ...alert, status: 'completed' as const }
-            : alert
-        )
-      );
-      
-      toast.success('Paciente reposicionado com sucesso');
-
-      // Refresh stats to update metrics
-      statsApi.getStats().then(setStats).catch(console.error);
-    } catch (err) {
-      // Refresh on error to get accurate state
-      await fetchAlerts();
-      if (err instanceof ApiException) {
-        toast.error(err.message);
-      } else {
-        toast.error('Erro ao completar alerta');
-      }
-    } finally {
-      start();
-    }
+    await completeAlert(alertId);
+    // Refresh stats after action
+    statsApi.getStats().then(setStats).catch(console.error);
   };
 
   // Calculate metrics from filtered alerts
@@ -251,6 +158,9 @@ export function DashboardPage() {
       : 0
   };
 
+  const isLoading = alertsLoading || isLoadingStats;
+  const error = alertsError || statsError;
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -262,20 +172,20 @@ export function DashboardPage() {
           </p>
         </div>
         <PollIndicator
-          isPolling={isPolling}
+          isPolling={true} // Context handles polling
           interval={POLL_INTERVAL}
-          onManualRefresh={fetchAlerts}
+          onManualRefresh={handleManualRefresh}
         />
       </div>
 
       {/* Error Banner */}
       {error && (
         <ErrorBanner
-          type={isOffline ? 'offline' : 'error'}
-          title={isOffline ? 'Conexão perdida' : 'Erro'}
+          type={alertsOffline ? 'offline' : 'error'}
+          title={alertsOffline ? 'Conexão perdida' : 'Erro'}
           message={error}
-          onRetry={fetchAlerts}
-          onDismiss={() => setError(null)}
+          onRetry={handleManualRefresh}
+          onDismiss={() => setStatsError(null)}
         />
       )}
 

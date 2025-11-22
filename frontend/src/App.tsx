@@ -13,6 +13,7 @@ import { SessionExpirationAlert } from './components/common/SessionExpirationAle
 import { Toaster } from './components/ui/sonner';
 import { ErrorBoundary } from './components/ErrorBoundary';
 import { WebSocketProvider } from './contexts/WebSocketContext';
+import { AlertsProvider } from './contexts/AlertsContext';
 
 type Page = 'dashboard' | 'timeline' | 'patients' | 'admin';
 
@@ -86,14 +87,16 @@ export default function App() {
   return (
     <ErrorBoundary>
       <WebSocketProvider isAuthenticated={isAuthenticated}>
-        <AppLayout
-          currentUser={user?.username || 'Usuário'}
-          onLogout={logout}
-          currentPage={currentPage}
-          onNavigate={setCurrentPage}
-        >
-          {renderPage()}
-        </AppLayout>
+        <AlertsProvider>
+          <AppLayout
+            currentUser={user?.username || 'Usuário'}
+            onLogout={logout}
+            currentPage={currentPage}
+            onNavigate={setCurrentPage}
+          >
+            {renderPage()}
+          </AppLayout>
+        </AlertsProvider>
       </WebSocketProvider>
       <SessionExpirationAlert showWarning={true} />
       <Toaster />
