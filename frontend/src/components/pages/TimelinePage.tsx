@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { timelineApi, TimelineEvent, ApiException, patientsApi, Patient, TimelineFilters } from '../../lib/api';
+import { useWebSocketContext } from '../../contexts/WebSocketContext';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
@@ -32,11 +33,12 @@ const EVENT_TYPES = [
   { value: 'all', label: 'Todos os tipos' },
   { value: 'alert_open', label: 'Alerta criado' },
   { value: 'alert_acknowledged', label: 'Alerta reconhecido' },
-  { value: 'alert_completed', label: 'Alerta encerrado' },
+  { value: 'alert_close', label: 'Alerta encerrado' },
   { value: 'repositioning', label: 'Reposicionamento' },
 ];
 
 export function TimelinePage() {
+  const { subscribe } = useWebSocketContext();
   const [events, setEvents] = useState<TimelineEvent[]>([]);
   const [patients, setPatients] = useState<Patient[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -67,6 +69,13 @@ export function TimelinePage() {
   useEffect(() => {
     fetchEvents();
   }, [filters]);
+
+  useEffect(() => {
+    const unsubscribe = subscribe(() => {
+      fetchEvents();
+    });
+    return unsubscribe;
+  }, [subscribe, fetchEvents]);
 
   const fetchPatients = async () => {
     try {
@@ -174,6 +183,7 @@ export function TimelinePage() {
       case 'alert_acknowledged':
         return <Eye className="w-5 h-5 text-blue-500" />;
       case 'alert_completed':
+      case 'alert_close':
         return <CheckCircle2 className="w-5 h-5 text-success" />;
       case 'repositioning':
         return <CheckCircle2 className="w-5 h-5 text-success" />;
@@ -189,6 +199,7 @@ export function TimelinePage() {
       case 'alert_acknowledged':
         return 'Alerta reconhecido';
       case 'alert_completed':
+      case 'alert_close':
         return 'Alerta encerrado';
       case 'repositioning':
         return 'Paciente reposicionado';
@@ -212,6 +223,7 @@ export function TimelinePage() {
           </Badge>
         );
       case 'alert_completed':
+      case 'alert_close':
         return (
           <Badge className="bg-success text-success-foreground">
             Encerrado

@@ -18,6 +18,7 @@ from interface.dao import (
 )
 from interface.schemas import BatchAlertRequest
 from interface.ws_manager_optimized import ws_manager_optimized, WebSocketFilter
+from interface.dependencies import get_current_user
 from ferramentas.exportador import ExportFilters, ExportService, generate_csv_filename, generate_pdf_filename
 from servicos import metricas
 
@@ -142,9 +143,14 @@ async def frontend_alerts(
 
 
 @router.post("/frontend/alerts/batch/acknowledge", status_code=status.HTTP_200_OK)
-async def batch_acknowledge(payload: BatchAlertRequest, request: Request, _: None = Depends(_check_batch_rate_limit)) -> dict:
+async def batch_acknowledge(
+    payload: BatchAlertRequest, 
+    request: Request, 
+    user: str = Depends(get_current_user),
+    _: None = Depends(_check_batch_rate_limit)
+) -> dict:
     """Acknowledge multiple alerts at once."""
-    logger.info("batch_acknowledge_called", alert_ids_count=len(payload.alert_ids))
+    logger.info("batch_acknowledge_called", alert_ids_count=len(payload.alert_ids), user=user)
     
     processed = 0
     failed = 0
@@ -163,13 +169,19 @@ async def batch_acknowledge(payload: BatchAlertRequest, request: Request, _: Non
             
             # Registrar evento na timeline (em thread pool também)
             try:
+                now = datetime.now(timezone.utc)
+                ts_iso = now.isoformat()
+                ts_ms = int(now.timestamp() * 1000)
+                
                 await asyncio.to_thread(
                     inserir_timeline_event,
                     DB_PATH,
                     paciente_id,
+                    ts_iso,
+                    ts_ms,
                     "alert_ack",
-                    f"Alerta reconhecido em lote",
-                    {"alert_id": alert_id, "inicio": inicio, "action": "batch_acknowledge"}
+                    f"Alerta reconhecido em lote por {user}",
+                    {"alert_id": alert_id, "inicio": inicio, "action": "batch_acknowledge", "user": user}
                 )
             except Exception as timeline_err:
                 logger.warning(
@@ -233,9 +245,14 @@ async def batch_acknowledge(payload: BatchAlertRequest, request: Request, _: Non
 
 
 @router.post("/frontend/alerts/batch/complete", status_code=status.HTTP_200_OK)
-async def batch_complete(payload: BatchAlertRequest, request: Request, _: None = Depends(_check_batch_rate_limit)) -> dict:
+async def batch_complete(
+    payload: BatchAlertRequest, 
+    request: Request, 
+    user: str = Depends(get_current_user),
+    _: None = Depends(_check_batch_rate_limit)
+) -> dict:
     """Complete multiple alerts at once."""
-    logger.info("batch_complete_called", alert_ids_count=len(payload.alert_ids))
+    logger.info("batch_complete_called", alert_ids_count=len(payload.alert_ids), user=user)
     
     processed = 0
     failed = 0
@@ -254,13 +271,19 @@ async def batch_complete(payload: BatchAlertRequest, request: Request, _: None =
             
             # Registrar evento na timeline (em thread pool também)
             try:
+                now = datetime.now(timezone.utc)
+                ts_iso = now.isoformat()
+                ts_ms = int(now.timestamp() * 1000)
+                
                 await asyncio.to_thread(
                     inserir_timeline_event,
                     DB_PATH,
                     paciente_id,
+                    ts_iso,
+                    ts_ms,
                     "alert_close",
-                    f"Alerta fechado/completado em lote",
-                    {"alert_id": alert_id, "inicio": inicio, "action": "batch_complete"}
+                    f"Alerta fechado/completado em lote por {user}",
+                    {"alert_id": alert_id, "inicio": inicio, "action": "batch_complete", "user": user}
                 )
             except Exception as timeline_err:
                 logger.warning(
@@ -324,7 +347,7 @@ async def batch_complete(payload: BatchAlertRequest, request: Request, _: None =
 
 
 @router.post("/frontend/alerts/{alert_id}/acknowledge", status_code=status.HTTP_200_OK)
-async def frontend_acknowledge(alert_id: str) -> dict:
+async def frontend_acknowledge(alert_id: str, user: str = Depends(get_current_user)) -> dict:
     """Reconhece um alerta e registra evento na timeline."""
     try:
         paciente_id, inicio = alert_id.split("__", 1)
@@ -336,18 +359,25 @@ async def frontend_acknowledge(alert_id: str) -> dict:
         
         # Registrar evento na timeline para auditoria e histórico
         try:
+            now = datetime.now(timezone.utc)
+            ts_iso = now.isoformat()
+            ts_ms = int(now.timestamp() * 1000)
+            
             inserir_timeline_event(
                 db_path=DB_PATH,
                 paciente_id=paciente_id,
+                ts=ts_iso,
+                ts_ms=ts_ms,
                 tipo="alert_ack",
-                descricao=f"Alerta reconhecido pela equipe",
-                meta={"alert_id": alert_id, "inicio": inicio, "action": "acknowledge"}
+                descricao=f"Alerta reconhecido por {user}",
+                meta={"alert_id": alert_id, "inicio": inicio, "action": "acknowledge", "user": user}
             )
             logger.info(
                 "alert_acknowledged",
                 paciente_id=paciente_id,
                 alert_id=alert_id,
-                timeline_event="alert_ack"
+                timeline_event="alert_ack",
+                user=user
             )
         except Exception as e:
             logger.warning(
@@ -370,7 +400,7 @@ async def frontend_acknowledge(alert_id: str) -> dict:
     return {"ok": True}
 
 @router.post("/frontend/alerts/{alert_id}/complete", status_code=status.HTTP_200_OK)
-async def frontend_complete(alert_id: str) -> dict:
+async def frontend_complete(alert_id: str, user: str = Depends(get_current_user)) -> dict:
     """Completa/fecha um alerta e registra evento na timeline."""
     try:
         paciente_id, inicio = alert_id.split("__", 1)
@@ -382,18 +412,25 @@ async def frontend_complete(alert_id: str) -> dict:
         
         # Registrar evento na timeline para auditoria e histórico
         try:
+            now = datetime.now(timezone.utc)
+            ts_iso = now.isoformat()
+            ts_ms = int(now.timestamp() * 1000)
+            
             inserir_timeline_event(
                 db_path=DB_PATH,
                 paciente_id=paciente_id,
+                ts=ts_iso,
+                ts_ms=ts_ms,
                 tipo="alert_close",
-                descricao=f"Alerta fechado/completado pela equipe",
-                meta={"alert_id": alert_id, "inicio": inicio, "action": "complete"}
+                descricao=f"Alerta fechado/completado por {user}",
+                meta={"alert_id": alert_id, "inicio": inicio, "action": "complete", "user": user}
             )
             logger.info(
                 "alert_completed",
                 paciente_id=paciente_id,
                 alert_id=alert_id,
-                timeline_event="alert_close"
+                timeline_event="alert_close",
+                user=user
             )
         except Exception as e:
             logger.warning(
