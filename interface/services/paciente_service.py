@@ -91,5 +91,36 @@ class PatientService:
         )
         return self._transform_patient(novo_paciente)
 
+    def update_patient(self, paciente_id: str, payload: FrontendCreatePatient) -> dict:
+        # Map riskLevel to perfil
+        risk_map = {
+            "high": "alto",
+            "medium": "medio",
+            "low": "baixo",
+            "alto": "alto",
+            "medio": "medio",
+            "baixo": "baixo"
+        }
+        perfil = risk_map.get(payload.riskLevel.lower(), "medio")
+
+        # Construct cama_id
+        cama_id = None
+        if payload.room and payload.bed:
+            cama_id = f"{payload.room}-{payload.bed}"
+        elif payload.room:
+            cama_id = payload.room
+        elif payload.bed:
+            cama_id = payload.bed
+
+        atualizado = self.repository.update(
+            paciente_id=paciente_id,
+            nome=payload.name,
+            perfil=perfil,
+            cama_id=cama_id,
+            observacoes=payload.notes,
+            rotinas=None
+        )
+        return self._transform_patient(atualizado)
+
     def get_patient_by_bed(self, cama_id: str) -> Optional[dict]:
         return self.repository.get_by_cama(cama_id, include_routines=True)

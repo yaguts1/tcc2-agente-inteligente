@@ -94,6 +94,16 @@ async def obter_paciente_endpoint(paciente_id: str) -> dict:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paciente nao encontrado")
     return paciente
 
+@router.patch("/pacientes/{paciente_id}", response_model=dict, status_code=status.HTTP_200_OK)
+async def atualizar_paciente_endpoint(paciente_id: str, payload: FrontendCreatePatient) -> dict:
+    """Atualizar um paciente existente."""
+    try:
+        return service.update_patient(paciente_id, payload)
+    except LookupError:
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paciente nao encontrado")
+    except ValueError as e:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
 
 class SimulationRequest(BaseModel):
     duracao_horas: int
