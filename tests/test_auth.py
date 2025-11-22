@@ -13,8 +13,12 @@ def _make_app_with_db(tmp_path: Path, env_pass: str | None = None):
     else:
         os.environ.pop("UPP_ADMIN_PASS", None)
     # import interface.web after env var set so DB_PATH is bound correctly
+    import interface.api_shared as api_shared
+    import interface.routers.auth as auth_router
     import interface.web as web
     import interface.api as api
+    importlib.reload(api_shared)
+    importlib.reload(auth_router)
     importlib.reload(api)
     importlib.reload(web)
     # Reset rate limiting for tests

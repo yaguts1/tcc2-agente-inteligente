@@ -68,6 +68,7 @@ class Configuracao:
   histerese_min: int
   cooldown_min: int
   event_jitter_seconds: int
+  db_path: str
 
   @property
   def janela_por_perfil(self) -> Dict[str, int]:
@@ -88,6 +89,8 @@ def carregar_configuracao() -> Configuracao:
     modo = modo.lower()
 
   redis_url = _get_env("REDIS_URL", None, origem_env)
+  
+  db_path = _get_env("UPP_DB_PATH", "dados.db", origem_env)
 
   conf_limiar = _parse_float("CONF_LIMIAR", _get_env("CONF_LIMIAR", None, origem_env), minimo=0.0, maximo=1.0, fallback=0.6)
 
@@ -110,6 +113,7 @@ def carregar_configuracao() -> Configuracao:
     histerese_min=histerese,
     cooldown_min=cooldown,
     event_jitter_seconds=jitter,
+    db_path=db_path,
   )
 
 

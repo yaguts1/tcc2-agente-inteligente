@@ -71,6 +71,15 @@ def _ensure_users_role_column(conn: sqlite3.Connection) -> None:
     conn.commit()
 
 
+def _ensure_grade_confianca_column(conn: sqlite3.Connection) -> None:
+    """Add confianca column to grade table if it doesn't exist."""
+    info = conn.execute("PRAGMA table_info(grade)").fetchall()
+    colunas = {str(row["name"]) for row in info}
+    if "confianca" not in colunas:
+        conn.execute("ALTER TABLE grade ADD COLUMN confianca REAL")
+    conn.commit()
+
+
 def _generate_paciente_id(conn: sqlite3.Connection, prefix: str = PACIENTE_ID_PREFIX) -> str:
     existing_ids = {str(row[0]) for row in conn.execute("SELECT id FROM pacientes")}
     pattern = re.compile(rf"^{re.escape(prefix)}-(\d+)$")
@@ -438,6 +447,7 @@ def criar_esquema(db_path: str = "dados.db") -> None:
         )
         _ensure_cama_column(conn)
         _ensure_users_role_column(conn)
+        _ensure_grade_confianca_column(conn)
         conn.commit()
 
 
@@ -707,10 +717,16 @@ def inserir_grade(
 
     timestamps = _norm_iso(df_grade["timestamp"]).tolist()
     posturas = df_grade["postura"].astype(str).tolist()
+    
+    # Handle optional confianca
+    if "confianca" in df_grade.columns:
+        confiancas = df_grade["confianca"].fillna(1.0).tolist()
+    else:
+        confiancas = [1.0] * len(timestamps)
 
     registros = [
-        (paciente_id, ts, postura)
-        for ts, postura in zip(timestamps, posturas)
+        (paciente_id, ts, postura, conf)
+        for ts, postura, conf in zip(timestamps, posturas, confiancas)
         if ts is not None
     ]
 
@@ -719,9 +735,10 @@ def inserir_grade(
 
     with _connect(db_path) as conn:
         _ensure_paciente(conn, paciente_id)
+        _ensure_grade_confianca_column(conn)
         before = conn.total_changes
         conn.executemany(
-            "INSERT OR IGNORE INTO grade (paciente_id, ts, postura) VALUES (?, ?, ?)",
+            "INSERT OR IGNORE INTO grade (paciente_id, ts, postura, confianca) VALUES (?, ?, ?, ?)",
             registros,
         )
         return conn.total_changes - before
@@ -913,6 +930,30 @@ def selecionar_alertas_janela(db_path: str, horas: int | None = 24) -> list[dict
     return [dict(row) for row in rows]
 
 
+def selecionar_grade_janela(db_path: str, horas: int | None = 24) -> list[dict]:
+    """Busca eventos de grade (postura) dentro de uma janela de tempo."""
+    if horas is None:
+        with _connect(db_path) as conn:
+            cursor = conn.execute(
+                "SELECT paciente_id, ts, postura, confianca FROM grade ORDER BY ts ASC"
+            )
+            rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+    agora = datetime.now().replace(microsecond=0)
+    limite_inferior = (agora - timedelta(hours=horas)).strftime("%Y-%m-%dT%H:%M:%S")
+    limite_superior = (agora + timedelta(hours=horas)).strftime("%Y-%m-%dT%H:%M:%S")
+
+    with _connect(db_path) as conn:
+        cursor = conn.execute(
+            "SELECT paciente_id, ts, postura, confianca FROM grade WHERE ts >= ? AND ts <= ? ORDER BY ts ASC",
+            (limite_inferior, limite_superior),
+        )
+        rows = cursor.fetchall()
+    return [dict(row) for row in rows]
+
+
+
 def listar_pacientes(db_path: str, horas: int | None = 24) -> list[str]:
     limite = None
     if horas is not None:
@@ -960,6 +1001,7 @@ def selecionar_timeline(
     start_ms: int | None = None,
     end_ms: int | None = None,
     limit: int = 1000,
+    tipo: str | None = None,
 ) -> list[dict]:
     """Seleciona eventos da timeline aplicando filtros opcionais. Retorna lista de dicts.
 
@@ -971,6 +1013,9 @@ def selecionar_timeline(
     if paciente_id:
         where_clauses.append("paciente_id = ?")
         params.append(paciente_id)
+    if tipo:
+        where_clauses.append("tipo = ?")
+        params.append(tipo)
     if start_ms is not None:
         where_clauses.append("ts_ms >= ?")
         params.append(int(start_ms))

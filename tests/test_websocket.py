@@ -7,7 +7,7 @@ from fastapi.testclient import TestClient
 from unittest.mock import patch, AsyncMock
 
 from interface.web import app
-from interface.api import ws_manager
+from interface.ws_manager_optimized import ws_manager_optimized as ws_manager
 
 
 @pytest.fixture
@@ -18,7 +18,7 @@ def client():
 
 def test_websocket_manager_connect_disconnect():
     """Test WebSocket connection manager."""
-    from interface.api import ConnectionManager
+    from interface.ws_manager_optimized import ConnectionManagerOptimized as ConnectionManager
     
     manager = ConnectionManager()
     
@@ -35,7 +35,7 @@ def test_websocket_manager_connect_disconnect():
 @pytest.mark.asyncio
 async def test_websocket_broadcast():
     """Test WebSocket broadcast functionality."""
-    from interface.api import ConnectionManager
+    from interface.ws_manager_optimized import ConnectionManagerOptimized as ConnectionManager
     
     manager = ConnectionManager()
     
@@ -44,8 +44,20 @@ async def test_websocket_broadcast():
     mock_ws2 = AsyncMock()
     
     # Add them to active connections
-    manager.active_connections.append(mock_ws1)
-    manager.active_connections.append(mock_ws2)
+    from interface.ws_manager_optimized import WebSocketFilter
+    
+    manager.active_connections[mock_ws1] = {
+        "filters": WebSocketFilter(),
+        "messages_sent": 0,
+        "messages_filtered": 0,
+        "client_id": 1
+    }
+    manager.active_connections[mock_ws2] = {
+        "filters": WebSocketFilter(),
+        "messages_sent": 0,
+        "messages_filtered": 0,
+        "client_id": 2
+    }
     
     # Test broadcast
     message = {

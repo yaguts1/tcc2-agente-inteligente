@@ -1,0 +1,35 @@
+<div id="device-events-rows">
+  <table border="1" cellpadding="6" cellspacing="0">
+    <thead>
+      <tr>
+        <th>id</th>
+        <th>device_id</th>
+        <th>ts</th>
+        <th>ts_ms</th>
+        <th>payload</th>
+        <th>created_at</th>
+        <th>processed_at</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% if events %}
+        {% for ev in events %}
+          <tr>
+            <td>{{ ev.id }}</td>
+            <td>{{ ev.device_id }}</td>
+            <td>{{ ev.ts }}</td>
+            <td>{{ ev.ts_ms }}</td>
+            <td><pre style="white-space:pre-wrap;max-width:40rem">{{ ev.payload | tojson(indent=2) }}</pre></td>
+            <td>{{ ev.created_at }}</td>
+            <td>{{ ev.processed_at or '' }}</td>
+          </tr>
+        {% endfor %}
+      {% else %}
+        <tr><td colspan="7">Nenhum evento pendente.</td></tr>
+      {% endif %}
+    </tbody>
+  </table>
+  {% if result is defined %}
+    <div style="margin-top:0.5rem;">Resultado: processados={{ result.processed }}, pulados={{ result.skipped }}</div>
+  {% endif %}
+</div>

@@ -21,9 +21,27 @@ async def api_client(tmp_path, monkeypatch):
     criar_esquema(str(tmp_db))
 
     # Importacao tardia para respeitar as variaveis de ambiente definidas acima.
+    import interface.api_shared as api_shared
+    import interface.routers.auth as auth
+    import interface.routers.pacientes as pacientes
+    import interface.routers.devices as devices
+    import interface.routers.alerts as alerts
+    import interface.routers.dashboard as dashboard
+    import interface.routers.ingestao as ingestao
+    import interface.routers.backup as backup
+    import interface.routers.admin as admin
     import interface.web as web_module
     from interface import api as api_module
 
+    reload(api_shared)
+    reload(auth)
+    reload(pacientes)
+    reload(devices)
+    reload(alerts)
+    reload(dashboard)
+    reload(ingestao)
+    reload(backup)
+    reload(admin)
     reload(api_module)
     reload(web_module)
 

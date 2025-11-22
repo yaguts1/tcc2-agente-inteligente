@@ -90,10 +90,28 @@ export function useCriticalAlerts(
           notificationRef.current.close();
         }
 
+        // Calculate time in immobility
+        const imobilizadoMin = alert.lastRepositioning 
+          ? Math.floor((Date.now() - new Date(alert.lastRepositioning).getTime()) / 60000)
+          : 0;
+
+        // Build location string
+        const location = alert.room && alert.bed 
+          ? `${alert.room} / ${alert.bed}`
+          : alert.bed || alert.room || 'Sem leito';
+
+        // Map risk level to Portuguese
+        const riskMap: Record<string, string> = {
+          'high': 'ALTO',
+          'medium': 'MÉDIO',
+          'low': 'BAIXO'
+        };
+        const riskPT = riskMap[alert.riskLevel] || alert.riskLevel.toUpperCase();
+
         // Create new notification
         const title = `🚨 Alerta Crítico - ${alert.patientName}`;
         const options: NotificationOptions = {
-          body: `${alert.bed} - Próximo reposicionamento: ${new Date(
+          body: `📍 ${location}\n⏱️ Imobilizado há ${imobilizadoMin}min\n⚠️ Perfil: ${riskPT}\n🔄 Próximo reposicionamento: ${new Date(
             alert.nextRepositioning
           ).toLocaleTimeString('pt-BR')}`,
           icon: '/icon-alert.png',

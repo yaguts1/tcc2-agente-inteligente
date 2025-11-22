@@ -22,8 +22,12 @@ async def api_client(tmp_path, monkeypatch):
     criar_esquema(str(tmp_db))
 
     import interface.web as web_module
+    import interface.api_shared as api_shared
+    import interface.routers.ingestao as ingestao_router
     from interface import api as api_module
 
+    reload(api_shared)
+    reload(ingestao_router)
     reload(api_module)
     reload(web_module)
 

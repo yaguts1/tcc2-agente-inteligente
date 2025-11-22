@@ -29,7 +29,7 @@ DB_PATH = os.getenv("UPP_DB_PATH", "dados.db")
 # Garantir que tabela existe
 ensure_agendas_table(DB_PATH)
 
-router = APIRouter(prefix="/api", tags=["agenda"])
+router = APIRouter(tags=["agenda"])
 
 
 # ============================================================================

@@ -8,6 +8,10 @@ import pandas as pd
 
 from nucleo.decisor import processar_alertas_lote
 from interface.dao_agenda import is_timestamp_in_suppressed_period
+from interface.dao import _connect
+from configuracao import carregar_configuracao
+
+config = carregar_configuracao()
 
 
 def processar_alertas(
@@ -42,7 +46,7 @@ def processar_alertas(
             # Check if alert timestamp is in suppressed period
             timestamp_str = alerta.get("inicio", "")
             is_suppressed, modo = is_timestamp_in_suppressed_period(
-                db_path=None,  # Will use default DB path
+                db_path=config.db_path,
                 paciente_id=paciente_id,
                 timestamp=timestamp_str,
             )
@@ -69,11 +73,7 @@ def processar_alertas(
 def _get_agenda_reducao_janela(paciente_id: str, timestamp_str: str) -> int:
     """Helper: Extract reduction window from agenda if available."""
     try:
-        from interface.dao import _connect
-        from datetime import datetime
-        
-        db_path = None
-        conn = _connect(db_path)
+        conn = _connect(config.db_path)
         cursor = conn.cursor()
         
         # Get all active agendas with reducao_janela_min for this patient at this timestamp

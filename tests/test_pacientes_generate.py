@@ -20,7 +20,13 @@ def pacientes_client(tmp_path, monkeypatch):
     criar_esquema(str(tmp_db))
 
     import interface.web as web_module
+    import interface.api_shared as api_shared
+    import interface.routers.pacientes as pacientes_router
+    import interface.api as api_module
 
+    reload(api_shared)
+    reload(pacientes_router)
+    reload(api_module)
     reload(web_module)
     client = TestClient(web_module.app)
     yield {

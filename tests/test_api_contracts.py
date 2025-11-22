@@ -11,16 +11,23 @@ from datetime import datetime
 import pytest
 
 import interface.api as api_mod
+import interface.api_shared as api_shared
+import interface.routers.alerts as alerts_router
+from importlib import reload
 from interface.dao import criar_esquema, inserir_alertas
-from interface.api import EventPayload
+from interface.schemas import EventPayload
 
 
 @pytest.mark.asyncio
-async def test_frontend_alerts_shape_matches_contract(tmp_path):
+async def test_frontend_alerts_shape_matches_contract(tmp_path, monkeypatch):
     db_path = tmp_path / "dados.db"
     criar_esquema(db_path)
-    # point the API module to the temp DB for this test
-    api_mod.DB_PATH = str(db_path)
+    
+    # Set env var and reload modules to pick up new DB_PATH
+    monkeypatch.setenv("UPP_DB_PATH", str(db_path))
+    reload(api_shared)
+    reload(alerts_router)
+    reload(api_mod)
 
     # insert a sample alerta
     now = datetime.now().replace(microsecond=0)

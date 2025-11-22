@@ -217,7 +217,7 @@ export function PatientsPage() {
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {patients.map((patient) => (
-              <Card key={patient.id}>
+              <Card key={`patient-card-${patient.id}`}>
                 <CardHeader>
                   <div className="flex items-start justify-between">
                     <div className="flex-1">

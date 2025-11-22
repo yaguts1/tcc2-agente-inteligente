@@ -157,7 +157,20 @@ def _expandir_para_grade(df_eventos: pd.DataFrame, passo_min: int, inicio: datet
         while e_idx < len(ev) - 1 and t >= ev.loc[e_idx, "fim"]:
             e_idx += 1
         postura = ev.loc[e_idx, "postura"]
-        out.append({"timestamp": t.isoformat(), "postura": postura})
+        
+        # Simula confiança e ruído
+        # Confiança base alta (0.85 - 0.99)
+        confianca = random.uniform(0.85, 0.99)
+        
+        # Ocasionalmente reduz confiança (ruído/movimento)
+        if random.random() < 0.05:  # 5% de chance de ruído
+            confianca = random.uniform(0.5, 0.8)
+            
+        out.append({
+            "timestamp": t.isoformat(), 
+            "postura": postura,
+            "confianca": round(confianca, 3)
+        })
 
     return pd.DataFrame(out)
 

@@ -230,7 +230,7 @@ export function FilterBar({
                 <SelectContent>
                   <SelectItem value="all">Todas</SelectItem>
                   {SEVERITY_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
+                    <SelectItem key={`severity-${option.value}`} value={option.value}>
                       {option.label}
                     </SelectItem>
                   ))}
@@ -255,7 +255,7 @@ export function FilterBar({
                 <SelectContent>
                   <SelectItem value="all">Todos</SelectItem>
                   {STATUS_OPTIONS.map((option) => (
-                    <SelectItem key={option.value} value={option.value}>
+                    <SelectItem key={`status-${option.value}`} value={option.value}>
                       {option.label}
                     </SelectItem>
                   ))}
@@ -280,7 +280,7 @@ export function FilterBar({
                 <SelectContent>
                   <SelectItem value="all">Todos os pacientes</SelectItem>
                   {patients.map((patient) => (
-                    <SelectItem key={patient.id} value={patient.id}>
+                    <SelectItem key={`patient-${patient.id}`} value={patient.id}>
                       {patient.name}
                     </SelectItem>
                   ))}

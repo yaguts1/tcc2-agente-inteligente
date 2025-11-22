@@ -270,17 +270,15 @@ export function AlertsTable({
                   <TableCell>{getStatusBadge(alert.status)}</TableCell>
                   <TableCell>
                     <div className="flex gap-2">
-                      {alert.status === 'pending' && (
-                        <Button
-                          size="sm"
-                          variant="outline"
-                          onClick={() => handleAcknowledgeClick(alert.id)}
-                          disabled={isProcessing}
-                        >
-                          <Eye className="w-4 h-4 mr-1" />
-                          Reconhecer
-                        </Button>
-                      )}
+                      <Button
+                        size="sm"
+                        variant="outline"
+                        onClick={() => handleAcknowledgeClick(alert.id)}
+                        disabled={alert.status === 'acknowledged' || isProcessing}
+                      >
+                        <Eye className="w-4 h-4 mr-1" />
+                        Reconhecer
+                      </Button>
                       <Button
                         size="sm"
                         onClick={() => setConfirmingComplete(alert.id)}

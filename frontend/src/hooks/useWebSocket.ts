@@ -41,10 +41,11 @@ export function useWebSocket({
 
     try {
       // Check if backend is reachable first (prevent connection spam)
-      fetch('/api/stats', { signal: AbortSignal.timeout(2000) })
+      fetch(`${import.meta.env.BASE_URL}api/stats`, { signal: AbortSignal.timeout(2000) })
         .then(() => {
           const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-          const url = `${protocol}//${window.location.host}/api/ws/alerts`;
+          const baseUrl = import.meta.env.BASE_URL;
+          const url = `${protocol}//${window.location.host}${baseUrl}api/ws/alerts`;
           
           const ws = new WebSocket(url);
 

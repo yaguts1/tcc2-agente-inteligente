@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from typing import Iterable, List, Tuple
+from unittest.mock import patch
 
 import pandas as pd
 import pytest
@@ -21,6 +22,15 @@ def _grade_from_runs(runs: Iterable[Tuple[str, int]], start: str = "2025-01-01T0
     for postura, count in runs_list:
         posturas.extend([postura] * count)
     return pd.DataFrame({"timestamp": timestamps, "postura": posturas})
+
+
+@pytest.fixture(autouse=True)
+def mock_config():
+    with patch("nucleo.decisor.app_config") as mock:
+        mock.janela_por_perfil = {"alto": 60, "medio": 90, "baixo": 120}
+        mock.cooldown_min = 10
+        mock.histerese_min = 5
+        yield mock
 
 
 def test_abertura_perfil_alto() -> None:

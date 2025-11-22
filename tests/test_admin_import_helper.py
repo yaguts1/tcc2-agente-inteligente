@@ -3,7 +3,7 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from interface.api import import_alerts_list
+from interface.routers.admin import import_alerts_list
 from interface.dao import criar_esquema, selecionar_alertas_janela
 
 

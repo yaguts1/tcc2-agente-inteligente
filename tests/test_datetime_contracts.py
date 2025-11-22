@@ -8,15 +8,22 @@ from datetime import datetime, timezone
 import pytest
 
 import interface.api as api_mod
+import interface.api_shared as api_shared
+import interface.routers.alerts as alerts_router
+from importlib import reload
 from interface.dao import criar_esquema, inserir_alertas
-from interface.api import EventPayload
+from interface.schemas import EventPayload
 
 
 @pytest.mark.asyncio
-async def test_frontend_alerts_datetimes_are_iso_naive(tmp_path):
+async def test_frontend_alerts_datetimes_are_iso_naive(tmp_path, monkeypatch):
     db_path = tmp_path / "dados.db"
     criar_esquema(db_path)
-    api_mod.DB_PATH = str(db_path)
+    
+    monkeypatch.setenv("UPP_DB_PATH", str(db_path))
+    reload(api_shared)
+    reload(alerts_router)
+    reload(api_mod)
 
     now = datetime.now().replace(microsecond=0)
     alert = {

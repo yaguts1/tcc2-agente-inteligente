@@ -1,4 +1,4 @@
-﻿"""App FastAPI/Jinja2 para visualizar e gerenciar alertas.
+"""App FastAPI/Jinja2 para visualizar e gerenciar alertas.
 
 Execute com:
     uvicorn interface.web:app --reload
@@ -18,18 +18,32 @@ import random
 import string
 
 import structlog
-from fastapi import FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile, status
+from fastapi import APIRouter, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from contextlib import asynccontextmanager
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 from starlette.middleware.base import BaseHTTPMiddleware
+from fastapi.templating import Jinja2Templates
 
 from interface.api import router as api_router
 from interface.api import reconcile_device_events
 from interface.endpoints_agenda import router as agenda_router
 import asyncio
+
+from interface.servicos_view import (
+    rotinas_sugeridas as _rotinas_sugeridas,
+    rotinas_para_editor as _rotinas_para_editor,
+    montar_paciente_base as _montar_paciente_base,
+    montar_contexto_formulario as _montar_contexto_formulario,
+    parse_rotinas_form as _parse_rotinas_form,
+    resolver_indice_rotina as _resolver_indice_rotina,
+    resolver_now_param as _resolver_now_param,
+    coletar_alertas as _coletar_alertas,
+    carregar_alertas_para_view as _carregar_alertas_para_view,
+    montar_timeline_context as _montar_timeline_context,
+)
 
 from interface.dao import (
     atualizar_paciente,
@@ -44,11 +58,13 @@ from interface.dao import (
     registrar_documento,
     remover_documento,
     selecionar_alertas_janela,
+    selecionar_grade_janela,
     inserir_timeline_event,
     inserir_timeline_event as _dao_inserir_timeline_event,
     listar_device_events,
     inserir_grade,
     inserir_alertas,
+    alterar_status_alerta,
 )
 
 from dados_simulados.gerador import (
@@ -57,8 +73,10 @@ from dados_simulados.gerador import (
 )
 
 from modulo_alerta.engine import processar_alertas
+from configuracao import carregar_configuracao
 
-DB_PATH = os.getenv("UPP_DB_PATH", "dados.db")
+config = carregar_configuracao()
+DB_PATH = config.db_path
 
 # Security headers middleware
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
@@ -120,15 +138,216 @@ async def _lifespan(app: FastAPI):
                 logger.info("reconciler_stopped")
 
 app = FastAPI(title="Monitor de Alertas UPP", lifespan=_lifespan)
-app.include_router(api_router)
-app.include_router(agenda_router)
+web_router = APIRouter()
+APP_PREFIX = os.getenv("APP_PREFIX", "")
+
+templates = Jinja2Templates(directory="interface/templates")
+
+@web_router.get("/pacientes", response_class=HTMLResponse)
+async def pacientes_index(request: Request):
+    return templates.TemplateResponse("pacientes/index.html", {"request": request})
+
+@web_router.get("/partials/pacientes/lista", response_class=HTMLResponse)
+async def pacientes_lista_partial(request: Request):
+    fichas = listar_fichas_pacientes(DB_PATH)
+    return templates.TemplateResponse(
+        "pacientes/partials/lista.html",
+        {"request": request, "pacientes": fichas}
+    )
+
+@web_router.get("/pacientes/novo", response_class=HTMLResponse)
+async def pacientes_novo(request: Request):
+    paciente = _montar_paciente_base(None, None)
+    contexto = _montar_contexto_formulario(request, paciente, usar_rotinas_padrao=True, max_document_mb=MAX_DOCUMENT_MB)
+    return templates.TemplateResponse("pacientes/partials/form.html", contexto)
+
+@web_router.get("/pacientes/{paciente_id}", response_class=HTMLResponse)
+async def pacientes_editar(request: Request, paciente_id: str):
+    ficha = obter_ficha_paciente(DB_PATH, paciente_id)
+    if not ficha:
+        return Response("Paciente nao encontrado", status_code=404)
+    documentos = listar_documentos(DB_PATH, paciente_id)
+    paciente = _montar_paciente_base(ficha, documentos)
+    contexto = _montar_contexto_formulario(request, paciente, max_document_mb=MAX_DOCUMENT_MB)
+    return templates.TemplateResponse("pacientes/partials/form.html", contexto)
+
+@web_router.post("/pacientes/generar", response_class=HTMLResponse)
+async def pacientes_generar(request: Request):
+    form = await request.form()
+    try:
+        qtd = int(form.get("gerar_count", 5))
+    except ValueError:
+        qtd = 5
+    
+    assign_camas = bool(form.get("assign_camas"))
+    cama_prefix = str(form.get("cama_prefix") or "CAMA").strip()
+    try:
+        cama_start = int(form.get("cama_start") or 1)
+    except ValueError:
+        cama_start = 1
+
+    generated_count = 0
+    for i in range(qtd):
+        nome = f"Paciente Gerado {random.randint(10000, 99999)}"
+        perfil = random.choice(["baixo", "medio", "alto"])
+        
+        cama_id = ""
+        if assign_camas:
+            num = cama_start + i
+            cama_id = f"{cama_prefix}-{num:03d}"
+        else:
+             cama_id = f"CAMA-{random.randint(100, 999)}-{random.choice(string.ascii_uppercase)}"
+
+        try:
+            criar_paciente(DB_PATH, nome, perfil, cama_id, "", _rotinas_sugeridas(perfil))
+            generated_count += 1
+        except Exception:
+            pass
+
+    fichas = listar_fichas_pacientes(DB_PATH)
+    response = templates.TemplateResponse(
+        "pacientes/partials/lista.html",
+        {"request": request, "pacientes": fichas}
+    )
+    _set_hx_trigger(response, "pacientes-gerados", {"count": generated_count})
+    return response
+
+@web_router.post("/pacientes/salvar", response_class=HTMLResponse)
+async def pacientes_salvar(request: Request):
+    form = await request.form()
+    paciente_id = str(form.get("paciente_id") or "").strip()
+    nome = str(form.get("nome") or "").strip()
+    perfil = str(form.get("perfil") or DEFAULT_PACIENTE_PERFIL)
+    cama_id = str(form.get("cama_id") or "").strip()
+    observacoes = str(form.get("observacoes") or "").strip()
+    usar_rotinas_padrao = bool(form.get("usar_rotinas_padrao"))
+
+    rotinas = _parse_rotinas_form(form)
+    
+    # Se for novo e pediu padrao, e nao veio rotinas no form (ou veio vazio), injeta padrao
+    if not paciente_id and usar_rotinas_padrao and not rotinas:
+        rotinas = _rotinas_sugeridas(perfil)
+
+    try:
+        if paciente_id:
+            atualizar_paciente(DB_PATH, paciente_id, nome, perfil, cama_id, observacoes, rotinas)
+            pid_final = paciente_id
+        else:
+            pid_final = criar_paciente(DB_PATH, nome, perfil, cama_id, observacoes, rotinas)["paciente_id"]
+        
+        # Recarrega para confirmacao
+        ficha = obter_ficha_paciente(DB_PATH, pid_final)
+        documentos = listar_documentos(DB_PATH, pid_final)
+        paciente = _montar_paciente_base(ficha, documentos)
+        
+        contexto = _montar_contexto_formulario(
+            request, 
+            paciente, 
+            form_success=True
+        )
+        response = templates.TemplateResponse("pacientes/partials/form.html", contexto)
+        _set_hx_trigger(response, "paciente-atualizado", {"paciente_id": pid_final})
+        return response
+
+    except ValueError as e:
+        # Erro de validacao (ex: cama duplicada)
+        # Reconstr�i estado do form para mostrar erro
+        paciente_erro = {
+            "paciente_id": paciente_id,
+            "nome": nome,
+            "perfil": perfil,
+            "cama_id": cama_id,
+            "observacoes": observacoes,
+            "rotinas": rotinas,
+            "documentos": [] # Nao temos como recuperar docs no erro de form facil, ou buscamos do banco se for edicao
+        }
+        if paciente_id:
+             docs_db = listar_documentos(DB_PATH, paciente_id)
+             paciente_erro["documentos"] = docs_db
+
+        contexto = _montar_contexto_formulario(
+            request, 
+            paciente_erro, 
+            rotinas_editor=_rotinas_para_editor(rotinas),
+            form_error=str(e)
+        )
+        return templates.TemplateResponse("pacientes/partials/form.html", contexto)
+
+@web_router.get("/pacientes/rotinas/linha", response_class=HTMLResponse)
+async def pacientes_rotina_linha(request: Request):
+    idx = _resolver_indice_rotina(request, None)
+    return templates.TemplateResponse(
+        "pacientes/partials/rotina_row.html",
+        {"request": request, "indice": idx, "rotina": {"ativo": True, "duracao_min": 30}}
+    )
+
+@web_router.post("/pacientes/{paciente_id}/documentos", response_class=HTMLResponse)
+async def pacientes_upload_documento(
+    request: Request,
+    paciente_id: str,
+    arquivo: UploadFile = File(...),
+    observacao: str = Form("")
+):
+    try:
+        contents = await arquivo.read()
+        if len(contents) > MAX_DOCUMENT_BYTES:
+             raise HTTPException(413, "Arquivo muito grande")
+        
+        nome_safe = _sanitize_filename(arquivo.filename)
+        destino_dir = _ensure_docs_dir(paciente_id)
+        destino_path = _make_unique_filename(destino_dir / nome_safe)
+        
+        with open(destino_path, "wb") as f:
+            f.write(contents)
+            
+        caminho_relativo = str(destino_path.relative_to(PACIENTE_DOCS_DIR))
+        registrar_documento(DB_PATH, paciente_id, nome_safe, caminho_relativo, observacao)
+        
+        documentos = listar_documentos(DB_PATH, paciente_id)
+        response = templates.TemplateResponse(
+            "pacientes/partials/documentos.html",
+            {"request": request, "documentos": documentos, "paciente": {"paciente_id": paciente_id}}
+        )
+        _set_hx_trigger(response, "documento-atualizado")
+        return response
+    except Exception as e:
+        logger.error("upload_erro", erro=str(e))
+        return Response(f"Erro no upload: {str(e)}", status_code=500)
+
+@web_router.get("/pacientes/documentos/{documento_id}/download")
+async def pacientes_download_documento(documento_id: int):
+    return paciente_documento_download(documento_id)
+
+@web_router.delete("/pacientes/documentos/{documento_id}")
+async def pacientes_remover_documento(request: Request, documento_id: int):
+    doc = obter_documento(DB_PATH, documento_id)
+    if not doc:
+        return Response(status_code=404)
+    
+    paciente_id = doc["paciente_id"]
+    caminho = _document_path_from_db(doc["caminho"])
+    
+    remover_documento(DB_PATH, documento_id)
+    try:
+        if caminho.exists():
+            os.remove(caminho)
+    except OSError:
+        pass
+        
+    documentos = listar_documentos(DB_PATH, paciente_id)
+    response = templates.TemplateResponse(
+        "pacientes/partials/documentos.html",
+        {"request": request, "documentos": documentos, "paciente": {"paciente_id": paciente_id}}
+    )
+    _set_hx_trigger(response, "documento-atualizado")
+    return response
 
 # Add Prometheus metrics middleware
 from starlette.middleware.base import BaseHTTPMiddleware
 from servicos import metricas
 
 class PrometheusMiddleware(BaseHTTPMiddleware):
-    """Middleware para coletar métricas Prometheus de todas as requisições."""
+    """Middleware para coletar m�tricas Prometheus de todas as requisi��es."""
     
     async def dispatch(self, request, call_next):
         import time
@@ -196,7 +415,7 @@ for cand in _candidates:
 
 if SITE_UI_DIST is not None:
     try:
-        app.mount("/site-ui", StaticFiles(directory=str(SITE_UI_DIST), html=True), name="site_ui")
+        app.mount(f"{APP_PREFIX}/site-ui", StaticFiles(directory=str(SITE_UI_DIST), html=True), name="site_ui")
     except Exception:
         # Do not fail if static mounting is not possible
         SITE_UI_DIST = None
@@ -221,219 +440,6 @@ except ValueError:
     MAX_DOCUMENT_MB = 5
 MAX_DOCUMENT_BYTES = MAX_DOCUMENT_MB * 1024 * 1024
 
-_ROTINAS_SUGESTOES = {
-    "baixo": [
-        {
-            "label": "Mudanca decubito",
-            "inicio": "06:00",
-            "duracao_min": 30,
-            "descricao": "Posicao lateral alternada",
-            "ativo": True,
-            "sort_order": 0,
-        },
-        {
-            "label": "Alongamento leve",
-            "inicio": "10:00",
-            "duracao_min": 20,
-            "descricao": "Exercicios guiados",
-            "ativo": True,
-            "sort_order": 1,
-        },
-        {
-            "label": "Higiene",
-            "inicio": "14:00",
-            "duracao_min": 25,
-            "descricao": "Cuidados de higiene",
-            "ativo": True,
-            "sort_order": 2,
-        },
-        {
-            "label": "Mudanca decubito",
-            "inicio": "18:00",
-            "duracao_min": 30,
-            "descricao": "Reposicionamento",
-            "ativo": True,
-            "sort_order": 3,
-        },
-    ],
-    "medio": [
-        {
-            "label": "Mudanca decubito",
-            "inicio": "06:00",
-            "duracao_min": 30,
-            "descricao": "Posicao lateral alternada",
-            "ativo": True,
-            "sort_order": 0,
-        },
-        {
-            "label": "Alongamento assistido",
-            "inicio": "09:30",
-            "duracao_min": 20,
-            "descricao": "Exercicios assistidos",
-            "ativo": True,
-            "sort_order": 1,
-        },
-        {
-            "label": "Hidratacao",
-            "inicio": "13:30",
-            "duracao_min": 15,
-            "descricao": "Oferta de liquidos",
-            "ativo": True,
-            "sort_order": 2,
-        },
-        {
-            "label": "Mudanca decubito",
-            "inicio": "17:30",
-            "duracao_min": 30,
-            "descricao": "Reposicionamento",
-            "ativo": True,
-            "sort_order": 3,
-        },
-    ],
-    "alto": [
-        {
-            "label": "Mudanca decubito",
-            "inicio": "06:00",
-            "duracao_min": 20,
-            "descricao": "Reposicionamento com apoio",
-            "ativo": True,
-            "sort_order": 0,
-        },
-        {
-            "label": "Inspecao pele",
-            "inicio": "08:30",
-            "duracao_min": 15,
-            "descricao": "Checagem de pressao",
-            "ativo": True,
-            "sort_order": 1,
-        },
-        {
-            "label": "Alongamento assistido",
-            "inicio": "12:30",
-            "duracao_min": 20,
-            "descricao": "Movimentos passivos",
-            "ativo": True,
-            "sort_order": 2,
-        },
-        {
-            "label": "Mudanca decubito",
-            "inicio": "16:30",
-            "duracao_min": 20,
-            "descricao": "Reposicionamento com apoio",
-            "ativo": True,
-            "sort_order": 3,
-        },
-    ],
-}
-
-ROTINA_KEY_RE = re.compile(r"^rotinas-(\d+)-(label|inicio|duracao|descricao|ativo|sort)$")
-
-def _rotinas_sugeridas(perfil: str | None) -> List[dict]:
-    perfil_norm = (perfil or DEFAULT_PACIENTE_PERFIL).lower()
-    base = _ROTINAS_SUGESTOES.get(perfil_norm, _ROTINAS_SUGESTOES[DEFAULT_PACIENTE_PERFIL])
-    return [dict(item) for item in base]
-
-def _rotinas_para_editor(rotinas: List[dict] | None) -> List[dict]:
-    if not rotinas:
-        return []
-    itens: List[dict] = []
-    for idx, rotina in enumerate(rotinas):
-        itens.append(
-            {
-                "label": str(rotina.get("label", "")),
-                "inicio": str(rotina.get("inicio", "")),
-                "duracao_min": rotina.get("duracao_min", 30),
-                "descricao": rotina.get("descricao") or "",
-                "ativo": bool(rotina.get("ativo", True)),
-                "sort_order": rotina.get("sort_order", idx),
-            }
-        )
-    return itens
-
-def _montar_paciente_base(
-    ficha: dict | None = None,
-    documentos: List[dict] | None = None,
-) -> dict:
-    if ficha is None:
-        base: dict[str, Any] = {
-            "paciente_id": "",
-            "nome": "",
-            "perfil": DEFAULT_PACIENTE_PERFIL,
-            "cama_id": "",
-            "observacoes": "",
-            "rotinas": [],
-        }
-    else:
-        base = dict(ficha)
-        base.setdefault("paciente_id", "")
-        base.setdefault("nome", "")
-        base["cama_id"] = str(base.get("cama_id") or "")
-        base["perfil"] = str(base.get("perfil") or DEFAULT_PACIENTE_PERFIL)
-        base["observacoes"] = base.get("observacoes") or ""
-        base["rotinas"] = base.get("rotinas") or []
-    base["documentos"] = documentos if documentos is not None else list(base.get("documentos", []))
-    return base
-
-def _montar_contexto_formulario(
-    request: Request,
-    paciente: dict,
-    rotinas_editor: List[dict] | None = None,
-    *,
-    form_error: str | None = None,
-    form_success: bool = False,
-    usar_rotinas_padrao: bool = False,
-) -> Dict[str, Any]:
-    perfil = str(paciente.get("perfil", DEFAULT_PACIENTE_PERFIL) or DEFAULT_PACIENTE_PERFIL)
-    editor = rotinas_editor if rotinas_editor is not None else _rotinas_para_editor(paciente.get("rotinas"))
-    contexto: Dict[str, Any] = {
-        "request": request,
-        "paciente": paciente,
-        "rotinas_sugestao": _rotinas_sugeridas(perfil),
-        "rotinas_editor": editor,
-        "proximo_indice": len(editor),
-        "usar_rotinas_padrao": usar_rotinas_padrao,
-        "form_error": form_error,
-        "form_success": form_success,
-        "documentos": paciente.get("documentos", []),
-        "max_document_mb": MAX_DOCUMENT_MB,
-    }
-    return contexto
-
-def _parse_rotinas_form(form: Any) -> List[dict]:
-    bucket: Dict[str, Dict[str, Any]] = {}
-    for key, value in form.multi_items():
-        match = ROTINA_KEY_RE.match(key)
-        if not match:
-            continue
-        idx, campo = match.groups()
-        bucket.setdefault(idx, {})[campo] = value
-    rotinas: List[dict] = []
-    for idx in sorted(bucket, key=lambda item: int(item)):
-        data = bucket[idx]
-        label = str(data.get("label") or "").strip()
-        inicio = str(data.get("inicio") or "").strip()
-        if not label or not inicio:
-            continue
-        descricao_raw = str(data.get("descricao") or "").strip()
-        try:
-            duracao_val = int(str(data.get("duracao") or "0").strip() or 0)
-        except ValueError:
-            duracao_val = 0
-        try:
-            sort_val = int(str(data.get("sort") or idx))
-        except ValueError:
-            sort_val = int(idx)
-        rotinas.append(
-            {
-                "label": label,
-                "inicio": inicio,
-                "duracao_min": duracao_val,
-                "descricao": descricao_raw or None,
-                "ativo": bool(data.get("ativo")),
-                "sort_order": sort_val,
-            }
-        )
-    return rotinas
 
 def _ensure_docs_dir(paciente_id: str) -> Path:
     try:
@@ -495,236 +501,6 @@ def _connect() -> sqlite3.Connection:
     conn.row_factory = sqlite3.Row
     return conn
 
-def _duracao_em_minutos(inicio_iso: str) -> float:
-    inicio = datetime.fromisoformat(inicio_iso[:19])
-    return round((datetime.now().replace(microsecond=0) - inicio).total_seconds() / 60.0, 2)
-
-def _parse_iso_naive(valor: str | None) -> datetime | None:
-    if not valor:
-        return None
-    try:
-        return datetime.fromisoformat(valor[:19])
-    except ValueError:
-        return None
-
-def _resolver_horas_param(request: Request) -> int | None:
-    valor = request.query_params.get("horas")
-    if valor is None:
-        return 24
-    valor = valor.strip()
-    if not valor:
-        return 24
-    if valor.lower() in {"all", "todos", "none"}:
-        return None
-    try:
-        return int(valor)
-    except ValueError:
-        return 24
-
-def _resolver_now_param(request: Request) -> tuple[datetime, str]:
-    raw = request.query_params.get("now")
-    if raw:
-        raw = raw.strip()
-        if raw:
-            try:
-                parsed = datetime.fromisoformat(raw[:19])
-            except ValueError:
-                parsed = None
-            else:
-                parsed = parsed.replace(microsecond=0)
-                return parsed, parsed.strftime("%Y-%m-%dT%H:%M:%S")
-    agora = datetime.now().replace(microsecond=0)
-    return agora, agora.strftime("%Y-%m-%dT%H:%M:%S")
-
-def _coletar_alertas(
-    request: Request,
-) -> tuple[List[dict], int | None, datetime, str, str | None, str | None]:
-    horas = _resolver_horas_param(request)
-    now_dt, now_iso = _resolver_now_param(request)
-    pid = request.query_params.get("pid")
-    rate = request.query_params.get("rate")
-    alertas = selecionar_alertas_janela(DB_PATH, horas)
-    if pid:
-        alertas = [alerta for alerta in alertas if alerta.get("paciente_id") == pid]
-    return alertas, horas, now_dt, now_iso, rate, pid
-
-def _carregar_alertas_para_view(
-    request: Request,
-) -> tuple[List[dict], int | None, str, str | None, str | None]:
-    alertas, horas, now_dt, now_iso, rate, pid = _coletar_alertas(request)
-    visiveis: List[dict] = []
-    for alerta_raw in alertas:
-        inicio_dt = _parse_iso_naive(alerta_raw.get("inicio"))
-        fim_dt = _parse_iso_naive(alerta_raw.get("fim"))
-        if inicio_dt is None:
-            continue
-        fim_limite = fim_dt if fim_dt is not None else datetime.max
-        if not (inicio_dt <= now_dt < fim_limite):
-            continue
-        fim_para_dur = fim_dt if fim_dt and fim_dt < now_dt else now_dt
-        tempo_min = max(0.0, (fim_para_dur - inicio_dt).total_seconds() / 60.0)
-        alerta = dict(alerta_raw)
-        alerta["tempo_decorrido_min"] = round(tempo_min, 2)
-        visiveis.append(alerta)
-    return visiveis, horas, now_iso, rate, pid
-
-def _montar_timeline_context(alertas: List[dict], now_dt: datetime) -> Dict[str, object]:
-    entries: List[Tuple[dict, datetime, datetime]] = []
-    for alerta in alertas:
-        inicio_dt = _parse_iso_naive(alerta.get("inicio"))
-        if inicio_dt is None:
-            continue
-        fim_dt = _parse_iso_naive(alerta.get("fim"))
-        if fim_dt is None:
-            fim_dt = now_dt if now_dt >= inicio_dt else inicio_dt + timedelta(minutes=1)
-        if fim_dt < inicio_dt:
-            fim_dt = inicio_dt
-        entries.append((alerta, inicio_dt, fim_dt))
-
-    if not entries:
-        fallback_end = now_dt + timedelta(minutes=1)
-        return {
-            "events": [],
-            "min_ms": int(now_dt.timestamp() * 1000),
-            "max_ms": int(fallback_end.timestamp() * 1000),
-            "current_ms": int(now_dt.timestamp() * 1000),
-            "cursor_pct": 0.0,
-            "window_start": now_dt.strftime("%Y-%m-%d %H:%M:%S"),
-            "window_end": fallback_end.strftime("%Y-%m-%d %H:%M:%S"),
-        }
-
-    timeline_start = min(min(inicio for _, inicio, _ in entries), now_dt)
-    timeline_end = max(max(fim for _, _, fim in entries), now_dt)
-    if timeline_end <= timeline_start:
-        timeline_end = timeline_start + timedelta(minutes=1)
-
-    min_ms = int(timeline_start.timestamp() * 1000)
-    max_ms = int(timeline_end.timestamp() * 1000)
-    range_ms = max(1, max_ms - min_ms)
-
-    events: List[dict] = []
-    for alerta, inicio_dt, fim_dt in entries:
-        start_ms = max(min_ms, int(inicio_dt.timestamp() * 1000))
-        end_ms = int(fim_dt.timestamp() * 1000)
-        if end_ms < start_ms:
-            end_ms = start_ms
-        start_pct = max(0.0, min(100.0, ((start_ms - min_ms) / range_ms) * 100.0))
-        end_pct = max(start_pct, min(100.0, ((end_ms - min_ms) / range_ms) * 100.0))
-        width_pct = max(0.5, end_pct - start_pct)
-        width_pct = min(width_pct, 100.0 - start_pct)
-        tooltip = (
-            f"Paciente {alerta.get('paciente_id', '')} - {alerta.get('status', '').upper()}\n"
-            f"{alerta.get('inicio', '-') } -> {alerta.get('fim', '-') or '-'}"
-        )
-        events.append(
-            {
-                "status": alerta.get("status", "aberto"),
-                "start_pct": round(start_pct, 2),
-                "width_pct": round(width_pct, 2),
-                "tooltip": tooltip,
-            }
-        )
-
-    current_ms = int(now_dt.timestamp() * 1000)
-    current_ms = max(min_ms, min(max_ms, current_ms))
-    cursor_pct = ((current_ms - min_ms) / range_ms) * 100.0
-
-    return {
-        "events": events,
-        "min_ms": min_ms,
-        "max_ms": max_ms,
-        "current_ms": current_ms,
-        "cursor_pct": round(cursor_pct, 2),
-        "window_start": timeline_start.strftime("%Y-%m-%d %H:%M:%S"),
-        "window_end": timeline_end.strftime("%Y-%m-%d %H:%M:%S"),
-    }
-
-def _alterar_status(
-    paciente_id: str,
-    inicio: str,
-    status_destino: str,
-    definir_fim: bool = False,
-    now_dt: datetime | None = None,
-) -> None:
-    with _connect() as conn:
-        cur = conn.execute(
-            "SELECT paciente_id FROM alertas WHERE paciente_id = ? AND inicio = ?",
-            (paciente_id, inicio),
-        )
-        if cur.fetchone() is None:
-            raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Alerta nao encontrado.")
-
-        params: Dict[str, object] = {"paciente_id": paciente_id, "inicio": inicio}
-        if definir_fim:
-            base_now = (now_dt or datetime.now()).replace(microsecond=0)
-            ini_dt = datetime.fromisoformat(inicio[:19])
-            fim_iso = base_now.strftime("%Y-%m-%dT%H:%M:%S")
-            duracao_min = round((base_now - ini_dt).total_seconds() / 60.0, 2)
-            conn.execute(
-                """
-                UPDATE alertas
-                SET status = :status, fim = :fim, duracao_min = :duracao_min
-                WHERE paciente_id = :paciente_id AND inicio = :inicio
-                """,
-                {
-                    "status": status_destino,
-                    "paciente_id": paciente_id,
-                    "inicio": inicio,
-                    "fim": fim_iso,
-                    "duracao_min": duracao_min,
-                },
-            )
-            # log timeline event for alert close
-            try:
-                ts_iso = fim_iso
-                ts_ms = int(base_now.timestamp() * 1000)
-                inserir_timeline_event(DB_PATH, paciente_id, ts_iso, ts_ms, "alert_close", descricao=None, meta={"inicio": inicio})
-            except Exception:
-                # timeline logging must not break normal flow
-                pass
-        else:
-            conn.execute(
-                """
-                UPDATE alertas
-                SET status = :status
-                WHERE paciente_id = :paciente_id AND inicio = :inicio
-                """,
-                {"status": status_destino, **params},
-            )
-            # if this is an acknowledgement, log it in the timeline
-            try:
-                if str(status_destino).lower() == "reconhecido":
-                    base_now = datetime.now().replace(microsecond=0)
-                    ts_iso = base_now.strftime("%Y-%m-%dT%H:%M:%S")
-                    ts_ms = int(base_now.timestamp() * 1000)
-                    inserir_timeline_event(DB_PATH, paciente_id, ts_iso, ts_ms, "alert_ack", descricao=None, meta={"inicio": inicio})
-            except Exception:
-                pass
-
-def _resolver_indice_rotina(request: Request, index_raw: str | None) -> int:
-    candidatos = [
-        index_raw,
-        request.query_params.get("rotinas_next_index"),
-    ]
-    for candidato in candidatos:
-        if candidato is None:
-            continue
-        try:
-            index_cast = int(candidato)
-            if index_cast >= 0:
-                return index_cast
-        except ValueError:
-            continue
-
-    maiores_indices = [
-        int(match.group(1))
-        for chave, _ in request.query_params.multi_items()
-        if (match := ROTINA_KEY_RE.match(chave))
-    ]
-    if maiores_indices:
-        return max(maiores_indices) + 1
-    return 0
-
 def paciente_documento_download(documento_id: int) -> FileResponse:
     registro = obter_documento(DB_PATH, documento_id)
     if registro is None:
@@ -738,15 +514,113 @@ def paciente_documento_download(documento_id: int) -> FileResponse:
         filename=registro.get("nome_arquivo", "documento.pdf"),
     )
 
-@app.get("/api/alertas")
+@web_router.get("/api/alertas")
 def api_alertas() -> List[dict]:
     """Retorna alertas em aberto no formato JSON."""
     return listar_alertas_abertos(DB_PATH)
 
-@app.get("/metrics")
+@web_router.get("/metrics")
 def metrics_endpoint() -> Response:
     return Response(generate_latest(), media_type=CONTENT_TYPE_LATEST)
 
-@app.get("/healthz")
+@web_router.get("/healthz")
 def health_check() -> Dict[str, str]:
     return {"status": "ok"}
+
+@web_router.get("/partials/alertas", response_class=HTMLResponse)
+async def partials_alertas(request: Request):
+    visiveis, horas, now_iso, rate, pid = _carregar_alertas_para_view(request, DB_PATH)
+    return templates.TemplateResponse(
+        "partials/alertas_rows.html",
+        {
+            "request": request,
+            "alertas_abertos": visiveis,
+            "now_iso": now_iso,
+            "horas": horas,
+            "rate": rate,
+            "pid": pid,
+        },
+    )
+
+@web_router.get("/partials/timeline", response_class=HTMLResponse)
+async def partials_timeline(request: Request):
+    alertas, horas, now_dt, _, _, pid = _coletar_alertas(request, DB_PATH)
+    
+    # Fetch grade events
+    grade = selecionar_grade_janela(DB_PATH, horas)
+    if pid:
+        grade = [g for g in grade if g.get("paciente_id") == pid]
+        
+    contexto = _montar_timeline_context(alertas, grade, now_dt)
+    contexto["request"] = request
+    return templates.TemplateResponse("partials/timeline.html", contexto)
+
+@web_router.post("/alertas/{paciente_id}/{inicio}/encerrar", response_class=HTMLResponse)
+async def alertas_encerrar(request: Request, paciente_id: str, inicio: str):
+    now_dt, now_iso = _resolver_now_param(request)
+    try:
+        alterar_status_alerta(DB_PATH, paciente_id, inicio, "fechado", definir_fim=True, now_dt=now_dt)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Alerta nao encontrado.")
+    
+    # Retorna a lista atualizada (HTMX pattern)
+    visiveis, horas, _, rate, pid = _carregar_alertas_para_view(request, DB_PATH)
+    return templates.TemplateResponse(
+        "partials/alertas_rows.html",
+        {
+            "request": request,
+            "alertas_abertos": visiveis,
+            "now_iso": now_iso,
+            "horas": horas,
+            "rate": rate,
+            "pid": pid,
+        },
+    )
+
+@web_router.post("/alertas/{paciente_id}/{inicio}/reconhecer", response_class=HTMLResponse)
+async def alertas_reconhecer(request: Request, paciente_id: str, inicio: str):
+    now_dt, now_iso = _resolver_now_param(request)
+    try:
+        alterar_status_alerta(DB_PATH, paciente_id, inicio, "reconhecido", now_dt=now_dt)
+    except LookupError:
+        raise HTTPException(status_code=404, detail="Alerta nao encontrado.")
+    
+    visiveis, horas, _, rate, pid = _carregar_alertas_para_view(request, DB_PATH)
+    return templates.TemplateResponse(
+        "partials/alertas_rows.html",
+        {
+            "request": request,
+            "alertas_abertos": visiveis,
+            "now_iso": now_iso,
+            "horas": horas,
+            "rate": rate,
+            "pid": pid,
+        },
+    )
+
+@web_router.get("/pacientes/{paciente_id}/simulacao-panel", response_class=HTMLResponse)
+async def pacientes_simulacao_panel(request: Request, paciente_id: str):
+    # Fetch latest grade
+    # Optimization: We could add a specific DAO method for "latest grade" to avoid fetching all
+    grade = selecionar_grade_janela(DB_PATH, horas=24) 
+    grade_paciente = [g for g in grade if g.get("paciente_id") == paciente_id]
+    ultima_postura = grade_paciente[-1] if grade_paciente else None
+    
+    # Fetch open alerts
+    alertas = listar_alertas_abertos(DB_PATH)
+    alertas_paciente = [a for a in alertas if a.get("paciente_id") == paciente_id]
+    
+    return templates.TemplateResponse(
+        "pacientes/partials/simulacao_panel.html",
+        {
+            "request": request,
+            "paciente_id": paciente_id,
+            "ultima_postura": ultima_postura,
+            "alertas_abertos": alertas_paciente
+        }
+    )
+
+app.include_router(web_router, prefix=APP_PREFIX)
+app.include_router(api_router, prefix=APP_PREFIX)
+
+# Trigger reload 3

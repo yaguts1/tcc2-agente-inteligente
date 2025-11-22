@@ -100,7 +100,16 @@ async function request<T>(
     headers.set('Authorization', `Bearer ${token}`);
   }
 
-  const response = await fetch(url, {
+  let finalUrl = url;
+  // Adjust URL for base path if needed
+  if (url.startsWith('/api')) {
+    const baseUrl = import.meta.env.BASE_URL;
+    if (baseUrl && baseUrl !== '/') {
+      finalUrl = `${baseUrl}${url.substring(1)}`;
+    }
+  }
+
+  const response = await fetch(finalUrl, {
     // rely on same-origin behavior and Vite proxy in dev; use same-origin
     // to ensure cookies are handled by the dev server host.
     credentials: 'same-origin',
