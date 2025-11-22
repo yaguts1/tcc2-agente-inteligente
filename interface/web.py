@@ -397,7 +397,17 @@ try:
 except Exception:
     # do not fail startup if middleware cannot be added for some reason
     pass
-# Serve built SPA (if present) under /site-ui. Support multiple possible build locations
+
+# Include routers BEFORE mounting static files to ensure API routes take precedence
+app.include_router(web_router, prefix=APP_PREFIX)
+app.include_router(api_router, prefix=APP_PREFIX)
+
+# Global health check for Docker (outside prefix)
+@app.get("/healthz")
+def global_health_check() -> Dict[str, str]:
+    return {"status": "ok"}
+
+# Serve built SPA (if present) under /TCC/ (APP_PREFIX). Support multiple possible build locations
 # (legacy `site_ui/dist`, or `frontend/build` produced by this repo's Vite config).
 _ROOT = Path(__file__).resolve().parents[1]
 _candidates = [
@@ -415,13 +425,13 @@ for cand in _candidates:
 
 if SITE_UI_DIST is not None:
     try:
-        app.mount(f"{APP_PREFIX}/site-ui", StaticFiles(directory=str(SITE_UI_DIST), html=True), name="site_ui")
+        # Mount at APP_PREFIX to serve at /TCC/
+        mount_path = APP_PREFIX if APP_PREFIX else "/"
+        app.mount(mount_path, StaticFiles(directory=str(SITE_UI_DIST), html=True), name="site_ui")
     except Exception:
         # Do not fail if static mounting is not possible
         SITE_UI_DIST = None
 logger = structlog.get_logger(__name__)
-
-DEFAULT_PACIENTE_PERFIL = "medio"
 
 DEFAULT_DOCS_DIR = Path(__file__).resolve().parents[1] / "paciente_docs"
 _env_docs_dir = os.getenv("PACIENTE_DOCS_DIR")
@@ -619,8 +629,5 @@ async def pacientes_simulacao_panel(request: Request, paciente_id: str):
             "alertas_abertos": alertas_paciente
         }
     )
-
-app.include_router(web_router, prefix=APP_PREFIX)
-app.include_router(api_router, prefix=APP_PREFIX)
 
 # Trigger reload 3
