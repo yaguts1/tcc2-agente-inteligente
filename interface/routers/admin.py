@@ -8,6 +8,7 @@ from fastapi import APIRouter, File, HTTPException, Request, UploadFile, status
 
 from interface.api_shared import DB_PATH
 from interface.dao import inserir_alertas, ensure_minimal_paciente_ficha
+from interface.dependencies import usuario_de_jwt
 
 router = APIRouter(tags=["admin"])
 
@@ -59,8 +60,10 @@ async def api_admin_import_alerts(
         if hdr != admin_token_env:
             raise HTTPException(status.HTTP_403_FORBIDDEN, detail={"code": "forbidden"})
     else:
-        # dev fallback: require session cookie
-        if not request.cookies.get("session_user"):
+        # dev fallback: exige uma sessão JWT válida (não o cookie session_user
+        # forjável). Um `Cookie: session_user=admin` não pode mais autorizar
+        # este endpoint administrativo.
+        if not usuario_de_jwt(request):
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail={"code": "not_authenticated"})
 
     alerts: list[dict] = []
