@@ -170,8 +170,12 @@ describe('useLocalStorageSync', () => {
       },
     ];
 
+    // Escreve direto no mock, contornando o filtro de expirados que
+    // saveLocalAlerts() já aplica na escrita — o objetivo aqui é simular
+    // dados que já estavam no localStorage (ex: gravados antes, ou o tempo
+    // passou desde então) para testar clearExpired() isoladamente.
     act(() => {
-      result.current.saveLocalAlerts(alerts);
+      localStorageMock.setItem('alerts_cache', JSON.stringify(alerts));
     });
 
     act(() => {
