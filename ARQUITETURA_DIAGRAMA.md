@@ -228,4 +228,4 @@ graph LR
 
 ---
 
-*Diagramas gerados automaticamente pelo script `gerar_diagrama.py`*
+*Diagramas gerados automaticamente pelo script `scripts_demo/gerar_diagrama.py`*

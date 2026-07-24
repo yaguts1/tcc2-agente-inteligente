@@ -101,7 +101,7 @@ interface/templates/
 
 ```
 tmp_send.py
-test_export_files.py (opcional)
+scripts_demo/test_export_files.py (opcional)
 verify_production.py
 check_db.py
 ```

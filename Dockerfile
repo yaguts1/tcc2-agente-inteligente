@@ -13,7 +13,7 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y curl && apt-get clean
+RUN apt-get update && apt-get install -y curl tzdata && apt-get clean
 
 COPY requirements.txt ./
 RUN pip install --no-cache-dir -r requirements.txt uvicorn[standard]
@@ -25,7 +25,10 @@ COPY --from=frontend-build /app/frontend/build /app/frontend/build
 
 EXPOSE 8000
 
-# Default prefix
+# Default prefix. O sistema roda em hospitais no Brasil e várias partes do
+# código usam datetime.now() sem timezone explícito assumindo este fuso
+# (ver ferramentas/exportador.py, dao.py) — TZ precisa bater com isso.
 ENV APP_PREFIX=/TCC
+ENV TZ=America/Sao_Paulo
 
 CMD ["uvicorn", "interface.web:app", "--host", "0.0.0.0", "--port", "8000"]

@@ -49,10 +49,10 @@ fim = inicio + timedelta(hours=duracao_horas)  # Até AGORA
 
 ## 🧪 Script de Teste
 
-Criado `testar_simulacao.py` para validar end-to-end:
+Criado `scripts_demo/testar_simulacao.py` para validar end-to-end:
 
 ```bash
-python testar_simulacao.py P1 2 alto
+python scripts_demo/testar_simulacao.py P1 2 alto
 ```
 
 Testa:
@@ -91,12 +91,12 @@ Testa:
 
 Executar teste manual:
 ```bash
-.\venv\Scripts\python.exe testar_simulacao.py <PACIENTE_ID> 4 alto
+.\venv\Scripts\python.exe scripts_demo/testar_simulacao.py <PACIENTE_ID> 4 alto
 ```
 
 Exemplo:
 ```bash
-.\venv\Scripts\python.exe testar_simulacao.py PAC-0001 4 alto
+.\venv\Scripts\python.exe scripts_demo/testar_simulacao.py PAC-0001 4 alto
 ```
 
 ## 📊 Verificação Manual do Banco
@@ -133,7 +133,7 @@ conn.close()
 ## 🎯 Checklist de Validação
 
 - [x] Correção aplicada em `api.py` linha 2117
-- [x] Script de teste criado (`testar_simulacao.py`)
+- [x] Script de teste criado (`scripts_demo/testar_simulacao.py`)
 - [ ] Servidor reiniciado
 - [ ] Simulação testada no frontend
 - [ ] Alertas aparecem no Dashboard

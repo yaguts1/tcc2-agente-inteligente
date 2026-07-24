@@ -38,11 +38,11 @@ fi
 
 # 4. Deploy com Docker Compose
 echo "🚀 Subindo containers..."
-sudo docker compose -f docker-compose.prod.yml up -d --build
+sudo docker compose up -d --build
 
 echo "---------------------------------------------------"
 echo "✅ DEPLOY CONCLUÍDO COM SUCESSO!"
 echo "---------------------------------------------------"
-echo "📝 Logs: sudo docker compose -f docker-compose.prod.yml logs -f"
+echo "📝 Logs: sudo docker compose logs -f"
 echo "🌍 URL: http://$(curl -s ifconfig.me):8000/TCC"
 echo "---------------------------------------------------"

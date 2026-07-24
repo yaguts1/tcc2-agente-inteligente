@@ -73,7 +73,7 @@
 
 - [ ] Build images
   ```bash
-  docker-compose -f docker-compose.production.yml build
+  docker compose build
   ```
 
 - [ ] Verificar images
@@ -83,7 +83,7 @@
 
 - [ ] Testar build sem push
   ```bash
-  docker-compose -f docker-compose.production.yml up --no-start
+  docker compose up --no-start
   ```
 
 ---
@@ -136,7 +136,7 @@ npm run preview  # Preview production build
 
 ### Teste Manual em Docker
 ```bash
-docker-compose -f docker-compose.production.yml up -d
+docker compose up -d
 sleep 5
 curl http://localhost:8000/api/stats
 curl http://localhost/  # Frontend
@@ -240,8 +240,8 @@ docker push seu-registry/tcc-backend:latest
 ssh seu-servidor
 cd /var/app/tcc
 git pull
-docker-compose -f docker-compose.production.yml pull
-docker-compose -f docker-compose.production.yml up -d
+docker compose pull
+docker compose up -d
 ```
 
 - [ ] Login SSH bem-sucedido
@@ -273,7 +273,7 @@ curl -X POST https://seu-dominio.com/api/auth/login \
 
 ### Logs em Tempo Real
 ```bash
-docker-compose -f docker-compose.production.yml logs -f
+docker compose logs -f
 ```
 
 - [ ] Verificar logs a cada hora na primeira semana
@@ -324,8 +324,8 @@ cp /var/app/tcc/tcc.db /backups/tcc.$(date +%Y%m%d).db
 ```bash
 docker-compose logs
 docker ps -a  # Ver status
-docker-compose -f docker-compose.production.yml down
-docker-compose -f docker-compose.production.yml up -d --build
+docker compose down
+docker compose up -d --build
 ```
 
 ### Porta já em uso
