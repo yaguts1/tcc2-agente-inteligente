@@ -1,0 +1,34 @@
+﻿{% if documentos %}
+  <table class="documentos-table">
+    <thead>
+      <tr>
+        <th>Arquivo</th>
+        <th>Descricao</th>
+        <th>Enviado em</th>
+        <th class="actions">Acoes</th>
+      </tr>
+    </thead>
+    <tbody>
+      {% for doc in documentos %}
+        <tr>
+          <td>{{ doc.nome_arquivo }}</td>
+          <td>{{ doc.observacao or '-' }}</td>
+          <td>{{ (doc.enviado_em or '')|replace('T', ' ') }}</td>
+          <td class="actions">
+            <a href="/pacientes/documentos/{{ doc.id }}/download" target="_blank">Abrir</a>
+            <button type="button"
+                    class="secondary"
+                    hx-delete="/pacientes/documentos/{{ doc.id }}"
+                    hx-target="#lista-documentos"
+                    hx-swap="innerHTML"
+                    hx-confirm="Remover este documento?">
+              Excluir
+            </button>
+          </td>
+        </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+{% else %}
+  <p class="hint">Nenhum documento enviado.</p>
+{% endif %}

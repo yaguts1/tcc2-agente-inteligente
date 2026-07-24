@@ -1,0 +1,36 @@
+{% if success %}
+<div id="simulacao-resultado" class="alert alert-success" style="background: #e5f7ed; color: #256029; padding: 0.75rem; border-radius: 4px; margin-top: 1rem; border-left: 4px solid #2d8a34;">
+  <strong>✅ Simulação concluída com sucesso!</strong><br>
+  <span style="font-size: 0.95rem;">
+    {{ duracao }} horas de dados gerados<br>
+    📊 {{ eventos }} eventos de postura<br>
+    🚨 {{ alertas }} alertas processados
+  </span>
+  <br>
+  <small style="color: #1b5e20; margin-top: 0.5rem; display: block;">
+    Os dados aparecerão na timeline em segundos...
+  </small>
+</div>
+<script>
+  // Recarregar timeline após sucesso
+  setTimeout(() => {
+    htmx.ajax('GET', '/partials/timeline', {target: '#timeline-container', swap: 'outerHTML'});
+    htmx.ajax('GET', '/partials/alertas?mode=live', {target: '#alertas-container', swap: 'outerHTML'});
+  }, 1000);
+</script>
+{% else %}
+<div id="simulacao-resultado" class="alert alert-error" style="background: #fbe9e7; color: #c62828; padding: 0.75rem; border-radius: 4px; margin-top: 1rem; border-left: 4px solid #d32f2f;">
+  <strong>❌ Erro ao simular</strong><br>
+  <span style="font-size: 0.95rem;">
+    {% if error %}
+      {{ error }}
+    {% else %}
+      Ocorreu um erro desconhecido durante a simulação
+    {% endif %}
+  </span>
+  <br>
+  <small style="color: #b71c1c; margin-top: 0.5rem; display: block;">
+    Verifique os parâmetros e tente novamente
+  </small>
+</div>
+{% endif %}

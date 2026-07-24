@@ -1,0 +1,30 @@
+﻿{% for alerta in alertas_abertos %}
+  <tr class="status-{{ alerta.status }}">
+    <td>{{ alerta.paciente_id }}</td>
+    <td>{{ alerta.inicio[:19] }}</td>
+    <td>{{ alerta.fim[:19] if alerta.fim else '-' }}</td>
+    <td>{{ '%.2f' % alerta.tempo_decorrido_min if alerta.tempo_decorrido_min is not none else '-' }}</td>
+    <td>{{ alerta.status }}</td>
+    <td>{{ alerta.perfil }}</td>
+    <td>{{ alerta.janela_min }}</td>
+    <td>{{ '%.2f' % alerta.duracao_min if alerta.duracao_min is not none else '-' }}</td>
+    <td>
+      <button
+        type="button"
+        hx-post="{{ url_for('alertas_reconhecer', paciente_id=alerta.paciente_id, inicio=alerta.inicio) }}"
+        hx-target="#tbody-alertas"
+        hx-swap="innerHTML"
+        hx-include="#now,#pid,#horas,#rate"
+        hx-on::afterRequest="if(!event.detail.failed){const wrapper=document.getElementById('timeline-wrapper'); if(wrapper && !wrapper.classList.contains('hidden')){htmx.trigger(wrapper,'timeline-load');}}"
+      >Reconhecer</button>
+      <button
+        type="button"
+        hx-post="{{ url_for('alertas_encerrar', paciente_id=alerta.paciente_id, inicio=alerta.inicio) }}"
+        hx-target="#tbody-alertas"
+        hx-swap="innerHTML"
+        hx-include="#now,#pid,#horas,#rate"
+        hx-on::afterRequest="if(!event.detail.failed){const wrapper=document.getElementById('timeline-wrapper'); if(wrapper && !wrapper.classList.contains('hidden')){htmx.trigger(wrapper,'timeline-load');}}"
+      >Encerrar</button>
+    </td>
+  </tr>
+{% endfor %}

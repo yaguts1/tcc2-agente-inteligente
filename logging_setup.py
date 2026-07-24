@@ -1,0 +1,33 @@
+"""Configuracao padrao de logging estruturado."""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+import structlog
+
+_CONFIGURED = False
+
+
+def configure_logging(level: int = logging.INFO) -> None:
+    """Configura logging estruturado usando structlog."""
+    global _CONFIGURED
+    if _CONFIGURED:
+        return
+
+    logging.basicConfig(format="%(message)s", level=level)
+
+    structlog.configure(
+        processors=[
+            structlog.contextvars.merge_contextvars,
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.stdlib.add_log_level,
+            structlog.processors.StackInfoRenderer(),
+            structlog.processors.format_exc_info,
+            structlog.processors.JSONRenderer(),
+        ],
+        wrapper_class=structlog.make_filtering_bound_logger(level),
+        cache_logger_on_first_use=True,
+    )
+    _CONFIGURED = True
