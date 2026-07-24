@@ -5,7 +5,7 @@
 
 import React, { useState } from "react";
 import { useAgenda } from "../../hooks/useAgenda";
-import { Agenda, AgendaCreate, AgendaUpdate } from "../../api/agendaApi";
+import { type Agenda, type AgendaCreate, type AgendaUpdate } from "../../lib/api";
 import AgendaForm from "./AgendaForm";
 import AgendaList from "./AgendaList";
 import "./AgendaPanel.css";
