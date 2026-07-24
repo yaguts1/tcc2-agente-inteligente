@@ -7,6 +7,11 @@ import pytest
 from fastapi.testclient import TestClient
 
 from interface.dao import criar_esquema, criar_paciente
+from interface.auth_utils import create_access_token
+
+
+def _auth_headers(username: str = "tester") -> dict:
+    return {"Authorization": f"Bearer {create_access_token({'sub': username})}"}
 
 
 @pytest.fixture()
@@ -160,7 +165,14 @@ def test_documentos_upload_e_remocao(pacientes_client):
         arquivo_path = Path(documento["caminho"])
     assert arquivo_path.exists()
 
-    download = client.get(f"/pacientes/documentos/{documento_id}/download")
+    # Download sem auth deve ser rejeitado (dado clínico, ID enumerável).
+    download_sem_auth = client.get(f"/pacientes/documentos/{documento_id}/download")
+    assert download_sem_auth.status_code == 401
+
+    download = client.get(
+        f"/pacientes/documentos/{documento_id}/download",
+        headers=_auth_headers(),
+    )
     assert download.status_code == 200
     assert download.headers["content-type"].startswith("application/pdf")
 
