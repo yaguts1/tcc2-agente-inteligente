@@ -25,4 +25,4 @@ e este projeto adota [Semantic Versioning](https://semver.org/lang/pt-BR/).
 
 ---
 
-[v0.1.0]: https://github.com/yaguts1/tcc2-agente-inteligente/releases/tag/v0.1.0
+[v0.1.0]: https://github.com/yaguts1/tcc2-agente-inteligente/releases/tag/v0.1.0 

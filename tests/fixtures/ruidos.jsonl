@@ -1,0 +1,2 @@
+{"device_id":"ESP32","paciente_id":"PX","cama_id":"CX","postura":"supino","confianca":0.2,"amostra_ms":300000,"ts_utc":"2025-01-01T00:00:00Z"}
+{"device_id":"ESP32","paciente_id":"PX","cama_id":"CX","postura":"supino","confianca":0.3,"amostra_ms":300000,"ts_utc":"2025-01-01T00:00:00Z"}
