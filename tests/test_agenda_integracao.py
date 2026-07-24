@@ -3,6 +3,7 @@
 import os
 import sqlite3
 import tempfile
+import types
 from datetime import datetime, timedelta
 import json
 
@@ -294,6 +295,91 @@ def test_multiple_agenda_modes(db_temp):
     )
     assert is_sup is True
     assert modo == "suprimir"  # Suprimir takes precedence
+
+
+def test_engine_aplica_reducao_de_janela(db_temp, monkeypatch):
+    """Regressão C1: uma agenda modo='reduzir' ativa no horário do alerta deve
+    REDUZIR o `janela_min` do alerta gerado.
+
+    Antes, o motor consultava `agendas_paciente ... AND deletado = 0` — coluna
+    inexistente — e o erro era engolido por um `except: return 0`, então a
+    redução NUNCA acontecia. Este teste falharia com o código antigo.
+    """
+    from configuracao import config as app_config
+
+    # O motor lê agendas do config.db_path global (default "dados.db"); aponta
+    # ele para o banco temporário deste teste.
+    monkeypatch.setattr("modulo_alerta.engine.config", types.SimpleNamespace(db_path=db_temp))
+
+    paciente_id = "PAC-TEST-REDUCAO"
+    _create_test_patient(paciente_id, db_temp)
+    ensure_agendas_table(db_path=db_temp)
+
+    ref = datetime(2025, 6, 16, 10, 0, 0)  # segunda-feira
+    reducao_min = 10
+
+    criar_agenda(
+        paciente_id=paciente_id,
+        tipo="cirurgia",
+        modo="reduzir",
+        hora_inicio="00:00",
+        hora_fim="23:59",
+        dias_semana=[ref.weekday()],
+        data_inicio=ref.date().isoformat(),
+        data_fim=None,
+        reducao_janela_min=reducao_min,
+        descricao="Cirurgia - reduzir janela",
+        db_path=db_temp,
+    )
+
+    # 70 min de imobilidade contínua (perfil 'alto' = janela 60 min) → gera alerta
+    timestamps = [ref + timedelta(minutes=i) for i in range(70)]
+    df_grade = pd.DataFrame({"timestamp": timestamps, "postura": ["supino"] * len(timestamps)})
+
+    _, alertas = processar_alertas(df_grade=df_grade, perfil="alto", paciente_id=paciente_id)
+
+    assert alertas, "esperava ao menos um alerta gerado"
+    reduzidos = [a for a in alertas if a.get("modo_supressao") == "reduzido"]
+    assert reduzidos, "esperava ao menos um alerta com redução aplicada (feature estava morta)"
+
+    esperado = max(5, app_config.janela_por_perfil["alto"] - reducao_min)
+    for a in reduzidos:
+        assert a["janela_min"] == esperado
+
+
+def test_engine_nao_reduz_fora_do_horario_da_agenda(db_temp, monkeypatch):
+    """A redução só vale quando a agenda 'reduzir' casa com o horário/data do
+    alerta. Uma agenda em outro dia da semana não deve reduzir nada."""
+    monkeypatch.setattr("modulo_alerta.engine.config", types.SimpleNamespace(db_path=db_temp))
+
+    paciente_id = "PAC-TEST-REDUCAO-FORA"
+    _create_test_patient(paciente_id, db_temp)
+    ensure_agendas_table(db_path=db_temp)
+
+    ref = datetime(2025, 6, 16, 10, 0, 0)  # segunda-feira
+    outro_dia = (ref.weekday() + 1) % 7  # dia da semana diferente
+
+    criar_agenda(
+        paciente_id=paciente_id,
+        tipo="cirurgia",
+        modo="reduzir",
+        hora_inicio="00:00",
+        hora_fim="23:59",
+        dias_semana=[outro_dia],  # não casa com a data do alerta
+        data_inicio=ref.date().isoformat(),
+        data_fim=None,
+        reducao_janela_min=10,
+        descricao="Reduzir em outro dia",
+        db_path=db_temp,
+    )
+
+    timestamps = [ref + timedelta(minutes=i) for i in range(70)]
+    df_grade = pd.DataFrame({"timestamp": timestamps, "postura": ["supino"] * len(timestamps)})
+
+    _, alertas = processar_alertas(df_grade=df_grade, perfil="alto", paciente_id=paciente_id)
+
+    assert alertas, "esperava ao menos um alerta gerado"
+    assert all(a.get("modo_supressao") != "reduzido" for a in alertas)
 
 
 if __name__ == "__main__":
