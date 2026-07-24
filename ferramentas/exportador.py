@@ -437,6 +437,10 @@ class ExportService:
             try:
                 # Assumindo que o timestamp do banco está em UTC (termina em Z ou +00:00)
                 dt = datetime.fromisoformat(ts.replace('Z', '+00:00'))
+                # Se não tiver timezone, assumir UTC (mesma regra do branch datetime abaixo,
+                # em vez de depender implicitamente do fuso do sistema onde o código roda)
+                if dt.tzinfo is None:
+                    dt = dt.replace(tzinfo=ZoneInfo("UTC"))
                 # Converter para horário local
                 dt_local = dt.astimezone(TZ_BR)
                 return dt_local.strftime("%d/%m/%Y %H:%M")

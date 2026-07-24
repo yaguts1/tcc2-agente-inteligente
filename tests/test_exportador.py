@@ -166,20 +166,20 @@ class TestFilenameFormatting:
     """Testes para funções de formatação."""
     
     def test_format_timestamp_with_string(self):
-        """Teste: Formatar timestamp string."""
+        """Teste: Formatar timestamp string sem timezone (assumido como UTC, convertido p/ America/Sao_Paulo)."""
         service = ExportService(':memory:')
         ts = '2025-10-27T14:30:00'
         result = service._format_timestamp(ts)
         assert '27/10/2025' in result
-        assert '14:30' in result
-    
+        assert '11:30' in result
+
     def test_format_timestamp_with_datetime(self):
-        """Teste: Formatar timestamp datetime."""
+        """Teste: Formatar timestamp datetime sem timezone (assumido como UTC, convertido p/ America/Sao_Paulo)."""
         service = ExportService(':memory:')
         ts = datetime(2025, 10, 27, 14, 30, 0)
         result = service._format_timestamp(ts)
         assert '27/10/2025' in result
-        assert '14:30' in result
+        assert '11:30' in result
     
     def test_translate_status(self):
         """Teste: Traduzir status."""
