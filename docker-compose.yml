@@ -25,5 +25,29 @@ services:
       retries: 3
       start_period: 10s
 
+  # Proxy reverso com HTTPS automatico (Let's Encrypt). Em desenvolvimento
+  # local, acesse via http://localhost (a porta 8000 do app continua
+  # publicada acima só para debug direto). Em produção, aponte o DNS do seu
+  # domínio para a VM, defina DOMAIN=seudominio.com no .env, e abra só as
+  # portas 80/443 no firewall (não a 8000) — ver GUIA_BUILD_DEPLOYMENT.md.
+  caddy:
+    image: caddy:2-alpine
+    container_name: upp_caddy
+    restart: unless-stopped
+    environment:
+      - DOMAIN=${DOMAIN:-localhost}
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      app:
+        condition: service_healthy
+
 volumes:
   app_data:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,9 @@
+{$DOMAIN:localhost} {
+	# Para producao, defina DOMAIN=seudominio.com no .env e aponte o DNS
+	# para o IP da VM — o Caddy provisiona e renova o certificado HTTPS
+	# automaticamente via Let's Encrypt, sem configuracao manual.
+	#
+	# Para "localhost" (default de desenvolvimento), o Caddy usa um
+	# certificado local autoassinado em vez de tentar Let's Encrypt.
+	reverse_proxy app:8000
+}
