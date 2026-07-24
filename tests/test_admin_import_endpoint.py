@@ -11,13 +11,16 @@ def test_admin_import_endpoint_creates_ficha_and_alert(tmp_path):
     os.environ["UPP_DB_PATH"] = str(db_path)
     # ensure no UPP_ADMIN_TOKEN so endpoint falls back to session cookie
     os.environ.pop("UPP_ADMIN_TOKEN", None)
+    # UPP_ADMIN_PASS has no default anymore (a hardcoded default would be a
+    # login bypass) - set it explicitly for this test's fallback-login path.
+    os.environ["UPP_ADMIN_PASS"] = "admin"
 
     # import app after env is set
     from fastapi.testclient import TestClient
     from interface.web import app
 
     with TestClient(app) as client:
-        # perform login using fallback admin password (default 'admin')
+        # perform login using fallback admin password (set above via UPP_ADMIN_PASS)
         resp = client.post("/api/auth/login", json={"username": "tester", "password": "admin"})
         assert resp.status_code == 200
 
