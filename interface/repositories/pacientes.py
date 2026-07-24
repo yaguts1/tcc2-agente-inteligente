@@ -4,10 +4,13 @@ from __future__ import annotations
 import re
 import sqlite3
 import pandas as pd
+import structlog
 from typing import List, Sequence, Optional, Dict
 
 from interface.db_core import connect, utc_now_iso
 from interface.api_shared import DEFAULT_PERFIL
+
+logger = structlog.get_logger(__name__)
 
 PACIENTE_ID_PREFIX = "PAC"
 PERFIS_VALIDOS = {"baixo", "medio", "alto"}
@@ -273,9 +276,18 @@ class PatientRepository:
                             (device_id, cama_norm, paciente_id, agora_iso, now_ms),
                         )
                 except Exception:
-                    pass
+                    # Não-fatal: o paciente é criado mesmo se a reatribuição de
+                    # device falhar. Mas NÃO engolir em silêncio — se o device
+                    # não migrar para a cama nova, os dados do sensor ficam
+                    # atribuídos ao paciente errado.
+                    logger.warning(
+                        "reatribuicao_device_falhou",
+                        paciente_id=paciente_id,
+                        cama_id=cama_norm,
+                        exc_info=True,
+                    )
             conn.commit()
-            
+
         return self.get_by_id(paciente_id, include_routines=True) # type: ignore
 
     def update(
@@ -355,9 +367,22 @@ class PatientRepository:
                                     (device_id, cama_norm, paciente_id, agora_iso, now_ms),
                                 )
                         except Exception:
-                            pass
+                            logger.warning(
+                                "reatribuicao_device_falhou",
+                                paciente_id=paciente_id,
+                                cama_id=cama_norm,
+                                exc_info=True,
+                            )
             except Exception:
-                pass
+                # Atualização do histórico de cama falhou — não deve derrubar o
+                # update do paciente, mas precisa aparecer no log (o histórico
+                # alimenta relatórios de tempo em cada leito).
+                logger.warning(
+                    "atualizacao_historico_cama_falhou",
+                    paciente_id=paciente_id,
+                    cama_id=cama_norm,
+                    exc_info=True,
+                )
             conn.commit()
             
         return self.get_by_id(paciente_id, include_routines=True) # type: ignore
@@ -422,6 +447,11 @@ class PatientRepository:
                         (paciente_id, cama_norm, agora_iso, start_ms),
                     )
                 except Exception:
-                    pass
+                    logger.warning(
+                        "insercao_historico_cama_falhou",
+                        paciente_id=paciente_id,
+                        cama_id=cama_norm,
+                        exc_info=True,
+                    )
             conn.commit()
 
