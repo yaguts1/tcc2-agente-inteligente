@@ -689,7 +689,7 @@ Este projeto está licenciado sob a MIT License - veja [LICENSE](LICENSE) para d
 
 ## 👥 Autores
 
-- **Thiago Yaguti** - [yaguts1](https://github.com/yaguts1)
+- **Thiago Nogueira Marcondes** - [yaguts1](https://github.com/yaguts1)
 
 ---
 
