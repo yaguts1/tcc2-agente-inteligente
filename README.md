@@ -530,10 +530,13 @@ python scripts_demo/test_export_files.py
 ### Docker (Recomendado)
 
 ```bash
+cp .env.example .env   # ajuste JWT_SECRET_KEY e demais variáveis
 docker compose up --build
 ```
 
-Isso builda o frontend, sobe a API em `http://localhost:8000` (docs em `/docs`, app em `/TCC/`) com o banco SQLite persistido em um volume nomeado (`app_data`). Variáveis de ambiente (`APP_PREFIX`, `UPP_DB_PATH`, `TZ`) já vêm configuradas em `docker-compose.yml` para desenvolvimento e produção — ajuste ali se precisar de outro caminho de banco ou domínio de fuso horário.
+Isso builda o frontend, sobe a API em `http://localhost:8000` (docs em `/docs`, app em `/TCC/`) e também um proxy Caddy em `http://localhost` / `https://localhost` (HTTPS local autoassinado), com o banco SQLite, uploads e backups persistidos no volume nomeado `app_data`. Todas as variáveis de ambiente estão documentadas em `.env.example`.
+
+Para subir em produção numa VM na nuvem com HTTPS automático (Let's Encrypt) via domínio real, siga [`GUIA_BUILD_DEPLOYMENT.md`](GUIA_BUILD_DEPLOYMENT.md).
 
 ### Manual
 
