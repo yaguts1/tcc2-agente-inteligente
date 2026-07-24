@@ -286,7 +286,6 @@ Monitoramento contínuo e automático da postura do paciente com:
 | **Radix UI** | - | Componentes acessíveis |
 | **TailwindCSS** | - | Utility-first CSS |
 | **vitest** | - | Testes unitários |
-| **Cypress** | - | Testes E2E |
 
 ### Hardware
 | Tecnologia | Uso |
@@ -504,12 +503,16 @@ pytest tests/test_main_batch.py
 ```bash
 cd frontend
 
-# Testes E2E com Cypress
-npm run test:e2e
+# Type-check
+npm run typecheck
 
-# Modo interativo
-npm run test:e2e:open
+# Testes unitários (vitest)
+npm run test
 ```
+
+> Testes E2E (Cypress) são um follow-up: o harness anterior foi removido por
+> referenciar `data-testid` inexistentes na SPA. Reintroduzir exige primeiro
+> instrumentar os componentes com `data-testid`.
 
 ### Testes Manuais
 
