@@ -4,9 +4,14 @@ services:
     container_name: upp_app
     restart: unless-stopped
     environment:
+      - ENVIRONMENT=production
       - APP_PREFIX=/TCC
       - UPP_DB_PATH=/data/dados.db
       - TZ=America/Sao_Paulo
+      - JWT_SECRET_KEY=${JWT_SECRET_KEY:?defina JWT_SECRET_KEY no seu .env antes de subir}
+      - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-}
+      - UPP_ADMIN_PASS=${UPP_ADMIN_PASS:-}
+      - UPP_ADMIN_TOKEN=${UPP_ADMIN_TOKEN:-}
     ports:
       - "8000:8000"
     volumes:

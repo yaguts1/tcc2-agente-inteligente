@@ -380,14 +380,21 @@ app.add_middleware(PrometheusMiddleware)
 # Add security headers middleware
 app.add_middleware(SecurityHeadersMiddleware)
 
-# Enable CORS for local frontend development and common dev ports
-_allowed_origins = [
+# CORS origins: defaults cover local frontend dev ports; extra production
+# domains come from ALLOWED_ORIGINS (comma-separated), so changing/adding a
+# domain doesn't require editing code and rebuilding the image.
+_DEV_ORIGINS = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://localhost:5173",
     "http://127.0.0.1:5173",
-    "https://tcc.yaguts.com.br",
 ]
+_extra_origins = [
+    origin.strip()
+    for origin in os.getenv("ALLOWED_ORIGINS", "").split(",")
+    if origin.strip()
+]
+_allowed_origins = _DEV_ORIGINS + _extra_origins
 try:
     app.add_middleware(
         CORSMiddleware,
