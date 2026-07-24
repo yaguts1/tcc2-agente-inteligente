@@ -378,3 +378,110 @@ class PatientRepository:
             conn.execute("DELETE FROM pacientes WHERE id = ?", (paciente_id,))
             conn.commit()
         return 1
+
+    def proximo_identificador(self, prefixo: str = PACIENTE_ID_PREFIX) -> str:
+        with connect(self.db_path) as conn:
+            return self._generate_paciente_id(conn, prefix=prefixo)
+
+    def ensure_minimal_ficha(
+        self,
+        paciente_id: str,
+        nome: str | None = None,
+        perfil: str | None = None,
+        cama_id: str | None = None,
+    ) -> None:
+        """Garante um registro minimo em paciente_fichas para `paciente_id`.
+
+        Se a ficha ja existir, nao faz nada (conservador, nunca sobrescreve).
+        """
+        if not paciente_id:
+            raise ValueError("paciente_id deve ser informado.")
+
+        perfil_val = None if perfil is None else str(perfil).strip().lower()
+        if perfil_val not in PERFIS_VALIDOS:
+            perfil_val = "medio"
+
+        cama_norm = self._normalize_cama_id(cama_id)
+        nome_val = None if nome is None else str(nome).strip() or None
+
+        with connect(self.db_path) as conn:
+            self._ensure_paciente(conn, paciente_id)
+            cur = conn.execute("SELECT paciente_id FROM paciente_fichas WHERE paciente_id = ?", (paciente_id,))
+            if cur.fetchone() is not None:
+                return
+            agora_iso = utc_now_iso()
+            conn.execute(
+                "INSERT INTO paciente_fichas (paciente_id, nome, perfil, cama_id, observacoes, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)",
+                (paciente_id, nome_val or paciente_id, perfil_val, cama_norm, None, agora_iso, agora_iso),
+            )
+            if cama_norm is not None:
+                try:
+                    start_ms = int(pd.to_datetime(agora_iso).timestamp() * 1000)
+                    conn.execute(
+                        "INSERT INTO paciente_cama_history (paciente_id, cama_id, start_ts, start_ms) VALUES (?, ?, ?, ?)",
+                        (paciente_id, cama_norm, agora_iso, start_ms),
+                    )
+                except Exception:
+                    pass
+            conn.commit()
+
+    def listar_documentos(self, paciente_id: str) -> List[dict]:
+        with connect(self.db_path) as conn:
+            cursor = conn.execute(
+                """
+                SELECT id, paciente_id, nome_arquivo, caminho, observacao, enviado_em
+                FROM paciente_documentos
+                WHERE paciente_id = ?
+                ORDER BY enviado_em DESC, id DESC
+                """,
+                (paciente_id,),
+            )
+            rows = cursor.fetchall()
+        return [dict(row) for row in rows]
+
+    def registrar_documento(
+        self,
+        paciente_id: str,
+        nome_arquivo: str,
+        caminho: str,
+        observacao: str | None = None,
+    ) -> int:
+        nome_limpo = str(nome_arquivo or "").strip()
+        if not nome_limpo:
+            raise ValueError("Nome do arquivo nao pode ser vazio.")
+        caminho_limpo = str(caminho or "").strip()
+        if not caminho_limpo:
+            raise ValueError("Caminho do arquivo deve ser informado.")
+        obs_val = None if observacao is None else str(observacao).strip() or None
+        agora_iso = utc_now_iso()
+        with connect(self.db_path) as conn:
+            self._ensure_paciente(conn, paciente_id)
+            cursor = conn.execute(
+                """
+                INSERT INTO paciente_documentos (paciente_id, nome_arquivo, caminho, observacao, enviado_em)
+                VALUES (?, ?, ?, ?, ?)
+                """,
+                (paciente_id, nome_limpo, caminho_limpo, obs_val, agora_iso),
+            )
+            return cursor.lastrowid
+
+    def remover_documento(self, documento_id: int) -> Optional[Dict[str, str]]:
+        with connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT paciente_id, caminho FROM paciente_documentos WHERE id = ?",
+                (documento_id,),
+            )
+            row = cursor.fetchone()
+            if row is None:
+                return None
+            conn.execute("DELETE FROM paciente_documentos WHERE id = ?", (documento_id,))
+        return {"paciente_id": row["paciente_id"], "caminho": row["caminho"]}
+
+    def obter_documento(self, documento_id: int) -> Optional[dict]:
+        with connect(self.db_path) as conn:
+            cursor = conn.execute(
+                "SELECT id, paciente_id, nome_arquivo, caminho, observacao, enviado_em FROM paciente_documentos WHERE id = ?",
+                (documento_id,),
+            )
+            row = cursor.fetchone()
+        return None if row is None else dict(row)
