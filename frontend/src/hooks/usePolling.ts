@@ -10,6 +10,14 @@ export function usePolling({ interval, enabled = true, onPoll }: UsePollingOptio
   const [isPolling, setIsPolling] = useState(enabled);
   const intervalRef = useRef<NodeJS.Timeout | null>(null);
 
+  // `enabled` é uma prop que muda em runtime (ex: `enabled={!wsConnected}` —
+  // pausar o polling quando o WebSocket conecta). Sem este efeito, `isPolling`
+  // só era lido de `enabled` na montagem e o polling NUNCA parava ao mudar a
+  // prop.
+  useEffect(() => {
+    setIsPolling(enabled);
+  }, [enabled]);
+
   useEffect(() => {
     if (!isPolling) {
       if (intervalRef.current) {
