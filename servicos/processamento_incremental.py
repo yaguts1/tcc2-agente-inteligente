@@ -122,7 +122,12 @@ def _coerce_datetime(valor: object) -> datetime:
 
 def _estado_para_dict(estado: EstadoDecisor) -> dict:
   def _dt(valor: Optional[datetime]) -> Optional[str]:
-    return None if valor is None else valor.strftime("%Y-%m-%dT%H:%M:%S")
+    # `strftime("%Y-...")` depende da libc da plataforma para o ano: no Linux
+    # nao faz zero-padding para anos < 1000, no Windows chega a lancar
+    # ValueError. `cooldown_ate` usa datetime.min (ano 1) como sentinela de
+    # "sem cooldown ativo", entao usamos isoformat() (sempre zero-padded e
+    # portavel) em vez de strftime().
+    return None if valor is None else valor.isoformat()
 
   dados = {
     "perfil": estado.perfil,
