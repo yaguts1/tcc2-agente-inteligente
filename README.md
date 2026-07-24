@@ -105,7 +105,7 @@ cd frontend && npm install && cd ..
 2. **Gerar Dados de Teste**
    ```powershell
    # Paciente alto risco (24h de dados)
-   .\venv\Scripts\python.exe testar_simulacao_com_verificacao.py DEMO-ALTO 24 alto
+   .\venv\Scripts\python.exe scripts_demo/testar_simulacao_com_verificacao.py DEMO-ALTO 24 alto
    ```
 
 3. **Explorar Funcionalidades**
@@ -520,7 +520,7 @@ npm run test:e2e:open
 python dados_simulados/gerador.py
 
 # Testar exportação
-python test_export_files.py
+python scripts_demo/test_export_files.py
 ```
 
 ---
@@ -529,15 +529,11 @@ python test_export_files.py
 
 ### Docker (Recomendado)
 
-#### Desenvolvimento
 ```bash
-docker-compose up
+docker compose up --build
 ```
 
-#### Produção
-```bash
-docker-compose -f docker-compose.production.yml up -d
-```
+Isso builda o frontend, sobe a API em `http://localhost:8000` (docs em `/docs`, app em `/TCC/`) com o banco SQLite persistido em um volume nomeado (`app_data`). Variáveis de ambiente (`APP_PREFIX`, `UPP_DB_PATH`, `TZ`) já vêm configuradas em `docker-compose.yml` para desenvolvimento e produção — ajuste ali se precisar de outro caminho de banco ou domínio de fuso horário.
 
 ### Manual
 
