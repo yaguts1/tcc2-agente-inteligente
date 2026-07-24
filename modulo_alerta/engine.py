@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Dict, List, Tuple
 
 import pandas as pd
@@ -9,6 +10,7 @@ import structlog
 
 from nucleo.decisor import processar_alertas_lote
 from interface.dao_agenda import is_timestamp_in_suppressed_period, get_reducao_janela
+from interface.tempo import utc_naive_para_local
 from configuracao import carregar_configuracao
 
 config = carregar_configuracao()
@@ -51,20 +53,24 @@ def processar_alertas(
     alertas_filtrados = []
     for alerta in alertas:
         try:
-            # Check if alert timestamp is in suppressed period
-            timestamp_str = alerta.get("inicio", "")
+            # O `inicio` do alerta é UTC naive; as horas da agenda são horário
+            # LOCAL do hospital (o que a enfermagem digita). Convertemos para
+            # local antes de casar com a agenda — senão a supressão dispararia
+            # no horário errado (deslocado pelo offset do fuso).
+            inicio_str = alerta.get("inicio", "")
+            timestamp_local = utc_naive_para_local(datetime.fromisoformat(inicio_str[:19]))
             is_suppressed, modo = is_timestamp_in_suppressed_period(
                 db_path=config.db_path,
                 paciente_id=paciente_id,
-                timestamp=timestamp_str,
+                timestamp=timestamp_local,
             )
-            
+
             if modo == "suprimir":
                 # Skip this alert completely
                 continue
             elif modo == "reduzir":
                 # Reduce the alert's janela window
-                reducao = get_reducao_janela(config.db_path, paciente_id, timestamp_str)
+                reducao = get_reducao_janela(config.db_path, paciente_id, timestamp_local)
                 if reducao > 0:
                     alerta["janela_min"] = max(5, alerta.get("janela_min", 0) - reducao)
                     alerta["modo_supressao"] = "reduzido"
