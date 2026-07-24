@@ -27,7 +27,6 @@
             "@types/react": "^18.2.28",
             "@types/react-dom": "^18.2.11",
             "@vitejs/plugin-react-swc": "^3.10.2",
-            "cypress": "^15.5.0",
             "jsdom": "^29.1.1",
             "typescript": "^5.6.3",
             "vite": "6.3.5",
@@ -37,8 +36,6 @@
             "dev": "vite",
             "build": "vite build",
             "typecheck": "tsc --noEmit",
-            "test": "vitest run",
-            "test:e2e": "cypress run",
-            "test:e2e:open": "cypress open"
+            "test": "vitest run"
       }
 }
