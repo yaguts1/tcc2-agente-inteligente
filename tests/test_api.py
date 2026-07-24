@@ -27,6 +27,7 @@ async def api_client(tmp_path, monkeypatch):
     import interface.routers.devices as devices
     import interface.routers.alerts as alerts
     import interface.routers.dashboard as dashboard
+    import interface.services.ingestao_service as ingestao_service
     import interface.routers.ingestao as ingestao
     import interface.routers.backup as backup
     import interface.routers.admin as admin
@@ -39,6 +40,7 @@ async def api_client(tmp_path, monkeypatch):
     reload(devices)
     reload(alerts)
     reload(dashboard)
+    reload(ingestao_service)
     reload(ingestao)
     reload(backup)
     reload(admin)

@@ -28,7 +28,6 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from fastapi.templating import Jinja2Templates
 
 from interface.api import router as api_router
-from interface.api import reconcile_device_events
 from interface.endpoints_agenda import router as agenda_router
 import asyncio
 
@@ -78,7 +77,12 @@ from dados_simulados.gerador import (
 
 from modulo_alerta.engine import processar_alertas
 from configuracao import carregar_configuracao
-from servicos.backup import scheduled_backup_task
+from interface.lifespan_tasks import (
+    start_reconciler_task,
+    stop_reconciler_task,
+    start_backup_task,
+    stop_backup_task,
+)
 
 config = carregar_configuracao()
 DB_PATH = config.db_path
@@ -103,79 +107,16 @@ async def _lifespan(app: FastAPI):
     except Exception as exc:  # pragma: no cover - log but do not fail startup
         logger.warning("schema_nao_garantido", motivo=str(exc))
 
-    # Start reconciler background task
-    try:
-        interval_raw = os.getenv("DEVICE_RECONCILE_INTERVAL", "30")
-        interval = max(1, int(interval_raw))
-    except Exception:
-        interval = 30
-
-    async def _loop() -> None:
-        logger.info("reconciler_started", interval=interval)
-        while True:
-            try:
-                result = await reconcile_device_events(None, 100)
-                if result and (result.get("processed", 0) or result.get("skipped", 0)):
-                    logger.info("reconciler_cycle", processed=result.get("processed"), skipped=result.get("skipped"))
-            except asyncio.CancelledError:
-                logger.info("reconciler_cancelled")
-                raise
-            except Exception as exc:
-                logger.exception("reconciler_error", motivo=str(exc))
-            try:
-                await asyncio.sleep(interval)
-            except asyncio.CancelledError:
-                logger.info("reconciler_sleep_cancelled")
-                raise
-
-    task = asyncio.create_task(_loop(), name="device_reconciler")
-    app.state._reconcile_task = task
-
-    # Start periodic backup background task. Single-instance deployment
-    # (documented decision, see docs/deploy) — no distributed lock needed.
-    try:
-        backup_interval_hours = max(1, int(os.getenv("BACKUP_INTERVAL_HOURS", "24")))
-    except Exception:
-        backup_interval_hours = 24
-
-    async def _backup_loop() -> None:
-        logger.info("backup_scheduler_started", interval_hours=backup_interval_hours, backup_dir=BACKUP_DIR)
-        while True:
-            try:
-                await asyncio.sleep(backup_interval_hours * 3600)
-            except asyncio.CancelledError:
-                logger.info("backup_scheduler_sleep_cancelled")
-                raise
-            try:
-                await asyncio.to_thread(scheduled_backup_task, DB_PATH, BACKUP_DIR, 7)
-                logger.info("backup_scheduler_cycle_done")
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                logger.exception("backup_scheduler_error", motivo=str(exc))
-
-    backup_task = asyncio.create_task(_backup_loop(), name="backup_scheduler")
-    app.state._backup_task = backup_task
+    # Background tasks (reconciler de device_events + backup periodico do
+    # banco). Ver interface/lifespan_tasks.py.
+    start_reconciler_task(app)
+    start_backup_task(app, DB_PATH, BACKUP_DIR)
 
     try:
         yield
     finally:
-        # cancel reconciler on shutdown
-        task = getattr(app.state, "_reconcile_task", None)
-        if task is not None and not task.done():
-            task.cancel()
-            try:
-                await task
-            except asyncio.CancelledError:
-                logger.info("reconciler_stopped")
-
-        backup_task = getattr(app.state, "_backup_task", None)
-        if backup_task is not None and not backup_task.done():
-            backup_task.cancel()
-            try:
-                await backup_task
-            except asyncio.CancelledError:
-                logger.info("backup_scheduler_stopped")
+        await stop_reconciler_task(app)
+        await stop_backup_task(app)
 
 app = FastAPI(title="Monitor de Alertas UPP", lifespan=_lifespan)
 web_router = APIRouter()
