@@ -348,11 +348,17 @@ assert len(resultado.prontos) > 0
 
 ### 3. **Persistência no Banco**
 ```python
-from interface.dao import inserir_eventos, listar_eventos
+import pandas as pd
+from interface.dao import inserir_eventos
 
-inserir_eventos("dados.db", "PAC-001", [evento])
-eventos = listar_eventos("dados.db", "PAC-001")
-assert len(eventos) > 0
+# Eventos crus vão para a tabela `eventos` (colunas inicio/fim/tipo); o
+# pipeline de processamento incremental os transforma na `grade` de posturas,
+# que é o que o dashboard consome (via selecionar_grade_janela).
+df = pd.DataFrame([
+    {"inicio": "2025-01-01T00:00:00", "fim": "2025-01-01T00:05:00", "tipo": "postura"},
+])
+inseridos = inserir_eventos("dados.db", df, "PAC-001")
+assert inseridos == 1
 ```
 
 ### 4. **Motor de Alertas**
