@@ -81,7 +81,7 @@ Permite configurar períodos onde o monitoramento é pausado ou flexibilizado pa
 *   `frontend/`: Código fonte React (build gera estáticos em `dist/`).
 *   `interface/`: Código fonte Backend FastAPI.
 *   `dados.db`: Banco de dados SQLite (arquivo único).
-*   `docker-compose.yml`: Orquestração única (dev e produção), com volume nomeado para persistir `dados.db`.
+*   `docker-compose.yml`: Orquestração única (dev e produção) — serviço `app` + proxy `caddy` (HTTPS automático), com volume nomeado para persistir `dados.db`, uploads e backups.
 
 ### Comandos Essenciais
 *   **Build e Run (Docker)**: `docker compose up --build`

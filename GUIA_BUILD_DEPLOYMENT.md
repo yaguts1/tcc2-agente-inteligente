@@ -1,408 +1,135 @@
-# 🚀 GUIA DE BUILD E DEPLOYMENT
+# Guia de Build e Deploy
 
-**Data**: 27 de Outubro de 2025  
-**Status**: ✅ Production Ready  
-
----
-
-## 📦 BUILD FRONTEND CONCLUÍDO
-
-### Resultado
-```
-✓ 1736 modules transformed
-✓ index.html (0.44 kB gzipped: 0.29 kB)
-✓ assets/index-Bp6hjLTB.css (44.51 kB gzipped: 8.90 kB)
-✓ assets/index-CK18vjlA.js (435.29 kB gzipped: 131.24 kB)
-✓ Built in 1.71s ✅
-```
-
-### Saída
-```
-Localização: frontend/build/
-- index.html          (entry point)
-- assets/             (CSS, JS, JS chunks)
-- vite.svg           (ícone)
-```
-
-### Tamanho
-```
-Total (gzipped):
-├─ HTML: 0.29 kB
-├─ CSS:  8.90 kB
-└─ JS:   131.24 kB
-────────────────────
-Total: ~140 kB (gzipped)
-```
-
-**Performance**: ✅ Excelente (<2s load time esperado)
+Este guia descreve o único caminho de deploy suportado atualmente: **uma VM na nuvem + Docker Compose**, com HTTPS automático via Caddy. É a opção mais simples de operar sozinho, sem depender de orquestradores (Kubernetes, ECS, Cloud Run) — o sistema é projetado para rodar em **uma única instância** (ver seção "Limitações de escala" abaixo).
 
 ---
 
-## 🐳 PRÓXIMO PASSO: DOCKER
+## Arquitetura de deploy
 
-### Verificar Docker
+```
+Internet ──▶ Caddy (80/443, HTTPS automático) ──▶ app (FastAPI + SPA, porta 8000)
+                                                        │
+                                                        ▼
+                                              volume Docker "app_data"
+                                              (dados.db, paciente_docs/, backups/)
+```
+
+Dois containers (`docker-compose.yml`):
+- **`app`**: build multi-stage do `Dockerfile` (frontend React buildado + backend FastAPI na mesma imagem `python:3.11-slim`). Serve a API e a SPA no mesmo processo/porta.
+- **`caddy`**: proxy reverso. Provisiona e renova certificado HTTPS automaticamente via Let's Encrypt quando `DOMAIN` aponta para um domínio real; usa certificado local autoassinado quando `DOMAIN=localhost` (desenvolvimento).
+
+Banco de dados: SQLite em modo WAL, arquivo único dentro do volume `app_data`. Não há banco gerenciado separado — adequado para uma instância; ver limitações abaixo.
+
+---
+
+## Deploy em uma VM (passo a passo)
+
+### 1. Provisionar a VM
+
+Qualquer provedor serve (DigitalOcean Droplet, AWS EC2, GCP Compute Engine, Hetzner, etc.). Requisitos mínimos: 1 vCPU, 1-2GB RAM, Ubuntu 22.04+ (ou qualquer Linux com Docker).
+
+No firewall/security group da VM, abra **apenas as portas 80 e 443** (não a 8000 — essa é só para debug local; em produção o app não deveria ser acessível diretamente de fora).
+
+### 2. Instalar Docker
 
 ```bash
-docker --version
-docker-compose --version
+curl -fsSL https://get.docker.com | sh
+sudo usermod -aG docker $USER
+# reconecte a sessão SSH para o grupo fazer efeito
 ```
 
-### Estrutura Docker
+### 3. Apontar o DNS
 
-```
-Dockerfile              # Build Python backend
-docker-compose.yml      # Orchestration
+Crie um registro `A` do seu domínio (ex: `upp.seudominio.com`) para o IP público da VM. Confirme com `dig +short upp.seudominio.com` antes de seguir — o Caddy precisa que o DNS já esteja resolvendo para conseguir emitir o certificado Let's Encrypt.
 
-Services:
-├─ backend (Python, port 8000)
-├─ frontend (Node, port 5173)
-└─ database (SQLite, volume)
-```
-
-### Build Docker
+### 4. Clonar o repositório e configurar
 
 ```bash
-# Construir imagens
-docker-compose build
-
-# Rodar containers
-docker-compose up -d
-
-# Ver logs
-docker-compose logs -f
-
-# Parar
-docker-compose down
-```
-
----
-
-## 📋 CHECKLIST DE DEPLOYMENT
-
-### Desenvolvimento Local ✅
-- [x] Backend rodando (uvicorn)
-- [x] Frontend rodando (dev server)
-- [x] Testes passando (4/4)
-- [x] Frontend buildado
-- [x] Sem erros TypeScript
-- [x] Sem erros Python
-
-### Staging (Docker Local)
-- [ ] Docker build completo
-- [ ] docker-compose up funcionando
-- [ ] Conectividade entre serviços
-- [ ] Database persistindo
-- [ ] Logs estruturados
-- [ ] Performance aceitável
-
-### Produção
-- [ ] Database backup strategy
-- [ ] Environment variables
-- [ ] CORS configurado
-- [ ] Rate limiting
-- [ ] Monitoring ativo
-- [ ] Alertas configurados
-- [ ] SSL/TLS (HTTPS)
-- [ ] Domains configurados
-
----
-
-## 🔧 VARIÁVEIS DE AMBIENTE
-
-### Backend
-```bash
-# .env ou dockerfile
-UPP_DB_PATH=dados.db
-PORT=8000
-LOG_LEVEL=info
-ALLOW_ORIGINS=http://localhost:5173,https://seu-dominio.com
-```
-
-### Frontend
-```bash
-# frontend/.env
-VITE_API_URL=http://localhost:8000  # dev
-VITE_API_URL=https://api.seu-dominio.com  # prod
-```
-
----
-
-## 📁 ESTRUTURA PRÉ-DEPLOYMENT
-
-```
-root/
-├─ backend/
-│  ├─ interface/
-│  ├─ modulo_alerta/
-│  ├─ servicos/
-│  ├─ tests/
-│  └─ requirements.txt
-│
-├─ frontend/
-│  ├─ src/
-│  ├─ build/          ← ✅ Gerado
-│  ├─ dist/           ← ✅ (vite build)
-│  └─ package.json
-│
-├─ docker-compose.yml
-├─ Dockerfile
-├─ .dockerignore
-└─ .env.production
-```
-
----
-
-## 🌍 OPÇÕES DE DEPLOYMENT
-
-### Opção 1: VPS com Docker Compose
-**Plataforma**: Linux VPS (qualquer)  
-**Custo**: ~$5-20/mês  
-
-```bash
-# SSH no servidor
-ssh user@seu-vps.com
-
-# Clone repo
-git clone https://github.com/seu-repo/tcc2-agente-inteligente.git
+git clone https://github.com/yaguts1/tcc2-agente-inteligente.git
 cd tcc2-agente-inteligente
-
-# Configure .env
-nano .env.production
-
-# Deploy
-docker-compose -f docker-compose.yml up -d
-
-# Reverse proxy (Nginx)
-# Configure em /etc/nginx/sites-available/...
+cp .env.example .env
 ```
 
-### Opção 2: Heroku
-**Plataforma**: Heroku  
-**Custo**: ~$7-50/mês  
+Edite `.env`:
+- `DOMAIN=upp.seudominio.com` (o domínio do passo 3)
+- `JWT_SECRET_KEY=` — gere com `python3 -c "import secrets; print(secrets.token_urlsafe(48))"`
+- `ALLOWED_ORIGINS=https://upp.seudominio.com` (se for acessar a API de outro domínio; deixe vazio se só o próprio frontend embutido acessa)
+- `UPP_ADMIN_PASS`/`UPP_ADMIN_TOKEN` — defina se for usar os logins/endpoints administrativos legados, senão deixe vazio (desabilitado por padrão)
+
+Todas as variáveis estão documentadas em `.env.example`.
+
+### 5. Subir
 
 ```bash
-# Install Heroku CLI
-heroku login
-
-# Create app
-heroku create seu-app-name
-
-# Deploy
-git push heroku main
+docker compose up -d --build
 ```
 
-### Opção 3: AWS ECS
-**Plataforma**: Amazon Web Services  
-**Custo**: Pay as you go (~$20-100/mês)  
+Primeira subida demora alguns minutos (build do frontend + emissão do certificado). Acompanhe com:
 
 ```bash
-# Push image to ECR
-aws ecr get-login-password --region us-east-1 | docker login ...
-docker tag seu-app:latest xxx.dkr.ecr.us-east-1.amazonaws.com/seu-app:latest
-docker push xxx.dkr.ecr.us-east-1.amazonaws.com/seu-app:latest
-
-# Deploy ECS Fargate via console ou CLI
+docker compose logs -f caddy   # confirma "certificate obtained successfully"
+docker compose logs -f app     # confirma "Application startup complete"
 ```
 
-### Opção 4: Google Cloud Run
-**Plataforma**: Google Cloud  
-**Custo**: Pay as you go (~$0-30/mês)  
+Acesse `https://upp.seudominio.com` — deve responder com HTTPS válido automaticamente, sem nenhuma configuração manual de certificado.
+
+### 6. Verificar
 
 ```bash
-# Deploy backend
-gcloud run deploy seu-app \
-  --source . \
-  --platform managed \
-  --region us-central1
-
-# Deploy frontend to Cloud Storage + CDN
-gsutil -m cp -r frontend/build/* gs://seu-app.com/
-```
-
-### Opção 5: DigitalOcean App Platform
-**Plataforma**: DigitalOcean  
-**Custo**: ~$12-50/mês  
-
-```bash
-# Via dashboard ou doctl CLI
-doctl apps create --spec app.yaml
+curl -f https://upp.seudominio.com/healthz   # {"status":"ok"}
+curl -f https://upp.seudominio.com/docs      # Swagger UI
 ```
 
 ---
 
-## 🔐 SECURITY CHECKLIST
+## Atualizando uma instância em produção
 
-### HTTPS/SSL
-- [ ] Certificado SSL válido
-- [ ] Redirecionamento HTTP → HTTPS
-- [ ] HSTS header configurado
-- [ ] Certificado auto-renovável (Let's Encrypt)
-
-### API Security
-- [ ] CORS restritivo
-- [ ] Rate limiting ativo
-- [ ] Input validation
-- [ ] SQL injection prevention (✅ done)
-- [ ] CSRF protection
-- [ ] JWT autenticação (optional)
-
-### Database
-- [ ] Backups automáticos
-- [ ] Encryption em repouso
-- [ ] Acesso restrito (firewall)
-- [ ] Logs de auditoria
-
-### Monitoring
-- [ ] Logs centralizados
-- [ ] Alertas de erro
-- [ ] Métrics (CPU, memory, DB)
-- [ ] Performance tracking
-
----
-
-## 📊 PERFORMANCE TARGETS
-
-### Frontend
-- Load Time: < 2s (gzip: 140 kB)
-- Lighthouse Score: > 90
-- Mobile Speed: > 80
-
-### Backend
-- API Response: < 100ms
-- Database Query: < 50ms
-- Throughput: > 1000 req/s
-
----
-
-## 🚀 COMANDOS ÚTEIS
-
-### Build
 ```bash
-# Frontend
-cd frontend && npm run build
-
-# Docker
-docker-compose build
-docker-compose build --no-cache  # Force rebuild
+git pull origin main
+docker compose up -d --build
 ```
 
-### Run
+O volume `app_data` (banco, uploads, backups) persiste através de rebuilds — não é apagado por `up --build`. Só `docker compose down -v` remove volumes, e isso normalmente não deve ser rodado em produção.
+
+## Backup e restauração
+
+Backup automático já roda dentro do app (task periódica, ver `BACKUP_INTERVAL_HOURS` em `.env.example`, default 24h), salvando em `UPP_BACKUP_DIR` dentro do volume. Endpoints manuais também existem:
+
 ```bash
-# Local
-uvicorn interface.web:app --reload
-cd frontend && npm run dev
-
-# Docker
-docker-compose up -d
-docker-compose logs -f
+curl -X POST https://upp.seudominio.com/TCC/admin/backup/create -H "Authorization: Bearer $UPP_ADMIN_TOKEN"
+curl https://upp.seudominio.com/TCC/admin/backup/list -H "Authorization: Bearer $UPP_ADMIN_TOKEN"
 ```
 
-### Test
+Para copiar backups para fora da VM (recomendado — o volume Docker ainda é a mesma máquina), use `docker cp` ou `rsync` periodicamente para outro destino (outra VM, storage de objeto, etc.):
+
 ```bash
-# Python tests
-python -m pytest tests/ -v
-
-# Coverage
-python -m pytest tests/ --cov=interface --cov=modulo_alerta
+docker cp upp_app:/data/backups ./backups-local
 ```
 
-### Deploy
+## Rodando os testes antes de fazer deploy
+
 ```bash
-# Push changes
-git add .
-git commit -m "feat: new feature"
-git push origin main
-
-# Or manual
-docker-compose up -d --build
+docker run --rm -v "$(pwd):/app" -w /app python:3.11-slim bash -c \
+  "pip install -q -r requirements.txt && pytest -q"
 ```
+
+(Usa uma imagem `python:3.11-slim` limpa — reproduz fielmente o ambiente do CI, incluindo as versões pinadas em `requirements.txt`.)
 
 ---
 
-## 📞 TROUBLESHOOTING
+## Limitações de escala (decisão deliberada)
 
-### Frontend não conecta ao backend
-```
-Verifique:
-1. VITE_API_URL está correto
-2. Backend está rodando em 8000
-3. CORS está configurado
-4. Firewall permite conexão
-```
+Este sistema é projetado para **uma única instância**, não múltiplas réplicas atrás de um load balancer:
 
-### Database corrompido
-```
-Solução:
-1. Faça backup: cp dados.db dados.db.bak
-2. Delete: rm dados.db
-3. Reinicie: próxima execução recriar-á
-```
+- **SQLite**: um arquivo único; múltiplos processos escrevendo simultaneamente de VMs diferentes não é suportado (WAL mode ajuda com concorrência dentro do mesmo processo/host, não entre hosts).
+- **Rate limiter** (`interface/rate_limiter.py`) e o motor de alertas incremental (`servicos/processamento_incremental.py`) mantêm estado em memória por processo — 2+ réplicas processariam eventos duplicados e teriam limites de taxa inconsistentes.
+- **Reconciler de devices e backup automático** (`interface/lifespan_tasks.py`) rodam como tasks in-process sem lock distribuído — 2+ réplicas duplicariam o trabalho.
+- **Uploads de documentos** ficam em disco local (dentro do volume Docker) — não há storage de objeto compartilhado.
 
-### Performance lenta
-```
-Verifique:
-1. CPU usage
-2. Memory usage  
-3. Disk I/O
-4. Network latency
-5. Database indexes
-```
+Se no futuro for necessário escalar horizontalmente (múltiplas VMs/réplicas), isso exige trocar SQLite por Postgres gerenciado, mover rate limiting/estado para Redis compartilhado, e uploads para storage de objeto (S3-compatible) — uma mudança de arquitetura maior, fora do escopo atual.
 
 ---
 
-## 📈 PÓS-DEPLOYMENT
+## Alternativas não utilizadas (referência)
 
-### Primeiras 24 Horas
-- [ ] Monitorar logs
-- [ ] Verificar alertas
-- [ ] Testar funcionalidade
-- [ ] Validar performance
-
-### Primeira Semana
-- [ ] Análise de usuário
-- [ ] Coletar feedback
-- [ ] Otimizações
-- [ ] Bug fixes
-
-### Próximas Semanas
-- [ ] Features adicionais
-- [ ] Análise de tráfego
-- [ ] Melhorias UX
-- [ ] Escalabilidade
-
----
-
-## 📚 DOCUMENTAÇÃO RELACIONADA
-
-- `STATUS_PROJETO_27OUT.md` - Status completo
-- `TESTE_PERSISTENCIA_PASSO_A_PASSO.md` - Teste manual
-- `RELATORIO_TESTES_27OUT.md` - Testes automatizados
-- `docker-compose.yml` - Configuração Docker
-- `.env.example` - Template de variáveis
-
----
-
-## 🎯 RESUMO
-
-### Status Atual
-```
-✅ Frontend buildado
-✅ Backend pronto
-✅ Testes passando
-✅ Docker configurado
-⏳ Deploy pendente
-```
-
-### Próximo Passo
-1. Testar Docker Compose localmente
-2. Escolher plataforma de deployment
-3. Configurar domain e SSL
-4. Deploy em produção
-5. Monitoring e alertas
-
----
-
-**Pronto para deploy!** 🚀
-
-Escolha uma das opções de deployment acima e siga as instruções.
-
+Provedores gerenciados (Heroku, AWS ECS, Google Cloud Run, DigitalOcean App Platform) foram considerados mas não são o caminho documentado/testado aqui — a maioria deles assume estado externo (banco gerenciado, storage de objeto) que este sistema não usa hoje. Se decidir migrar para um deles no futuro, resolva primeiro as limitações de escala acima.
