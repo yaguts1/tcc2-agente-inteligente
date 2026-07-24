@@ -12,7 +12,8 @@ from typing import Any, Dict, List, Tuple
 
 from fastapi import Request
 
-from interface.dao import selecionar_alertas_janela, selecionar_grade_janela
+from interface.repositories.alertas import selecionar_alertas_janela
+from interface.repositories.grade import selecionar_grade_janela
 
 DEFAULT_PACIENTE_PERFIL = "medio"
 
