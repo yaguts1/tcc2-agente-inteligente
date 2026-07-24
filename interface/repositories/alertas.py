@@ -1,13 +1,14 @@
 """Repository for alert (alertas) operations."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import Dict, List
 
 import pandas as pd
 
 from interface.db_core import connect, ensure_paciente, norm_iso
 from interface.repositories.timeline import inserir_timeline_event
+from interface.tempo import agora_utc_naive
 
 _VALID_TABLES = {"grade", "eventos", "alertas"}
 
@@ -144,8 +145,10 @@ def selecionar_alertas_janela(db_path: str, horas: int | None = 24) -> list[dict
             rows = cursor.fetchall()
         return [dict(row) for row in rows]
 
-    # Com filtro de tempo - busca passado e futuro próximo
-    agora = datetime.now().replace(microsecond=0)
+    # Com filtro de tempo - busca passado e futuro próximo.
+    # `inicio` no banco é UTC naive, então o "agora" da janela também precisa
+    # ser UTC (datetime.now() local deslocaria a janela pelo offset do fuso).
+    agora = agora_utc_naive()
     limite_inferior = (agora - timedelta(hours=horas)).strftime("%Y-%m-%dT%H:%M:%S")
     limite_superior = (agora + timedelta(hours=horas)).strftime("%Y-%m-%dT%H:%M:%S")
 
@@ -162,7 +165,7 @@ def selecionar_alertas_janela(db_path: str, horas: int | None = 24) -> list[dict
 def listar_pacientes(db_path: str, horas: int | None = 24) -> list[str]:
     limite = None
     if horas is not None:
-        agora = datetime.now().replace(microsecond=0)
+        agora = agora_utc_naive()  # `inicio` no banco é UTC naive
         limite = (agora - timedelta(hours=horas)).strftime("%Y-%m-%dT%H:%M:%S")
     with connect(db_path) as conn:
         if limite is None:
@@ -201,7 +204,10 @@ def alterar_status_alerta(
 
         params = {"paciente_id": paciente_id, "inicio": inicio}
         if definir_fim:
-            base_now = (now_dt or datetime.now()).replace(microsecond=0)
+            # `inicio` é UTC naive; o "agora" (fim) e a duração precisam do
+            # mesmo referencial (senão datetime.now() local erraria a duração
+            # pelo offset do fuso). Callers podem passar now_dt (relógio virtual).
+            base_now = (now_dt or agora_utc_naive()).replace(microsecond=0)
             ini_dt = datetime.fromisoformat(inicio[:19])
             fim_iso = base_now.strftime("%Y-%m-%dT%H:%M:%S")
             duracao_min = round((base_now - ini_dt).total_seconds() / 60.0, 2)
@@ -222,7 +228,9 @@ def alterar_status_alerta(
             # timeline log for alert close
             try:
                 ts_iso = fim_iso
-                ts_ms = int(base_now.timestamp() * 1000)
+                # ts_ms: base_now é UTC naive → tratar como UTC no epoch (idem
+                # aos demais ts_ms, calculados via pandas que assume UTC).
+                ts_ms = int(base_now.replace(tzinfo=timezone.utc).timestamp() * 1000)
                 inserir_timeline_event(db_path, paciente_id, ts_iso, ts_ms, "alert_close", descricao=None, meta={"inicio": inicio})
             except Exception:
                 pass
@@ -238,9 +246,9 @@ def alterar_status_alerta(
             # timeline log for acknowledgement
             try:
                 if str(status_destino).lower() == "reconhecido":
-                    base_now = datetime.now().replace(microsecond=0)
+                    base_now = agora_utc_naive()
                     ts_iso = base_now.strftime("%Y-%m-%dT%H:%M:%S")
-                    ts_ms = int(base_now.timestamp() * 1000)
+                    ts_ms = int(base_now.replace(tzinfo=timezone.utc).timestamp() * 1000)
                     inserir_timeline_event(db_path, paciente_id, ts_iso, ts_ms, "alert_ack", descricao=None, meta={"inicio": inicio})
             except Exception:
                 pass
