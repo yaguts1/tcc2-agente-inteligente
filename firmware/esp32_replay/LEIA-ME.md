@@ -12,20 +12,31 @@
 
 ### 1. Configuração Inicial
 
-Edite as variáveis no arquivo `.ino` antes de fazer upload:
+As credenciais de WiFi e o endereço do servidor NÃO ficam no código versionado.
+Crie seu `config.h` local a partir do exemplo (é git-ignored — não será commitado):
+
+```bash
+cd firmware/esp32_replay
+cp config.example.h config.h
+```
+
+Edite `config.h` com os valores da sua rede:
 
 ```cpp
-ReplayConfig g_config{
-    .arquivoEventos       = "/eventos.jsonl",
-    .hostServidor         = "192.168.0.67",  // ← SEU IP
-    .portaServidor        = 8000,
-    .endpoint             = "/ws/eventos",   // WebSocket
-    .ssid                 = "SUA_REDE_WIFI", // ← SEU WIFI
-    .senha                = "SUA_SENHA",     // ← SUA SENHA
-    .deviceId             = "DEV-001",       // ID único do dispositivo
-    .camaId               = "C-01",          // ID da cama/leito
-};
+#define WIFI_SSID   "SUA_REDE_WIFI"
+#define WIFI_SENHA  "SUA_SENHA_WIFI"
+#define SERVER_IP   "192.168.0.10"   // IP do backend na sua LAN (sem http:// e sem porta)
+#define SERVER_PORT 8000
 ```
+
+Os sketches `.ino` incluem `config.h` automaticamente. Demais parâmetros
+(deviceId, camaId, endpoint, etc.) continuam editáveis no bloco `ReplayConfig`
+dentro do `.ino`.
+
+> ⚠️ **Segurança**: nunca coloque senha WiFi real direto no `.ino` — ela vai
+> parar no histórico do git. Uma senha exposta assim no passado deste repo já
+> foi removida do código, mas continua no histórico e deve ser trocada na vida
+> real.
 
 ### 2. Preparar Dados
 
@@ -58,7 +69,7 @@ Abra o Serial Monitor (115200 baud) para ver os logs:
 
 ```
 [WIFI] Connected IP=192.168.0.100
-[WS] Conectando a ws://192.168.0.67:8000/ws/eventos...
+[WS] Conectando a ws://SERVER_IP:8000/ws/eventos...
 [WS] ✅ Conectado ao servidor WebSocket
 [WS] Conexão estabelecida com sucesso
 [ESTADO] -> 1
