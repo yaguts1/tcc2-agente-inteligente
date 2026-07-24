@@ -20,6 +20,10 @@ def connect(db_path: str) -> sqlite3.Connection:
     path = ensure_db_path(db_path)
     conn = sqlite3.connect(str(path))
     conn.row_factory = sqlite3.Row
+    # WAL reduz contencao entre leituras e escritas concorrentes (mesmo numa
+    # unica instancia, o app tem WebSocket + reconciler + requests HTTP
+    # escrevendo/lendo ao mesmo tempo).
+    conn.execute("PRAGMA journal_mode=WAL")
     return conn
 
 def utc_now_iso() -> str:

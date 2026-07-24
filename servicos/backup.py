@@ -127,13 +127,13 @@ class BackupService:
             return False
 
 
-# Scheduled backup task (para usar com APScheduler ou similar)
-def scheduled_backup_task(db_path: str = "dados.db", keep_days: int = 7) -> None:
+# Scheduled backup task (chamada periodicamente pelo lifespan da app, ver interface/web.py)
+def scheduled_backup_task(db_path: str = "dados.db", backup_dir: str = "backups", keep_days: int = 7) -> None:
     """
     Tarefa agendada para criar backup e limpar backups antigos.
     Ideal para executar diariamente.
     """
-    service = BackupService(db_path)
+    service = BackupService(db_path, backup_dir=backup_dir)
     
     try:
         # Create backup

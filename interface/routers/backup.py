@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import os
 from fastapi import APIRouter, HTTPException, status
 
 from servicos.backup import BackupService
@@ -8,8 +9,11 @@ from interface.api_shared import DB_PATH
 
 router = APIRouter(tags=["backup"])
 
-# Backup endpoints
-backup_service = BackupService(DB_PATH)
+# Backup endpoints. O diretório de backup precisa estar dentro do volume
+# persistente do Docker (ver docker-compose.yml) — um default relativo
+# ("backups") se perderia a cada restart do container.
+BACKUP_DIR = os.getenv("UPP_BACKUP_DIR", "backups")
+backup_service = BackupService(DB_PATH, backup_dir=BACKUP_DIR)
 
 
 @router.post("/admin/backup/create", status_code=status.HTTP_200_OK)
