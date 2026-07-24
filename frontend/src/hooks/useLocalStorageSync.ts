@@ -111,12 +111,11 @@ export function useLocalStorageSync(config: LocalStorageSyncConfig = {}) {
   const syncAlert = useCallback((alert: Alert): void => {
     try {
       const current = getLocalAlerts();
-      
-      // Verificar se alerta já existe (por ID ou timestamp)
-      const exists = current.some(
-        a => a.id === alert.id || 
-             (new Date(a.timestamp).getTime() === new Date(alert.timestamp).getTime())
-      );
+
+      // Verificar se alerta já existe (por ID). Checar só por timestamp
+      // daria falso positivo para dois alertas distintos que cheguem no
+      // mesmo milissegundo, descartando um deles silenciosamente.
+      const exists = current.some(a => a.id === alert.id);
 
       if (!exists) {
         const updated = [alert, ...current];
@@ -148,8 +147,11 @@ export function useLocalStorageSync(config: LocalStorageSyncConfig = {}) {
       const current = getLocalAlerts();
       const existingIds = new Set(current.map(a => a.id));
 
-      // Adicionar novos alertas (evitar duplicatas)
-      const newAlerts = alerts.filter(a => !existingIds.has(a.id));
+      // Adicionar novos alertas (evitar duplicatas). `alerts` chega em ordem
+      // cronológica (mais antigo primeiro) — invertemos antes de prepender
+      // para manter "mais recente primeiro" em `current`, mesma ordenação
+      // que syncAlert() já produz ao sincronizar um alerta por vez.
+      const newAlerts = alerts.filter(a => !existingIds.has(a.id)).reverse();
       const merged = [...newAlerts, ...current];
 
       saveLocalAlerts(merged);
