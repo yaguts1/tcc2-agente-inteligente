@@ -9,7 +9,8 @@ from passlib.hash import bcrypt
 from interface.repositories.users import UserRepository
 from interface.api_shared import _check_auth_rate_limit, DB_PATH
 from interface.schemas import RegisterRequest
-from interface.auth_utils import create_access_token, verify_token
+from interface.auth_utils import create_access_token
+from interface.dependencies import get_current_user
 
 router = APIRouter(tags=["auth"])
 user_repo = UserRepository(DB_PATH)
@@ -107,33 +108,9 @@ async def api_logout() -> dict:
 
 
 @router.get("/auth/me", status_code=status.HTTP_200_OK)
-async def api_me(request: Request) -> dict:
-    user = None
-    
-    # Try to get from Authorization header (Bearer token)
-    auth_header = request.headers.get("Authorization", "")
-    if auth_header.startswith("Bearer "):
-        token = auth_header[7:]
-        payload = verify_token(token)
-        if payload:
-            user = payload.get("sub")
-    
-    # Fallback to cookie (legacy or browser session)
-    if not user:
-        # Try access_token cookie first (JWT)
-        token_cookie = request.cookies.get("access_token")
-        if token_cookie:
-            payload = verify_token(token_cookie)
-            if payload:
-                user = payload.get("sub")
-        
-        # Fallback to session_user cookie (legacy simple string)
-        if not user:
-            user = request.cookies.get("session_user")
-    
-    if not user:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail={"code": "not_authenticated"})
-    
+async def api_me(user: str = Depends(get_current_user)) -> dict:
+    # Autenticação via get_current_user (JWT only) — não confia mais no
+    # cookie session_user forjável.
     # try to include display_name and role when available
     try:
         u = user_repo.get_by_username(user)

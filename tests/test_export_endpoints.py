@@ -69,6 +69,14 @@ class TestExportAuthentication:
         )
         assert response.status_code == 401
 
+    def test_csv_rejeita_cookie_session_user_forjado(self):
+        """Cookie `session_user` em texto puro (forjável) não pode autenticar.
+        Só JWT assinado (Bearer ou cookie access_token) é aceito."""
+        c = TestClient(app)
+        c.cookies.set("session_user", "admin")
+        response = c.get("/api/alerts/export/csv")
+        assert response.status_code == 401
+
     def test_csv_com_jwt_valido_passa_da_auth(self):
         """JWT válido autentica e o export roda (não é 401/403)."""
         with patch("ferramentas.exportador.selecionar_alertas_janela") as mock_select:
@@ -223,6 +231,26 @@ class TestExportErrorHandling:
             response = client.get("/api/alerts/export/csv", headers=_auth_headers())
         assert response.status_code == 500
         assert "detail" in response.json()
+
+
+class TestAuthMeHardening:
+    """/auth/me só deve confiar em JWT, não no cookie session_user forjável."""
+
+    def test_me_rejeita_cookie_session_user_forjado(self):
+        c = TestClient(app)
+        c.cookies.set("session_user", "admin")
+        response = c.get("/api/auth/me")
+        assert response.status_code == 401
+
+    def test_me_sem_credencial_retorna_401(self):
+        response = client.get("/api/auth/me")
+        assert response.status_code == 401
+
+    def test_me_com_jwt_valido_retorna_usuario(self):
+        with patch("interface.routers.auth.user_repo.get_by_username", return_value=None):
+            response = client.get("/api/auth/me", headers=_auth_headers("tester"))
+        assert response.status_code == 200
+        assert response.json().get("username") == "tester"
 
 
 if __name__ == "__main__":
