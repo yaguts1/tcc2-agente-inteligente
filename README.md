@@ -229,11 +229,11 @@ Monitoramento contínuo e automático da postura do paciente com:
 - Timeline visual de todos os eventos
 
 ### 🚨 Sistema de Alertas Inteligente
-- **3 Perfis de Risco**:
-  - Baixo: 240 min sem mudança
-  - Médio: 120 min sem mudança
+- **3 Perfis de Risco** (janela padrão, configurável por variável de ambiente):
+  - Baixo: 120 min sem mudança
+  - Médio: 90 min sem mudança
   - Alto: 60 min sem mudança
-- Cooldown configurável (30 min padrão)
+- Cooldown configurável (10 min padrão)
 - Estados: NOVO, RECONHECIDO, RESOLVIDO
 - Notificações prioritárias
 
@@ -285,8 +285,7 @@ Monitoramento contínuo e automático da postura do paciente com:
 | **Vite** | 6.3.5 | Build tool ultra-rápido |
 | **Radix UI** | - | Componentes acessíveis |
 | **TailwindCSS** | - | Utility-first CSS |
-| **Recharts** | - | Visualizações de dados |
-| **React Router** | 7.1 | Roteamento |
+| **vitest** | - | Testes unitários |
 | **Cypress** | - | Testes E2E |
 
 ### Hardware
@@ -415,9 +414,8 @@ No primeiro acesso, criar conta através da interface de registro.
 | [QUICK_REFERENCE_FRONTEND.md](docs/QUICK_REFERENCE_FRONTEND.md) | Referência rápida para desenvolvimento frontend |
 | [FLUXO_INFORMACAO_ESP32_FRONTEND.md](docs/FLUXO_INFORMACAO_ESP32_FRONTEND.md) | Fluxo completo ESP32 → Frontend |
 | [FRONTEND_MODERNO_VS_LEGADO.md](docs/FRONTEND_MODERNO_VS_LEGADO.md) | Comparação arquitetural |
-| [DESIGN_SISTEMA_AGENDA.md](docs/DESIGN_SISTEMA_AGENDA.md) | Sistema de agendamento |
-| [GUIA_BUILD_DEPLOYMENT.md](docs/GUIA_BUILD_DEPLOYMENT.md) | Build e deployment |
-| [CHECKLIST_DEPLOY_PRODUCAO.md](docs/CHECKLIST_DEPLOY_PRODUCAO.md) | Checklist de produção |
+| [GUIA_BUILD_DEPLOYMENT.md](GUIA_BUILD_DEPLOYMENT.md) | Build e deployment |
+| [CHECKLIST_DEPLOY_PRODUCAO.md](CHECKLIST_DEPLOY_PRODUCAO.md) | Checklist de produção |
 
 ---
 
@@ -547,7 +545,7 @@ npm run build
 cd ..
 ```
 
-O build gera arquivos em `frontend/dist/` que devem ser servidos pelo backend.
+O build gera arquivos em `frontend/build/` que devem ser servidos pelo backend.
 
 #### Executar Backend (Produção)
 ```bash
@@ -570,7 +568,7 @@ server {
     
     # Frontend (arquivos estáticos)
     location / {
-        root /path/to/frontend/dist;
+        root /path/to/frontend/build;
         try_files $uri $uri/ /index.html;
     }
     
@@ -674,8 +672,8 @@ Contribuições são bem-vindas! Por favor:
 ### Convenções
 
 - **Commits**: [Conventional Commits](https://www.conventionalcommits.org/)
-- **Code Style Python**: `black` + `flake8`
-- **Code Style TypeScript**: `prettier` + `eslint`
+- **Lint Python**: `ruff` (config em `pyproject.toml`; roda no CI como job advisory)
+- **Type-check TypeScript**: `tsc --noEmit` (`npm run typecheck`, roda no CI)
 - **Testes**: Sempre adicionar testes para novas funcionalidades
 
 ---
