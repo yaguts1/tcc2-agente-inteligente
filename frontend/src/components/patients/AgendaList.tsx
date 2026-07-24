@@ -4,7 +4,7 @@
  */
 
 import React from "react";
-import { Agenda } from "../../api/agendaApi";
+import { type Agenda } from "../../lib/api";
 import "./AgendaList.css";
 
 interface AgendaListProps {

@@ -4,7 +4,7 @@
  */
 
 import React, { useState, useEffect } from "react";
-import { Agenda, AgendaCreate, AgendaUpdate } from "../../api/agendaApi";
+import { type Agenda, type AgendaCreate, type AgendaUpdate } from "../../lib/api";
 import "./AgendaForm.css";
 
 interface AgendaFormProps {

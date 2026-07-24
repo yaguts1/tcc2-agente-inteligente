@@ -347,6 +347,71 @@ export const patientsApi = {
     }),
 };
 
+// Agenda (supressão de alertas) API
+export interface AgendaCreate {
+  tipo: 'refeicao' | 'cirurgia' | 'procedimento' | 'atendimento' | 'outro';
+  modo: 'suprimir' | 'reduzir' | 'monitorar';
+  hora_inicio: string; // HH:MM
+  hora_fim: string; // HH:MM
+  dias_semana?: number[] | null; // [0-6] ou null (agendamento único)
+  data_inicio: string; // YYYY-MM-DD
+  data_fim?: string | null; // YYYY-MM-DD ou null
+  reducao_janela_min?: number | null; // 5-60
+  descricao?: string;
+}
+
+export interface AgendaUpdate {
+  tipo?: string;
+  modo?: string;
+  hora_inicio?: string;
+  hora_fim?: string;
+  dias_semana?: number[] | null;
+  data_inicio?: string;
+  data_fim?: string | null;
+  reducao_janela_min?: number | null;
+  descricao?: string;
+}
+
+export interface Agenda extends AgendaCreate {
+  id: number;
+  paciente_id: string;
+  ativo: boolean;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface AgendasResponse {
+  agendas: Agenda[];
+  total: number;
+}
+
+export const agendaApi = {
+  listAgendas: async (pacienteId: string, ativo?: boolean): Promise<AgendasResponse> => {
+    const qs = ativo !== undefined ? `?ativo=${ativo}` : '';
+    // O backend retorna um array direto; embrulhamos no formato esperado.
+    const agendas = await request<Agenda[]>(`/api/pacientes/${pacienteId}/agenda${qs}`);
+    const arr = Array.isArray(agendas) ? agendas : [];
+    return { agendas: arr, total: arr.length };
+  },
+
+  createAgenda: (pacienteId: string, data: AgendaCreate) =>
+    request<Agenda>(`/api/pacientes/${pacienteId}/agenda`, {
+      method: 'POST',
+      body: JSON.stringify(data),
+    }),
+
+  updateAgenda: (pacienteId: string, agendaId: number, data: AgendaUpdate) =>
+    request<Agenda>(`/api/pacientes/${pacienteId}/agenda/${agendaId}`, {
+      method: 'PATCH',
+      body: JSON.stringify(data),
+    }),
+
+  deleteAgenda: (pacienteId: string, agendaId: number) =>
+    request<void>(`/api/pacientes/${pacienteId}/agenda/${agendaId}`, {
+      method: 'DELETE',
+    }),
+};
+
 // Device Events API
 export interface DeviceEvent {
   id: number;
