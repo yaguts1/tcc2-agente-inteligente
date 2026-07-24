@@ -5,12 +5,14 @@ Demonstra a capacidade do sistema em escala real.
 
 import subprocess
 import sys
+from pathlib import Path
 from typing import Dict, List
 import requests
 from time import sleep
 
 
 BACKEND_URL = "http://127.0.0.1:8000"
+_SCRIPT_DIR = Path(__file__).resolve().parent
 
 # Lista de 10 pacientes com dados variados
 PACIENTES_DEMO = [
@@ -90,7 +92,7 @@ def gerar_dados_paciente(pac_id: str, horas: int, perfil: str) -> bool:
     try:
         cmd = [
             sys.executable,
-            "testar_simulacao_com_verificacao.py",
+            str(_SCRIPT_DIR / "testar_simulacao_com_verificacao.py"),
             pac_id,
             str(horas),
             perfil
@@ -196,7 +198,7 @@ def main():
     print("\nAcesse o frontend para visualizar:")
     print("   http://localhost:5173")
     print("\nVerifique os dados gerados:")
-    print("   .\\venv\\Scripts\\python.exe ver_pacientes.py")
+    print("   .\\venv\\Scripts\\python.exe scripts_demo\\ver_pacientes.py")
     print("\n" + "=" * 80 + "\n")
 
 

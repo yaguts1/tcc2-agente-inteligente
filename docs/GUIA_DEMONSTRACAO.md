@@ -40,13 +40,13 @@ npm run dev
 **Opção A: Usar dados existentes**
 ```powershell
 # Verificar pacientes no banco
-.\venv\Scripts\python.exe ver_pacientes.py
+.\venv\Scripts\python.exe scripts_demo/ver_pacientes.py
 ```
 
 **Opção B: Gerar dados novos**
 ```powershell
 # Limpar dados antigos e gerar simulação fresca
-.\venv\Scripts\python.exe testar_simulacao_com_verificacao.py DEMO-001 24 alto
+.\venv\Scripts\python.exe scripts_demo/testar_simulacao_com_verificacao.py DEMO-001 24 alto
 ```
 
 ### 1.3. Checklist Pré-Demonstração
@@ -361,7 +361,7 @@ Terminal 3: Enviar evento via API
 #### Executar Simulação Completa
 
 ```powershell
-.\venv\Scripts\python.exe testar_simulacao_com_verificacao.py DEMO-002 24 alto
+.\venv\Scripts\python.exe scripts_demo/testar_simulacao_com_verificacao.py DEMO-002 24 alto
 ```
 
 **Mostrar saída:**
@@ -771,7 +771,7 @@ print(f'Alertas no banco: {cursor.fetchone()[0]}')
 "
 
 # Re-gerar com perfil alto (mais alertas)
-.\venv\Scripts\python.exe testar_simulacao_com_verificacao.py DEMO-001 4 alto
+.\venv\Scripts\python.exe scripts_demo/testar_simulacao_com_verificacao.py DEMO-001 4 alto
 ```
 
 ### Problema: Performance lenta
@@ -816,9 +816,9 @@ print('Banco limpo')
 
 # Gerar dados novos
 Write-Host "Gerando dados de demonstração..." -ForegroundColor Green
-.\venv\Scripts\python.exe testar_simulacao_com_verificacao.py DEMO-001 24 alto
-.\venv\Scripts\python.exe testar_simulacao_com_verificacao.py DEMO-002 24 medio
-.\venv\Scripts\python.exe testar_simulacao_com_verificacao.py DEMO-003 24 baixo
+.\venv\Scripts\python.exe scripts_demo/testar_simulacao_com_verificacao.py DEMO-001 24 alto
+.\venv\Scripts\python.exe scripts_demo/testar_simulacao_com_verificacao.py DEMO-002 24 medio
+.\venv\Scripts\python.exe scripts_demo/testar_simulacao_com_verificacao.py DEMO-003 24 baixo
 
 Write-Host "Ambiente pronto para demonstração!" -ForegroundColor Cyan
 ```

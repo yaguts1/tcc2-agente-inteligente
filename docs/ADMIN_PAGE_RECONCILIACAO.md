@@ -259,7 +259,7 @@ deviceEventsApi.reconcileBed(camaId: string): Promise<ReconcileResponse>
 1. **Preparação:**
    ```python
    # Inserir eventos órfãos
-   python insert_retroactive_events.py
+   python scripts_demo/insert_retroactive_events.py
    ```
 
 2. **Verificar Stats:**
@@ -284,7 +284,7 @@ deviceEventsApi.reconcileBed(camaId: string): Promise<ReconcileResponse>
 ### Teste Automatizado
 
 ```bash
-python testar_reconciliacao_cama_id.py
+python scripts_demo/testar_reconciliacao_cama_id.py
 ```
 
 Valida:
@@ -324,4 +324,4 @@ Valida:
 - `docs/JORNADA_INFORMACAO_ESP32.md` - Fluxo de dados ESP32
 - `interface/api.py` - Endpoints de reconciliação
 - `frontend/src/components/pages/AdminPage.tsx` - UI da página
-- `testar_reconciliacao_cama_id.py` - Testes de reconciliação
+- `scripts_demo/testar_reconciliacao_cama_id.py` - Testes de reconciliação

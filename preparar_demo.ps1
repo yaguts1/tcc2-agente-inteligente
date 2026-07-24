@@ -39,7 +39,7 @@ foreach ($linha in $pacientes) {
         $perfil = $partes[1].Trim()
         
         Write-Host "  $id (perfil: $perfil)..." -ForegroundColor Yellow
-        .\venv\Scripts\python.exe testar_simulacao_com_verificacao.py $id $horas $perfil 2>&1 | Out-Null
+        .\venv\Scripts\python.exe scripts_demo/testar_simulacao_com_verificacao.py $id $horas $perfil 2>&1 | Out-Null
         if ($LASTEXITCODE -eq 0) {
             Write-Host "    OK" -ForegroundColor Green
         }
@@ -49,5 +49,5 @@ foreach ($linha in $pacientes) {
 Write-Host ""
 Write-Host "PRONTO!" -ForegroundColor Green
 Write-Host "  Frontend: http://localhost:5173" -ForegroundColor Cyan
-Write-Host "  Ver dados: .\venv\Scripts\python.exe ver_pacientes.py" -ForegroundColor Cyan
+Write-Host "  Ver dados: .\venv\Scripts\python.exe scripts_demo/ver_pacientes.py" -ForegroundColor Cyan
 Write-Host ""

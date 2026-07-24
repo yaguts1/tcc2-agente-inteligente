@@ -81,11 +81,10 @@ Permite configurar períodos onde o monitoramento é pausado ou flexibilizado pa
 *   `frontend/`: Código fonte React (build gera estáticos em `dist/`).
 *   `interface/`: Código fonte Backend FastAPI.
 *   `dados.db`: Banco de dados SQLite (arquivo único).
-*   `docker-compose.yml`: Orquestração para desenvolvimento.
-*   `docker-compose.prod.yml`: Orquestração para produção (com volumes persistentes).
+*   `docker-compose.yml`: Orquestração única (dev e produção), com volume nomeado para persistir `dados.db`.
 
 ### Comandos Essenciais
-*   **Build e Run (Docker)**: `docker-compose -f docker-compose.prod.yml up -d --build`
+*   **Build e Run (Docker)**: `docker compose up --build`
 *   **Backend Dev**: `uvicorn interface.web:app --reload`
 *   **Frontend Dev**: `cd frontend && npm run dev`
 *   **Testes**: `pytest`
