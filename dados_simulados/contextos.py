@@ -149,8 +149,14 @@ def gerar_eventos_contextuais(
             for hora, minuto in horarios:
                 ts_evento = data_base.replace(hour=hora, minute=minuto)
                 
-                # Verifica se está dentro do período
-                if ts_evento < inicio or ts_evento > fim:
+                # Verifica se está dentro do período. Usamos ">=" (não ">")
+                # para o limite superior: um evento que comece exatamente em
+                # `fim` teria duração zero (ts_fim = min(..., fim) == ts_evento),
+                # o que EventoContextual rejeita (inicio >= fim). Isso é raro
+                # mas real: `agora` é truncado pro minuto exato em
+                # dados_simulados/gerador.py, e os horarios_padrao também são
+                # em minutos exatos, então às vezes coincidem.
+                if ts_evento < inicio or ts_evento >= fim:
                     continue
                 
                 # Para cirurgia, apenas alguns dias (simulação de agendamento)
