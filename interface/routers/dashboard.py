@@ -166,8 +166,9 @@ async def validate_repositioning_contract(paciente_id: str) -> dict:
             if último_alerta.get("fim"):
                 try:
                     ultimo_repouso = datetime.fromisoformat(último_alerta.get("fim")[:19])
-                except:
-                    pass
+                except (ValueError, TypeError):
+                    # Campo `fim` ausente/malformado é esperado — segue com None.
+                    ultimo_repouso = None
         
         # Buscar próximo alerta (próximo repouso)
         alertas_abertos = [a for a in alertas if a.get("status") == "aberto"]
@@ -178,8 +179,9 @@ async def validate_repositioning_contract(paciente_id: str) -> dict:
             if próximo_alerta.get("inicio"):
                 try:
                     proximo_repouso = datetime.fromisoformat(próximo_alerta.get("inicio")[:19])
-                except:
-                    pass
+                except (ValueError, TypeError):
+                    # Campo `inicio` ausente/malformado é esperado — segue com None.
+                    proximo_repouso = None
         
         # Validar contrato
         if ultimo_repouso and proximo_repouso:
