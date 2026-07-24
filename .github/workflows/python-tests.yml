@@ -12,6 +12,11 @@ on:
 jobs:
   test:
     runs-on: ubuntu-latest
+    env:
+      # A aplicação assume o fuso do hospital (America/Sao_Paulo) em vários pontos
+      # que usam datetime.now() sem timezone explícito. Fixamos o TZ do runner
+      # para casar com o ambiente real de produção.
+      TZ: America/Sao_Paulo
     steps:
       - uses: actions/checkout@v4
 

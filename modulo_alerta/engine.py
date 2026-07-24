@@ -34,8 +34,15 @@ def processar_alertas(
 
     df_norm["timestamp"] = ts_series.dt.strftime("%Y-%m-%dT%H:%M:%S")
 
-    timestamps_py = ts_series.dt.to_pydatetime()
-    dados_lote = pd.DataFrame({"timestamp": timestamps_py, "postura": df_norm["postura"].astype(str)})
+    # Convertidos para numpy array (em vez de combinar Series diretamente) para
+    # evitar alinhamento por indice: com indices nao-contiguos (ex. apos groupby
+    # por paciente), montar o DataFrame a partir de Series cujos indices nao
+    # coincidem produz NaN e duplica linhas. `.dt.to_pydatetime()` retorna um
+    # ndarray em pandas 2.x e uma Series em pandas 3.x, entao normalizamos com
+    # pd.Series(...).to_numpy() para funcionar nas duas versoes.
+    timestamps_py = pd.Series(ts_series.dt.to_pydatetime()).to_numpy()
+    posturas = df_norm["postura"].astype(str).to_numpy()
+    dados_lote = pd.DataFrame({"timestamp": timestamps_py, "postura": posturas})
 
     alertas = processar_alertas_lote(dados_lote, perfil, paciente_id)
 
