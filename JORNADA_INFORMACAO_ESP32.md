@@ -318,7 +318,7 @@ ws.onmessage = (event) => {
 ### 1. **WebSocket ESP32 → Servidor**
 ```bash
 # Testar conexão
-python test_simple_ws.py
+python scripts_demo/test_simple_ws.py
 ```
 
 **Resultado Esperado:**

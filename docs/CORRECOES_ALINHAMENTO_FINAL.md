@@ -220,7 +220,7 @@ Erros:                    0
 
 ### Teste 1: Exportação Consistente
 ```bash
-$ python test_export_files.py
+$ python scripts_demo/test_export_files.py
 
 1. CSV completo (sem filtros):
    count=50 (antes: 60) ✅

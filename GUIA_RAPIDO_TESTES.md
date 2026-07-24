@@ -9,7 +9,7 @@ cd c:\Users\thiag.AIGOOO\Documents\TCC\tcc2-agente-inteligente
 .\venv\Scripts\Activate.ps1
 
 # Verificar sistema
-python verificar_sistema.py
+python scripts_demo/verificar_sistema.py
 ```
 
 ### 2. Iniciar Servidor
@@ -27,7 +27,7 @@ INFO:     Uvicorn running on http://127.0.0.1:8000
 ### 3. Testar Jornada Completa
 ```bash
 # Terminal 2
-python testar_jornada_completa.py
+python scripts_demo/testar_jornada_completa.py
 ```
 
 **Resultado esperado:**
@@ -46,7 +46,7 @@ python testar_jornada_completa.py
 
 ### Teste 1: Verificação do Sistema
 ```bash
-python verificar_sistema.py
+python scripts_demo/verificar_sistema.py
 ```
 **O que testa:**
 - ✅ Banco de dados
@@ -56,7 +56,7 @@ python verificar_sistema.py
 
 ### Teste 2: WebSocket Simples
 ```bash
-python test_simple_ws.py
+python scripts_demo/test_simple_ws.py
 ```
 **O que testa:**
 - ✅ Conexão WebSocket
@@ -65,7 +65,7 @@ python test_simple_ws.py
 
 ### Teste 3: API REST
 ```bash
-python test_rest_api.py
+python scripts_demo/test_rest_api.py
 ```
 **O que testa:**
 - ✅ POST /api/frontend/eventos
@@ -74,7 +74,7 @@ python test_rest_api.py
 
 ### Teste 4: Jornada Completa
 ```bash
-python testar_jornada_completa.py
+python scripts_demo/testar_jornada_completa.py
 ```
 **O que testa:**
 - ✅ Toda a jornada E2E
@@ -195,9 +195,9 @@ asyncio.run(simular_esp32())
 "
 ```
 
-### Opção 2: Usar test_simple_ws.py
+### Opção 2: Usar scripts_demo/test_simple_ws.py
 ```bash
-python test_simple_ws.py
+python scripts_demo/test_simple_ws.py
 ```
 
 ---
@@ -274,8 +274,8 @@ print(df)
 
 Antes de considerar o sistema pronto:
 
-- [ ] `verificar_sistema.py` passou
-- [ ] `testar_jornada_completa.py` passou
+- [ ] `scripts_demo/verificar_sistema.py` passou
+- [ ] `scripts_demo/testar_jornada_completa.py` passou
 - [ ] Frontend carrega sem erros
 - [ ] WebSocket conecta e mantém conexão
 - [ ] Eventos são persistidos no banco
