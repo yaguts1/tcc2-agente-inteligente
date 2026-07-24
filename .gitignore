@@ -219,6 +219,9 @@ check_db.py
 frontend/node_modules/
 node_modules/
 
+# Firmware: credenciais WiFi/servidor locais (ver config.example.h)
+firmware/esp32_replay/config.h
+
 # Cleanup and temporary files
 cleanup_backup/
 remove_legacy_code.py
