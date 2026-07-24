@@ -4,7 +4,7 @@
  */
 
 import { useState, useCallback, useEffect } from "react";
-import AgendaApi, { Agenda, AgendaCreate, AgendaUpdate } from "../api/agendaApi";
+import { agendaApi as AgendaApi, type Agenda, type AgendaCreate, type AgendaUpdate } from "../lib/api";
 
 interface UseAgendaState {
   agendas: Agenda[];
