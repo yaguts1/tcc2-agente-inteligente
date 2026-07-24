@@ -1,298 +1,229 @@
-"""Testes de integração para endpoints de exportação."""
+"""Testes de integração para os endpoints de exportação (CSV/PDF).
+
+IMPORTANTE (segurança): estes endpoints exportam dados clínicos de pacientes.
+A autenticação é feita via JWT (`get_current_user`). Este arquivo foi reescrito
+para PROVAR que o bypass antigo — em que `Authorization: Bearer <user>:<qualquer>`
+era aceito sem verificar o token — está FECHADO. Não reintroduzir asserções
+tautológicas como `assert status in [200, 500]` nem tokens forjados como
+credencial válida.
+"""
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
-# Importar o router
 from interface.api import router
+from interface.auth_utils import create_access_token
 
 # Criar app e registrar router
 app = FastAPI()
 app.include_router(router)
-
-# Criar cliente de teste
 client = TestClient(app)
 
 
-class TestExportCSVEndpoint:
-    """Testes para endpoint GET /api/alerts/export/csv."""
-    
-    def test_export_csv_requires_authentication(self):
-        """Teste: Endpoint CSV sem auth deve retornar 401."""
+def _auth_headers(username: str = "tester") -> dict:
+    """Header Authorization com um JWT REAL (assinado pela mesma SECRET_KEY
+    que `verify_token` usa)."""
+    token = create_access_token({"sub": username})
+    return {"Authorization": f"Bearer {token}"}
+
+
+# ============================================================================
+# Segurança: o bypass de autenticação deve estar fechado
+# ============================================================================
+
+class TestExportAuthentication:
+    """O contrato de segurança destes endpoints."""
+
+    def test_csv_sem_credencial_retorna_401(self):
         response = client.get("/api/alerts/export/csv")
         assert response.status_code == 401
-        data = response.json()
-        assert "Não autenticado" in data.get("detail", "") or response.status_code == 401
-    
-    def test_export_csv_with_bearer_token(self):
-        """Teste: Endpoint CSV com Bearer token válido."""
-        # Mock da função que busca alertas - IMPORTANTE: patch onde é usado (ferramentas.exportador)
-        with patch('ferramentas.exportador.selecionar_alertas_janela') as mock_select:
-            mock_select.return_value = [
-                {
-                    'alert_id': 1,
-                    'alert_timestamp': datetime.now().isoformat(),
-                    'alert_type': 'postura',
-                    'severity': 'high',
-                    'status': 'pending',
-                    'patient_id': 'PAC-0001',
-                    'observacao': 'Test alert',
-                }
-            ]
-            
-            response = client.get(
-                "/api/alerts/export/csv",
-                headers={"Authorization": "Bearer user@test.com:1234567890"}
-            )
-            
-            # Pode ser 200 ou erro dependendo de DB, mas não 401
-            assert response.status_code in [200, 500]
-            assert response.status_code != 401
-    
-    def test_export_csv_invalid_date_format(self):
-        """Teste: Data inválida deve retornar 400."""
-        response = client.get(
-            "/api/alerts/export/csv?start_date=invalid-date",
-            headers={"Authorization": "Bearer user@test.com:1234567890"}
-        )
-        assert response.status_code == 400
-        data = response.json()
-        assert "inválido" in data.get("detail", "").lower()
-    
-    def test_export_csv_valid_date_format(self):
-        """Teste: Data válida no formato YYYY-MM-DD."""
-        with patch('ferramentas.exportador.selecionar_alertas_janela') as mock_select:
-            mock_select.return_value = []
-            
-            response = client.get(
-                "/api/alerts/export/csv?start_date=2025-10-20&end_date=2025-10-27",
-                headers={"Authorization": "Bearer user@test.com:1234567890"}
-            )
-            
-            # Aceitar 200 ou 500 (DB error), mas não 400
-            assert response.status_code != 400
-    
-    def test_export_csv_invalid_status(self):
-        """Teste: Status inválido deve retornar 400."""
-        response = client.get(
-            "/api/alerts/export/csv?status=invalid_status",
-            headers={"Authorization": "Bearer user@test.com:1234567890"}
-        )
-        assert response.status_code == 400
-    
-    def test_export_csv_valid_statuses(self):
-        """Teste: Status válidos não devem retornar 400."""
-        with patch('ferramentas.exportador.selecionar_alertas_janela') as mock_select:
-            mock_select.return_value = []
-            
-            for status in ['pending', 'acknowledged', 'completed']:
-                response = client.get(
-                    f"/api/alerts/export/csv?status={status}",
-                    headers={"Authorization": "Bearer user@test.com:1234567890"}
-                )
-                # Não deve ser 400 (validação OK)
-                assert response.status_code != 400, f"Status '{status}' deve ser válido"
-    
-    def test_export_csv_content_type(self):
-        """Teste: Response deve ter Content-Type: text/csv."""
-        with patch('ferramentas.exportador.selecionar_alertas_janela') as mock_select:
-            mock_select.return_value = []
-            
-            response = client.get(
-                "/api/alerts/export/csv",
-                headers={"Authorization": "Bearer user@test.com:1234567890"}
-            )
-            
-            if response.status_code == 200:
-                # Allow charset suffix
-                assert "text/csv" in response.headers.get("content-type")
-    
-    def test_export_csv_has_content_disposition(self):
-        """Teste: Response deve ter header Content-Disposition."""
-        with patch('ferramentas.exportador.selecionar_alertas_janela') as mock_select:
-            mock_select.return_value = []
-            
-            response = client.get(
-                "/api/alerts/export/csv",
-                headers={"Authorization": "Bearer user@test.com:1234567890"}
-            )
-            
-            if response.status_code == 200:
-                disposition = response.headers.get("content-disposition", "")
-                assert "attachment" in disposition
-                assert ".csv" in disposition
 
-
-class TestExportPDFEndpoint:
-    """Testes para endpoint GET /api/alerts/export/pdf."""
-    
-    def test_export_pdf_requires_authentication(self):
-        """Teste: Endpoint PDF sem auth deve retornar 401."""
+    def test_pdf_sem_credencial_retorna_401(self):
         response = client.get("/api/alerts/export/pdf")
         assert response.status_code == 401
-    
-    def test_export_pdf_with_bearer_token(self):
-        """Teste: Endpoint PDF com Bearer token válido."""
-        with patch('ferramentas.exportador.selecionar_alertas_janela') as mock_select:
-            mock_select.return_value = []
-            
-            response = client.get(
-                "/api/alerts/export/pdf",
-                headers={"Authorization": "Bearer user@test.com:1234567890"}
-            )
-            
-            # Pode ser 200 ou 500, mas não 401
-            assert response.status_code in [200, 500]
-            assert response.status_code != 401
-    
-    def test_export_pdf_invalid_date_format(self):
-        """Teste: Data inválida deve retornar 400."""
-        response = client.get(
-            "/api/alerts/export/pdf?start_date=invalid",
-            headers={"Authorization": "Bearer user@test.com:1234567890"}
-        )
-        assert response.status_code == 400
-    
-    def test_export_pdf_content_type(self):
-        """Teste: Response deve ter Content-Type: application/pdf."""
-        with patch('ferramentas.exportador.selecionar_alertas_janela') as mock_select:
-            mock_select.return_value = []
-            
-            response = client.get(
-                "/api/alerts/export/pdf",
-                headers={"Authorization": "Bearer user@test.com:1234567890"}
-            )
-            
-            if response.status_code == 200:
-                assert response.headers.get("content-type") == "application/pdf"
-    
-    def test_export_pdf_has_content_disposition(self):
-        """Teste: Response deve ter header Content-Disposition."""
-        with patch('ferramentas.exportador.selecionar_alertas_janela') as mock_select:
-            mock_select.return_value = []
-            
-            response = client.get(
-                "/api/alerts/export/pdf",
-                headers={"Authorization": "Bearer user@test.com:1234567890"}
-            )
-            
-            if response.status_code == 200:
-                disposition = response.headers.get("content-disposition", "")
-                assert "attachment" in disposition
-                assert ".pdf" in disposition
 
-
-class TestExportFilterParsing:
-    """Testes para parsing de filtros nos endpoints."""
-    
-    def test_date_range_filtering(self):
-        """Teste: Date range parsing."""
-        with patch('ferramentas.exportador.selecionar_alertas_janela') as mock_select:
-            mock_select.return_value = []
-            
-            response = client.get(
-                "/api/alerts/export/csv?start_date=2025-10-20&end_date=2025-10-27",
-                headers={"Authorization": "Bearer user@test.com:1234567890"}
-            )
-            
-            # Se sucesso, verify que selecionar_alertas_janela foi chamado
-            if response.status_code == 200:
-                # Mock foi chamado
-                assert mock_select.called
-    
-    def test_patient_id_filtering(self):
-        """Teste: Patient ID é passado nos filtros."""
-        with patch('ferramentas.exportador.selecionar_alertas_janela') as mock_select:
-            mock_select.return_value = []
-            
-            response = client.get(
-                "/api/alerts/export/csv?patient_id=PAC-0001",
-                headers={"Authorization": "Bearer user@test.com:1234567890"}
-            )
-            
-            # Validação: não deve ser erro 400
-            assert response.status_code != 400
-    
-    def test_multiple_filters(self):
-        """Teste: Múltiplos filtros combinados."""
-        with patch('ferramentas.exportador.selecionar_alertas_janela') as mock_select:
-            mock_select.return_value = []
-            
-            response = client.get(
-                "/api/alerts/export/csv?start_date=2025-10-20&status=pending&patient_id=PAC-0001",
-                headers={"Authorization": "Bearer user@test.com:1234567890"}
-            )
-            
-            # Não deve ser erro de validação
-            assert response.status_code != 400
-
-
-class TestExportErrorHandling:
-    """Testes para tratamento de erros."""
-    
-    def test_invalid_limit_parameter(self):
-        """Teste: Limit inválido deve retornar 422."""
-        response = client.get(
-            "/api/alerts/export/csv?limit=invalid",
-            headers={"Authorization": "Bearer user@test.com:1234567890"}
-        )
-        # FastAPI retorna 422 para tipo inválido
-        assert response.status_code in [400, 422]
-    
-    def test_limit_out_of_range(self):
-        """Teste: Limit > 100000 deve retornar erro."""
-        response = client.get(
-            "/api/alerts/export/csv?limit=100001",
-            headers={"Authorization": "Bearer user@test.com:1234567890"}
-        )
-        assert response.status_code in [400, 422]
-    
-    def test_database_error_handling(self):
-        """Teste: Erro de BD é tratado gracefully."""
-        with patch('ferramentas.exportador.selecionar_alertas_janela') as mock_select:
-            mock_select.side_effect = Exception("Database error")
-            
-            response = client.get(
-                "/api/alerts/export/csv",
-                headers={"Authorization": "Bearer user@test.com:1234567890"}
-            )
-            
-            # Deve retornar 500, não 5xx genérico
-            assert response.status_code == 500
-            data = response.json()
-            assert "detail" in data
-
-
-class TestBearerTokenParsing:
-    """Testes para parsing de Bearer token."""
-    
-    def test_bearer_token_with_colon(self):
-        """Teste: Bearer token com formato user:timestamp."""
-        with patch('ferramentas.exportador.selecionar_alertas_janela') as mock_select:
-            mock_select.return_value = []
-            
-            response = client.get(
-                "/api/alerts/export/csv",
-                headers={"Authorization": "Bearer user@test.com:1234567890"}
-            )
-            
-            # Deve extrair username corretamente
-            assert response.status_code != 401
-    
-    def test_bearer_token_without_colon(self):
-        """Teste: Bearer token sem colon é rejeitado."""
+    def test_csv_rejeita_token_forjado_com_colon(self):
+        """Regressão do bypass: `Bearer <user>:<qualquer>` NÃO pode autenticar.
+        Antes, o código fazia `token.split(':')[0]` e confiava no prefixo sem
+        verificar assinatura — qualquer um baixava dados de paciente."""
         response = client.get(
             "/api/alerts/export/csv",
-            headers={"Authorization": "Bearer invalidtoken"}
+            headers={"Authorization": "Bearer admin:1234567890"},
         )
-        
-        # Pode ser 401 ou sucesso dependendo de implementação
-        # Mas não deve crash
-        assert response.status_code in [200, 400, 401, 500]
+        assert response.status_code == 401
+
+    def test_pdf_rejeita_token_forjado_com_colon(self):
+        response = client.get(
+            "/api/alerts/export/pdf",
+            headers={"Authorization": "Bearer admin:1234567890"},
+        )
+        assert response.status_code == 401
+
+    def test_csv_rejeita_token_arbitrario_sem_assinatura(self):
+        response = client.get(
+            "/api/alerts/export/csv",
+            headers={"Authorization": "Bearer nao-e-um-jwt-valido"},
+        )
+        assert response.status_code == 401
+
+    def test_csv_com_jwt_valido_passa_da_auth(self):
+        """JWT válido autentica e o export roda (não é 401/403)."""
+        with patch("ferramentas.exportador.selecionar_alertas_janela") as mock_select:
+            mock_select.return_value = []
+            response = client.get("/api/alerts/export/csv", headers=_auth_headers())
+        assert response.status_code == 200
+
+    def test_pdf_com_jwt_valido_passa_da_auth(self):
+        with patch("ferramentas.exportador.selecionar_alertas_janela") as mock_select:
+            mock_select.return_value = []
+            response = client.get("/api/alerts/export/pdf", headers=_auth_headers())
+        assert response.status_code == 200
 
 
-if __name__ == '__main__':
-    pytest.main([__file__, '-v'])
+# ============================================================================
+# CSV: conteúdo e cabeçalhos (sempre autenticado com JWT válido)
+# ============================================================================
+
+class TestExportCSVEndpoint:
+
+    def test_csv_content_type(self):
+        with patch("ferramentas.exportador.selecionar_alertas_janela") as mock_select:
+            mock_select.return_value = []
+            response = client.get("/api/alerts/export/csv", headers=_auth_headers())
+        assert response.status_code == 200
+        assert "text/csv" in response.headers.get("content-type", "")
+
+    def test_csv_content_disposition(self):
+        with patch("ferramentas.exportador.selecionar_alertas_janela") as mock_select:
+            mock_select.return_value = []
+            response = client.get("/api/alerts/export/csv", headers=_auth_headers())
+        assert response.status_code == 200
+        disposition = response.headers.get("content-disposition", "")
+        assert "attachment" in disposition
+        assert ".csv" in disposition
+
+    def test_csv_exporta_dados(self):
+        with patch("ferramentas.exportador.selecionar_alertas_janela") as mock_select:
+            mock_select.return_value = [
+                {
+                    "paciente_id": "PAC-0001",
+                    "inicio": datetime.now().strftime("%Y-%m-%dT%H:%M:%S"),
+                    "fim": None,
+                    "tipo": "imobilidade",
+                    "perfil": "alto",
+                    "janela_min": 60,
+                    "status": "aberto",
+                    "duracao_min": None,
+                }
+            ]
+            response = client.get("/api/alerts/export/csv", headers=_auth_headers())
+        assert response.status_code == 200
+        assert "PAC-0001" in response.text
+
+
+# ============================================================================
+# PDF: conteúdo e cabeçalhos
+# ============================================================================
+
+class TestExportPDFEndpoint:
+
+    def test_pdf_content_type(self):
+        with patch("ferramentas.exportador.selecionar_alertas_janela") as mock_select:
+            mock_select.return_value = []
+            response = client.get("/api/alerts/export/pdf", headers=_auth_headers())
+        assert response.status_code == 200
+        assert response.headers.get("content-type") == "application/pdf"
+
+    def test_pdf_content_disposition(self):
+        with patch("ferramentas.exportador.selecionar_alertas_janela") as mock_select:
+            mock_select.return_value = []
+            response = client.get("/api/alerts/export/pdf", headers=_auth_headers())
+        assert response.status_code == 200
+        disposition = response.headers.get("content-disposition", "")
+        assert "attachment" in disposition
+        assert ".pdf" in disposition
+
+
+# ============================================================================
+# Validação de filtros (autenticado)
+# ============================================================================
+
+class TestExportFilterValidation:
+
+    def test_data_invalida_retorna_400(self):
+        response = client.get(
+            "/api/alerts/export/csv?start_date=invalid-date",
+            headers=_auth_headers(),
+        )
+        assert response.status_code == 400
+        assert "inválido" in response.json().get("detail", "").lower()
+
+    def test_data_valida_nao_retorna_400(self):
+        with patch("ferramentas.exportador.selecionar_alertas_janela") as mock_select:
+            mock_select.return_value = []
+            response = client.get(
+                "/api/alerts/export/csv?start_date=2025-10-20&end_date=2025-10-27",
+                headers=_auth_headers(),
+            )
+        assert response.status_code == 200
+
+    def test_status_invalido_retorna_400(self):
+        response = client.get(
+            "/api/alerts/export/csv?status=invalid_status",
+            headers=_auth_headers(),
+        )
+        assert response.status_code == 400
+
+    def test_statuses_validos_nao_retornam_400(self):
+        with patch("ferramentas.exportador.selecionar_alertas_janela") as mock_select:
+            mock_select.return_value = []
+            for status_val in ["pending", "acknowledged", "completed"]:
+                response = client.get(
+                    f"/api/alerts/export/csv?status={status_val}",
+                    headers=_auth_headers(),
+                )
+                assert response.status_code == 200, f"Status '{status_val}' deveria ser válido"
+
+    def test_patient_id_filtra(self):
+        with patch("ferramentas.exportador.selecionar_alertas_janela") as mock_select:
+            mock_select.return_value = []
+            response = client.get(
+                "/api/alerts/export/csv?patient_id=PAC-0001",
+                headers=_auth_headers(),
+            )
+        assert response.status_code == 200
+
+    def test_limit_tipo_invalido_retorna_422(self):
+        response = client.get(
+            "/api/alerts/export/csv?limit=invalid",
+            headers=_auth_headers(),
+        )
+        assert response.status_code == 422
+
+    def test_limit_fora_do_range_retorna_422(self):
+        response = client.get(
+            "/api/alerts/export/csv?limit=100001",
+            headers=_auth_headers(),
+        )
+        assert response.status_code == 422
+
+
+# ============================================================================
+# Tratamento de erro
+# ============================================================================
+
+class TestExportErrorHandling:
+
+    def test_erro_de_banco_retorna_500(self):
+        with patch("ferramentas.exportador.selecionar_alertas_janela") as mock_select:
+            mock_select.side_effect = Exception("Database error")
+            response = client.get("/api/alerts/export/csv", headers=_auth_headers())
+        assert response.status_code == 500
+        assert "detail" in response.json()
+
+
+if __name__ == "__main__":
+    pytest.main([__file__, "-v"])
