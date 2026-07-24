@@ -406,39 +406,6 @@ async def favicon():
         return FileResponse(str(SITE_UI_DIST / "favicon.ico"))
     return Response(status_code=404)
 
-# Include routers BEFORE mounting static files to ensure API routes take precedence
-app.include_router(web_router, prefix=APP_PREFIX)
-app.include_router(api_router, prefix=APP_PREFIX)
-
-# Global health check for Docker (outside prefix)
-@app.get("/healthz")
-def global_health_check() -> Dict[str, str]:
-    return {"status": "ok"}
-
-# Serve built SPA (if present) under /TCC/ (APP_PREFIX). Support multiple possible build locations
-# (legacy `site_ui/dist`, or `frontend/build` produced by this repo's Vite config).
-_ROOT = Path(__file__).resolve().parents[1]
-_candidates = [
-    _ROOT / "site_ui" / "dist",
-    _ROOT / "frontend" / "build",
-    _ROOT / "frontend" / "dist",
-    _ROOT / "frontend",
-]
-SITE_UI_DIST = None
-for cand in _candidates:
-    # Require at least an index.html file to consider this a valid SPA dist
-    if (cand / "index.html").exists():
-        SITE_UI_DIST = cand
-        break
-
-if SITE_UI_DIST is not None:
-    try:
-        # Mount at APP_PREFIX to serve at /TCC/
-        mount_path = APP_PREFIX if APP_PREFIX else "/"
-        app.mount(mount_path, StaticFiles(directory=str(SITE_UI_DIST), html=True), name="site_ui")
-    except Exception:
-        # Do not fail if static mounting is not possible
-        SITE_UI_DIST = None
 logger = structlog.get_logger(__name__)
 
 DEFAULT_DOCS_DIR = Path(__file__).resolve().parents[1] / "paciente_docs"
@@ -637,5 +604,41 @@ async def pacientes_simulacao_panel(request: Request, paciente_id: str):
             "alertas_abertos": alertas_paciente
         }
     )
+
+# Include routers AFTER all @web_router routes are declared (include_router copies
+# the route list at call time; declaring routes after this point silently drops them)
+# and BEFORE mounting static files to ensure API routes take precedence.
+app.include_router(web_router, prefix=APP_PREFIX)
+app.include_router(api_router, prefix=APP_PREFIX)
+
+# Global health check for Docker (outside prefix)
+@app.get("/healthz")
+def global_health_check() -> Dict[str, str]:
+    return {"status": "ok"}
+
+# Serve built SPA (if present) under /TCC/ (APP_PREFIX). Support multiple possible build locations
+# (legacy `site_ui/dist`, or `frontend/build` produced by this repo's Vite config).
+_ROOT = Path(__file__).resolve().parents[1]
+_candidates = [
+    _ROOT / "site_ui" / "dist",
+    _ROOT / "frontend" / "build",
+    _ROOT / "frontend" / "dist",
+    _ROOT / "frontend",
+]
+SITE_UI_DIST = None
+for cand in _candidates:
+    # Require at least an index.html file to consider this a valid SPA dist
+    if (cand / "index.html").exists():
+        SITE_UI_DIST = cand
+        break
+
+if SITE_UI_DIST is not None:
+    try:
+        # Mount at APP_PREFIX to serve at /TCC/
+        mount_path = APP_PREFIX if APP_PREFIX else "/"
+        app.mount(mount_path, StaticFiles(directory=str(SITE_UI_DIST), html=True), name="site_ui")
+    except Exception:
+        # Do not fail if static mounting is not possible
+        SITE_UI_DIST = None
 
 # Trigger reload 3
