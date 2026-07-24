@@ -1,37 +1,38 @@
+from typing import Optional
+
 from fastapi import Request, HTTPException, status
 from interface.auth_utils import verify_token
 
-async def get_current_user(request: Request) -> str:
+
+def usuario_de_jwt(request: Request) -> Optional[str]:
+    """Extrai o usuário de um JWT válido — header `Authorization: Bearer <jwt>`
+    ou cookie `access_token`. Retorna None se não houver JWT válido.
+
+    NÃO confia no cookie `session_user` (texto puro, não assinado, forjável):
+    qualquer um poderia mandar `Cookie: session_user=admin` e ser autenticado.
+    A identidade só vem de um token assinado verificado por `verify_token`.
     """
-    Dependency to get the current authenticated user from the request.
-    Checks Authorization header (Bearer) and cookies.
-    Returns the username.
-    Raises 401 if not authenticated.
-    """
-    user = None
-    
-    # Try to get from Authorization header (Bearer token)
     auth_header = request.headers.get("Authorization", "")
     if auth_header.startswith("Bearer "):
-        token = auth_header[7:]
-        payload = verify_token(token)
+        payload = verify_token(auth_header[7:])
         if payload:
-            user = payload.get("sub")
-    
-    # Fallback to cookie (legacy or browser session)
+            return payload.get("sub")
+
+    token_cookie = request.cookies.get("access_token")
+    if token_cookie:
+        payload = verify_token(token_cookie)
+        if payload:
+            return payload.get("sub")
+
+    return None
+
+
+async def get_current_user(request: Request) -> str:
+    """Dependency FastAPI: retorna o username autenticado (via JWT) ou 401."""
+    user = usuario_de_jwt(request)
     if not user:
-        # Try access_token cookie first (JWT)
-        token_cookie = request.cookies.get("access_token")
-        if token_cookie:
-            payload = verify_token(token_cookie)
-            if payload:
-                user = payload.get("sub")
-        
-        # Fallback to session_user cookie (legacy simple string)
-        if not user:
-            user = request.cookies.get("session_user")
-    
-    if not user:
-        raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail={"code": "not_authenticated", "message": "Authentication required"})
-        
+        raise HTTPException(
+            status.HTTP_401_UNAUTHORIZED,
+            detail={"code": "not_authenticated", "message": "Authentication required"},
+        )
     return user
