@@ -7,7 +7,6 @@ services:
       - ENVIRONMENT=production
       - APP_PREFIX=/TCC
       - UPP_DB_PATH=/data/dados.db
-      - PACIENTE_DOCS_DIR=/data/paciente_docs
       - UPP_BACKUP_DIR=/data/backups
       - TZ=America/Sao_Paulo
       - JWT_SECRET_KEY=${JWT_SECRET_KEY:?defina JWT_SECRET_KEY no seu .env antes de subir}
