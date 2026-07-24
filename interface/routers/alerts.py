@@ -15,7 +15,6 @@ from interface.services.alerts_service import (
     reconhecer_alerta,
     completar_alerta,
     processar_lote,
-    extrair_usuario_request,
     parsear_data_export,
 )
 from ferramentas.exportador import ExportFilters, ExportService, generate_csv_filename, generate_pdf_filename
@@ -105,12 +104,12 @@ async def frontend_complete(alert_id: str, user: str = Depends(get_current_user)
 
 @router.get("/alerts/export/csv")
 async def export_alerts_csv(
-    request: Request,
     start_date: Optional[str] = Query(None, description="Data inicial (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="Data final (YYYY-MM-DD)"),
     status_filter: Optional[str] = Query(None, alias="status", description="Status: pending, acknowledged, completed"),
     patient_id: Optional[str] = Query(None, description="ID do paciente"),
     limit: int = Query(10000, ge=1, le=100000, description="Limite de registros"),
+    user: str = Depends(get_current_user),
 ):
     """
     Exporta alertas em formato CSV.
@@ -124,12 +123,11 @@ async def export_alerts_csv(
 
     Returns:
     - CSV file with alerts data
-    """
-    user = extrair_usuario_request(request)
-    try:
-        if not user:
-            raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Não autenticado")
 
+    Autenticação exigida via get_current_user (JWT em Bearer ou cookie
+    access_token). Exporta dados clínicos de pacientes — nunca deixar sem auth.
+    """
+    try:
         try:
             start_dt = parsear_data_export(start_date, "start_date")
             end_dt = parsear_data_export(end_date, "end_date")
@@ -167,11 +165,11 @@ async def export_alerts_csv(
 
 @router.get("/alerts/export/pdf")
 async def export_alerts_pdf(
-    request: Request,
     start_date: Optional[str] = Query(None, description="Data inicial (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="Data final (YYYY-MM-DD)"),
     status_filter: Optional[str] = Query(None, alias="status", description="Status: pending, acknowledged, completed"),
     patient_id: Optional[str] = Query(None, description="ID do paciente"),
+    user: str = Depends(get_current_user),
 ):
     """
     Exporta alertas em formato PDF.
@@ -184,12 +182,11 @@ async def export_alerts_pdf(
 
     Returns:
     - PDF file with formatted alerts report
-    """
-    user = extrair_usuario_request(request)
-    try:
-        if not user:
-            raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail="Não autenticado")
 
+    Autenticação exigida via get_current_user (JWT em Bearer ou cookie
+    access_token). Exporta dados clínicos de pacientes — nunca deixar sem auth.
+    """
+    try:
         try:
             start_dt = parsear_data_export(start_date, "start_date")
             end_dt = parsear_data_export(end_date, "end_date")
