@@ -12,7 +12,7 @@ refatoracao. Novo codigo deve importar diretamente de `interface.repositories.*`
 
 from __future__ import annotations
 
-from typing import Dict, List, Sequence
+from typing import List, Sequence
 
 from interface.db_core import (
     ISO_FORMAT,
@@ -117,25 +117,3 @@ def ensure_minimal_paciente_ficha(
     cama_id: str | None = None,
 ) -> None:
     PatientRepository(db_path).ensure_minimal_ficha(paciente_id, nome, perfil, cama_id)
-
-
-def listar_documentos(db_path: str, paciente_id: str) -> List[dict]:
-    return PatientRepository(db_path).listar_documentos(paciente_id)
-
-
-def registrar_documento(
-    db_path: str,
-    paciente_id: str,
-    nome_arquivo: str,
-    caminho: str,
-    observacao: str | None = None,
-) -> int:
-    return PatientRepository(db_path).registrar_documento(paciente_id, nome_arquivo, caminho, observacao)
-
-
-def remover_documento(db_path: str, documento_id: int) -> Dict[str, str] | None:
-    return PatientRepository(db_path).remover_documento(documento_id)
-
-
-def obter_documento(db_path: str, documento_id: int) -> dict | None:
-    return PatientRepository(db_path).obter_documento(documento_id)
