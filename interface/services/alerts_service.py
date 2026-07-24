@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta, timezone
-from typing import Any, List, Literal, Optional
+from typing import List, Literal
 
 import structlog
 
@@ -261,20 +261,6 @@ async def processar_lote(alert_ids: List[str], user: str, operacao: Literal["ack
         config["metric_single"]()
 
     return {"ok": True, "processed": processed, "failed": failed, "errors": errors}
-
-
-def extrair_usuario_request(request) -> Optional[str]:
-    """Extrai o usuário autenticado a partir do cookie de sessão ou do
-    header Authorization: Bearer <user>:<token> (usado pelos endpoints de
-    export, que aceitam ambas as formas de autenticação)."""
-    user = request.cookies.get("session_user")
-    if not user:
-        auth_header = request.headers.get("Authorization", "")
-        if auth_header.startswith("Bearer "):
-            token = auth_header[7:]
-            if ":" in token:
-                user = token.split(":")[0]
-    return user
 
 
 def parsear_data_export(valor: str | None, nome_campo: str) -> datetime | None:
