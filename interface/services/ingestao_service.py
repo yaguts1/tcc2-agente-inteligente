@@ -152,17 +152,36 @@ def _do_reconcile(device_id: str | None = None, limit: int = 100) -> dict:
             evento = normalizar_payload(payload, None)
             # register event using same logic as ingestion
             registrar_evento(evento)
-            # mark device_event row as processed (audit) using dao helper
-            try:
-                delete_device_event(DB_PATH, ev.get("id"))
-            except Exception:
-                pass
-            processed += 1
-        except Exception:
+        except Exception as exc:
+            logger.warning("reconcile_ingest_falhou", event_id=ev.get("id"), motivo=str(exc))
             skipped += 1
             continue
 
+        if _marcar_processado(ev.get("id")):
+            processed += 1
+        else:
+            skipped += 1
+
     return {"processed": processed, "skipped": skipped}
+
+
+def _marcar_processado(event_id) -> bool:
+    """Marca um device_event como processado. Retorna True se marcou.
+
+    Se falhar (exceção ou 0 linhas), o evento continua na fila e será
+    REINGERIDO no próximo ciclo de reconcile (duplicata de grade/alertas) —
+    por isso registramos o problema em vez de engolir com `except: pass`, e o
+    chamador não conta o evento como processado.
+    """
+    try:
+        marcados = delete_device_event(DB_PATH, event_id)
+    except Exception as exc:
+        logger.warning("reconcile_marca_processado_erro", event_id=event_id, motivo=str(exc))
+        return False
+    if not marcados:
+        logger.warning("reconcile_evento_nao_marcado", event_id=event_id)
+        return False
+    return True
 
 
 async def reconcile_device_events(device_id: str | None = None, limit: int = 100) -> dict:
@@ -216,17 +235,15 @@ def _do_reconcile_bed(cama_id: str, limit: int = 1000) -> dict:
             payload["device_id"] = did
             evento = normalizar_payload(payload, None)
             registrar_evento(evento)
-
-            # Delete orphan event
-            try:
-                delete_device_event(DB_PATH, ev.get("id"))
-            except Exception:
-                pass
-
-            processed += 1
-        except Exception:
+        except Exception as exc:
+            logger.warning("reconcile_bed_ingest_falhou", event_id=ev.get("id"), motivo=str(exc))
             skipped += 1
             continue
+
+        if _marcar_processado(ev.get("id")):
+            processed += 1
+        else:
+            skipped += 1
 
     return {
         "processed": processed,
