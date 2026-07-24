@@ -5,10 +5,13 @@ from datetime import datetime, timedelta, timezone
 from typing import Dict, List
 
 import pandas as pd
+import structlog
 
 from interface.db_core import connect, ensure_paciente, norm_iso
 from interface.repositories.timeline import inserir_timeline_event
 from interface.tempo import agora_utc_naive
+
+logger = structlog.get_logger(__name__)
 
 _VALID_TABLES = {"grade", "eventos", "alertas"}
 
@@ -233,7 +236,15 @@ def alterar_status_alerta(
                 ts_ms = int(base_now.replace(tzinfo=timezone.utc).timestamp() * 1000)
                 inserir_timeline_event(db_path, paciente_id, ts_iso, ts_ms, "alert_close", descricao=None, meta={"inicio": inicio})
             except Exception:
-                pass
+                # A timeline é trilha de auditoria: falha aqui não deve abortar
+                # o fechamento do alerta, mas precisa ser logada (perder o
+                # evento em silêncio deixa buracos no histórico do paciente).
+                logger.warning(
+                    "timeline_alert_close_falhou",
+                    paciente_id=paciente_id,
+                    inicio=inicio,
+                    exc_info=True,
+                )
         else:
             conn.execute(
                 """
@@ -251,5 +262,10 @@ def alterar_status_alerta(
                     ts_ms = int(base_now.replace(tzinfo=timezone.utc).timestamp() * 1000)
                     inserir_timeline_event(db_path, paciente_id, ts_iso, ts_ms, "alert_ack", descricao=None, meta={"inicio": inicio})
             except Exception:
-                pass
+                logger.warning(
+                    "timeline_alert_ack_falhou",
+                    paciente_id=paciente_id,
+                    inicio=inicio,
+                    exc_info=True,
+                )
         conn.commit()
