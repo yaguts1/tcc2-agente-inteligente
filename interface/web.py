@@ -50,7 +50,6 @@ from interface.dao import (
     atualizar_paciente,
     criar_esquema,
     criar_paciente,
-    listar_alertas_abertos,
     listar_documentos,
     listar_fichas_pacientes,
     obter_documento,
@@ -58,15 +57,19 @@ from interface.dao import (
     obter_ficha_por_cama,
     registrar_documento,
     remover_documento,
+)
+from interface.repositories.alertas import (
+    listar_alertas_abertos,
     selecionar_alertas_janela,
-    selecionar_grade_janela,
+    alterar_status_alerta,
+    inserir_alertas,
+)
+from interface.repositories.grade import selecionar_grade_janela, inserir_grade
+from interface.repositories.timeline import (
     inserir_timeline_event,
     inserir_timeline_event as _dao_inserir_timeline_event,
-    listar_device_events,
-    inserir_grade,
-    inserir_alertas,
-    alterar_status_alerta,
 )
+from interface.repositories.devices import listar_device_events
 
 from dados_simulados.gerador import (
     gerar_sessao_simulada,

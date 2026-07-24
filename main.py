@@ -22,12 +22,9 @@ from dados_simulados.gerador import (
     gerar_sessao_multi,
     gerar_sessao_simulada,
 )
-from interface.dao import (
-    criar_esquema,
-    inserir_alertas,
-    inserir_eventos,
-    inserir_grade,
-)
+from interface.db_core import criar_esquema
+from interface.repositories.alertas import inserir_alertas
+from interface.repositories.grade import inserir_eventos, inserir_grade
 from modulo_alerta.engine import processar_alertas
 
 ISO_FORMAT = "%Y-%m-%dT%H:%M:%S"
