@@ -5,13 +5,14 @@ from __future__ import annotations
 from typing import Any, Dict, List, Tuple
 
 import pandas as pd
+import structlog
 
 from nucleo.decisor import processar_alertas_lote
-from interface.dao_agenda import is_timestamp_in_suppressed_period
-from interface.dao import _connect
+from interface.dao_agenda import is_timestamp_in_suppressed_period, get_reducao_janela
 from configuracao import carregar_configuracao
 
 config = carregar_configuracao()
+logger = structlog.get_logger(__name__)
 
 
 def processar_alertas(
@@ -63,38 +64,23 @@ def processar_alertas(
                 continue
             elif modo == "reduzir":
                 # Reduce the alert's janela window
-                reducao = _get_agenda_reducao_janela(paciente_id, timestamp_str)
+                reducao = get_reducao_janela(config.db_path, paciente_id, timestamp_str)
                 if reducao > 0:
                     alerta["janela_min"] = max(5, alerta.get("janela_min", 0) - reducao)
                     alerta["modo_supressao"] = "reduzido"
             # else modo == "monitorar": keep alert as-is
-            
+
             alertas_filtrados.append(alerta)
-        except Exception:
-            # If suppression check fails, keep the alert (fail-safe)
+        except Exception as exc:
+            # Fail-safe: mantém o alerta se a checagem de agenda falhar — mas
+            # NÃO engole em silêncio (o bug da coluna `deletado` inexistente
+            # ficou escondido justamente por um except silencioso aqui).
+            logger.warning(
+                "agenda_suppression_falhou",
+                paciente_id=paciente_id,
+                inicio=alerta.get("inicio"),
+                motivo=str(exc),
+            )
             alertas_filtrados.append(alerta)
 
     return df_norm, alertas_filtrados
-
-
-def _get_agenda_reducao_janela(paciente_id: str, timestamp_str: str) -> int:
-    """Helper: Extract reduction window from agenda if available."""
-    try:
-        conn = _connect(config.db_path)
-        cursor = conn.cursor()
-        
-        # Get all active agendas with reducao_janela_min for this patient at this timestamp
-        cursor.execute("""
-            SELECT MAX(reducao_janela_min) FROM agendas_paciente 
-            WHERE paciente_id = ? 
-            AND ativo = 1 
-            AND modo = 'reduzir'
-            AND deletado = 0
-        """, (paciente_id,))
-        
-        result = cursor.fetchone()
-        conn.close()
-        
-        return result[0] if result and result[0] else 0
-    except Exception:
-        return 0

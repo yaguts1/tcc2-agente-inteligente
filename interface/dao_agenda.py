@@ -270,6 +270,25 @@ def is_timestamp_in_suppressed_period(
     return True, "monitorar"
 
 
+def get_reducao_janela(db_path: str, paciente_id: str, timestamp: Union[datetime, str]) -> int:
+    """Retorna a maior `reducao_janela_min` entre as agendas 'reduzir' ATIVAS
+    do paciente que casam com o `timestamp`. Retorna 0 se nenhuma casar.
+
+    Reusa `listar_agendas`/`_timestamp_matches_agenda` (não faz SQL cru nem
+    filtra por uma coluna `deletado` inexistente — bug anterior que deixava a
+    redução de janela 100% morta).
+    """
+    agendas = listar_agendas(db_path, paciente_id, ativo_only=True)
+    reducoes = [
+        int(a["reducao_janela_min"])
+        for a in agendas
+        if a.get("modo") == "reduzir"
+        and a.get("reducao_janela_min")
+        and _timestamp_matches_agenda(timestamp, a)
+    ]
+    return max(reducoes) if reducoes else 0
+
+
 def _timestamp_matches_agenda(timestamp: Union[datetime, str], agenda: dict) -> bool:
     """Verifica se timestamp corresponde ao horário/data da agenda."""
     
