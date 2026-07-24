@@ -137,6 +137,30 @@ class TestGerarEventosContextuais:
         assert all(e.tipo == "refeicao" for e in eventos)
         assert len(eventos) == 3  # 3 refeições por dia
     
+    def test_gerar_eventos_fim_exato_em_horario_padrao_nao_gera_evento_zero(self):
+        """Regressão: se `fim` cai exatamente num horario_padrao (ex: 12:00 do
+        almoço), o evento não deve ser criado com inicio == fim (duração
+        zero). Antes, `ts_evento > fim` deixava passar `ts_evento == fim`,
+        e `min(ts_evento + duracao, fim)` produzia ts_fim == ts_evento,
+        levantando ValueError em EventoContextual. Isso era raro em produção
+        porque dependia de `datetime.now()` coincidir com um horario_padrao
+        no minuto exato, mas causava falhas intermitentes nos testes que
+        usam `datetime.now()` (test_simulador.py, test_perfis_heterogeneos.py).
+        """
+        inicio = datetime(2025, 10, 27, 0, 0, 0)
+        fim = datetime(2025, 10, 27, 12, 0, 0)  # exatamente o horário do almoço
+
+        eventos = gerar_eventos_contextuais(
+            inicio, fim,
+            tipos_eventos={"refeicao": True, "higiene": False, "medicacao": False,
+                           "cirurgia": False, "visita": False, "avaliacao_medica": False},
+            seed=42,
+        )
+
+        # Não deve haver evento com inicio == fim da janela (duração zero)
+        assert all(e.inicio < fim for e in eventos)
+        assert all(e.duracao_min > 0 for e in eventos)
+
     def test_eventos_ordenados(self):
         """Eventos devem estar ordenados por tempo."""
         inicio = datetime(2025, 10, 27, 0, 0, 0)
