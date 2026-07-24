@@ -1,5 +1,6 @@
 // ESP32 NDJSON replayer sketch
 #include "esp32_replay.h"
+#include "config.h"  // credenciais WiFi/servidor (git-ignored; ver config.example.h)
 
 #include <WiFi.h>
 #include <HTTPClient.h>
@@ -14,8 +15,8 @@ namespace {
 // Default configuration (edit before flashing)
 ReplayConfig g_config{
     .arquivoEventos       = "/eventos.jsonl",
-    .hostServidor         = "http://192.168.0.67",
-    .portaServidor        = 8000,
+    .hostServidor         = "http://" SERVER_IP,
+    .portaServidor        = SERVER_PORT,
     .endpoint             = "/api/eventos",
     .delayEntrePacotesMs  = 500,
     .respeitarTimestamp   = false,
@@ -24,8 +25,8 @@ ReplayConfig g_config{
     .backoffMaxMs         = 60000,
     .backoffWithJitter    = true,
     .usarSd               = false,
-    .ssid                 = "ZECA PAGODINHO",
-    .senha                = "32235496",
+    .ssid                 = WIFI_SSID,
+    .senha                = WIFI_SENHA,
     .deviceId             = "DEV-001",
     .pacienteId           = "",
     .camaId               = "C-01",
