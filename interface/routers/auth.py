@@ -39,9 +39,11 @@ async def api_login(request: Request, _: None = Depends(_check_auth_rate_limit))
         if not ok:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail={"code": "invalid_credentials", "message": "Usuario ou senha invalidos"})
     else:
-        # fallback to legacy env var password for quick dev (keeps backward compatibility)
-        admin_pass = os.getenv("UPP_ADMIN_PASS", "admin")
-        if password != admin_pass:
+        # fallback to legacy env var password for quick dev (keeps backward compatibility).
+        # No default: if UPP_ADMIN_PASS isn't set, this login path is simply unavailable
+        # (a hardcoded default here would be a login bypass with a known password).
+        admin_pass = os.getenv("UPP_ADMIN_PASS")
+        if not admin_pass or password != admin_pass:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail={"code": "invalid_credentials", "message": "Usuario ou senha invalidos"})
 
     # Generate JWT token
