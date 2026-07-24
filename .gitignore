@@ -14,8 +14,11 @@ dist/
 downloads/
 eggs/
 .eggs/
-lib/
-lib64/
+# Ancorado na raiz: sem a barra inicial, `lib/` casaria também
+# `frontend/src/lib/` (código-fonte da SPA). Estes são artefatos de venv Python
+# na raiz do repo.
+/lib/
+/lib64/
 parts/
 sdist/
 var/
