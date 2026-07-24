@@ -91,6 +91,19 @@ docker compose up -d --build
 
 O volume `app_data` (banco, uploads, backups) persiste através de rebuilds — não é apagado por `up --build`. Só `docker compose down -v` remove volumes, e isso normalmente não deve ser rodado em produção.
 
+## Migrations de banco
+
+O schema é versionado (tabela `schema_version` + arquivos numerados em `migrations/`, ver `migrations/runner.py`). **As migrations pendentes rodam automaticamente no startup da aplicação** (`interface/web.py` chama `criar_esquema()` no lifespan), então na maioria dos casos não é preciso rodar nada manualmente — só dar `docker compose up -d --build` já aplica qualquer migration nova.
+
+Para checar o estado ou aplicar manualmente (ex: antes de trocar de versão em produção):
+
+```bash
+docker compose exec app python -m migrations status
+docker compose exec app python -m migrations upgrade
+```
+
+Para adicionar uma migration nova no futuro: criar `migrations/000N_descricao.sql` com o SQL da mudança (ex: `ALTER TABLE ...`) — o runner detecta e aplica automaticamente na próxima vez que `criar_esquema()`/`upgrade()` rodar, em ordem, sem re-aplicar as já aplicadas.
+
 ## Backup e restauração
 
 Backup automático já roda dentro do app (task periódica, ver `BACKUP_INTERVAL_HOURS` em `.env.example`, default 24h), salvando em `UPP_BACKUP_DIR` dentro do volume. Endpoints manuais também existem:
