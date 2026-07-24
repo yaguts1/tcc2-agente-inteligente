@@ -209,10 +209,16 @@ __marimo__/
 # Production build and database
 tcc.db
 tcc.db.*
+dados.db
+dados.db.*
 frontend/build/
 frontend/dist/
 verify_production.py
 check_db.py
+
+# Node.js (frontend)
+frontend/node_modules/
+node_modules/
 
 # Cleanup and temporary files
 cleanup_backup/
