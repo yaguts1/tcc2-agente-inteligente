@@ -23,10 +23,12 @@ async def api_client(tmp_path, monkeypatch):
 
     import interface.web as web_module
     import interface.api_shared as api_shared
+    import interface.services.ingestao_service as ingestao_service
     import interface.routers.ingestao as ingestao_router
     from interface import api as api_module
 
     reload(api_shared)
+    reload(ingestao_service)
     reload(ingestao_router)
     reload(api_module)
     reload(web_module)
