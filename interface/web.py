@@ -18,7 +18,7 @@ import random
 import string
 
 import structlog
-from fastapi import APIRouter, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile, status
+from fastapi import APIRouter, Depends, FastAPI, File, Form, HTTPException, Query, Request, Response, UploadFile, status
 from fastapi.responses import FileResponse, HTMLResponse, RedirectResponse
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from contextlib import asynccontextmanager
@@ -29,6 +29,7 @@ from fastapi.templating import Jinja2Templates
 
 from interface.api import router as api_router
 from interface.endpoints_agenda import router as agenda_router
+from interface.dependencies import get_current_user
 import asyncio
 
 from interface.servicos_view import (
@@ -296,7 +297,9 @@ async def pacientes_upload_documento(
         return Response(f"Erro no upload: {str(e)}", status_code=500)
 
 @web_router.get("/pacientes/documentos/{documento_id}/download")
-async def pacientes_download_documento(documento_id: int):
+async def pacientes_download_documento(documento_id: int, user: str = Depends(get_current_user)):
+    # Auth obrigatória: documento de paciente é dado clínico e o ID é
+    # inteiro enumerável — sem auth, qualquer um itera IDs e baixa PDFs.
     return paciente_documento_download(documento_id)
 
 @web_router.delete("/pacientes/documentos/{documento_id}")
