@@ -25,6 +25,7 @@ async def api_client(tmp_path, monkeypatch):
     import interface.routers.auth as auth
     import interface.routers.pacientes as pacientes
     import interface.routers.devices as devices
+    import interface.services.alerts_service as alerts_service
     import interface.routers.alerts as alerts
     import interface.routers.dashboard as dashboard
     import interface.services.ingestao_service as ingestao_service
@@ -38,6 +39,7 @@ async def api_client(tmp_path, monkeypatch):
     reload(auth)
     reload(pacientes)
     reload(devices)
+    reload(alerts_service)
     reload(alerts)
     reload(dashboard)
     reload(ingestao_service)
