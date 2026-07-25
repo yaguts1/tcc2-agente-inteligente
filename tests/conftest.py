@@ -110,12 +110,28 @@ def app_isolado(tmp_path, monkeypatch):
 
 
 @pytest.fixture
-def cabecalho_auth():
+def cabecalho_auth(app_isolado):
     """Header Authorization com um JWT REAL, assinado pela mesma SECRET_KEY que
-    `verify_token` usa. Nunca usar token forjado como credencial em teste."""
-    from interface.auth_utils import create_access_token
+    `verify_token` usa. Nunca usar token forjado como credencial em teste.
 
-    def _fabricar(username: str = "tester") -> dict:
-        return {"Authorization": f"Bearer {create_access_token({'sub': username})}"}
+    Cria tambem a linha em `users`. Nao e detalhe de conveniencia: a validacao
+    de sessao recusa token cujo `sub` nao existe no banco — senao um usuario
+    REMOVIDO continuaria autenticado ate o token expirar. Um token sintetico
+    sem usuario correspondente nao representa nenhuma sessao real, entao os
+    testes que o usavam estavam exercitando um caminho que nao existe mais.
+    """
+    from interface.auth_utils import create_access_token
+    from interface.repositories.users import UserRepository
+
+    repo = UserRepository(app_isolado.db_path)
+
+    def _fabricar(username: str = "tester", role: str = "admin") -> dict:
+        try:
+            repo.create(username, "hash-de-teste", role=role)
+        except ValueError:
+            pass  # ja existe
+        return {
+            "Authorization": f"Bearer {create_access_token({'sub': username, 'role': role})}"
+        }
 
     return _fabricar

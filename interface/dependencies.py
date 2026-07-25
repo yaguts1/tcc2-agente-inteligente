@@ -95,9 +95,19 @@ def sessao_valida(payload: dict) -> bool:
 
         conta = estado_da_conta(DB_PATH, username)
         if conta is None:
-            # Usuário não existe no banco. Pode ser o login de fallback por
-            # variável de ambiente (dev/bancada), que não cria linha em users.
-            return True
+            # Não há linha em `users` para este `sub`. Só existe um caso
+            # legítimo: o login de fallback por variável de ambiente, que não
+            # cria usuário — e que já é restrito ao admin configurado e a
+            # ambientes fora de produção.
+            #
+            # Aceitar qualquer `sub` sem linha seria pior do que parece: um
+            # usuário REMOVIDO do banco continuaria autenticado até o token
+            # expirar, exatamente o oposto do que remover a conta significa.
+            from interface.auth_utils import em_producao
+
+            if em_producao():
+                return False
+            return username == os.getenv("UPP_ADMIN_USER", "admin")
         if not conta["ativo"]:
             return False
 

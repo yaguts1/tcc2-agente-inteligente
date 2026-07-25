@@ -102,6 +102,25 @@ def test_conta_desativada_nao_consegue_logar(conta):
     assert r.json()["detail"]["code"] == "conta_desativada"
 
 
+def test_usuario_removido_perde_a_sessao(conta):
+    """Apagar a conta tem de encerrar o acesso.
+
+    A validacao aceitava qualquer `sub` sem linha em `users`, para acomodar o
+    login de fallback por variavel de ambiente. O efeito colateral era que um
+    usuario REMOVIDO seguia autenticado ate o token expirar — o oposto do que
+    remover a conta significa.
+    """
+    c = conta["client"]
+    sessao = _logar(conta)
+    assert c.get("/api/stats", headers=sessao).status_code == 200
+
+    with sqlite3.connect(conta["db"]) as cx:
+        cx.execute("DELETE FROM users WHERE username = 'ana'")
+
+    c.cookies.clear()
+    assert c.get("/api/stats", headers=sessao).status_code == 401
+
+
 def test_limpeza_remove_apenas_revogacoes_expiradas(conta):
     """A denylist nao pode crescer para sempre: depois que o token expira por
     conta propria, a linha nao serve mais para nada."""
