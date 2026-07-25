@@ -4,14 +4,16 @@ import asyncio
 import os
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from interface.dependencies import get_current_user
+from interface.dependencies import exigir_papel
 
 from servicos.backup import BackupService
 from interface.api_shared import DB_PATH, erro_interno
 
 # Endpoints administrativos de backup. Estavam totalmente abertos: um
 # POST /admin/backup/cleanup?keep_days=0 anonimo apagava todos os backups.
-router = APIRouter(tags=["backup"], dependencies=[Depends(get_current_user)])
+# Depois passaram a exigir sessao — mas qualquer conta servia. Backup e
+# operacao de administracao da instalacao, nao de uso clinico.
+router = APIRouter(tags=["backup"], dependencies=[Depends(exigir_papel("admin"))])
 
 # Backup endpoints. O diretório de backup precisa estar dentro do volume
 # persistente do Docker (ver docker-compose.yml) — um default relativo

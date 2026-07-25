@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useSimulation } from '../../hooks/useSimulation';
 import { SimulationRequest } from '../../lib/api';
+import { getStoredUser } from '../../lib/storage';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -23,6 +24,15 @@ export function SimulationPanel({ patientId, onSuccess }: SimulationPanelProps) 
     seed: 42,
     perfil: 'medio',
   });
+
+  // A simulação grava eventos, grade e alertas SINTÉTICOS no mesmo banco dos
+  // dados reais, então o backend a restringe ao papel `admin`. Sem esta
+  // checagem o painel apareceria para todo mundo e só falharia com 403 depois
+  // que o usuário preenchesse o formulário e clicasse.
+  const usuario = getStoredUser();
+  if (usuario?.role !== 'admin') {
+    return null;
+  }
 
   const handleSimulate = async (e: React.FormEvent) => {
     e.preventDefault();
