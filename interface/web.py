@@ -27,6 +27,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from interface.api import router as api_router
 from interface.auth_utils import em_producao
 from interface.db_core import criar_esquema
+from interface.middleware_auditoria import AuditoriaMiddleware
 from interface.dependencies import token_dispositivo_configurado
 from interface.lifespan_tasks import (
     start_reconciler_task,
@@ -123,8 +124,14 @@ async def _lifespan(app: FastAPI):
 app = FastAPI(title="Monitor de Alertas UPP", lifespan=_lifespan)
 web_router = APIRouter()
 
+app.state.app_prefix = APP_PREFIX
+
 app.add_middleware(PrometheusMiddleware)
 app.add_middleware(SecurityHeadersMiddleware)
+# Trilha de auditoria de acesso a dado clinico (LGPD). Registra QUEM acessou
+# dado de QUAL paciente, quando e de onde — inclusive leituras e tentativas
+# negadas. Ver interface/middleware_auditoria.py.
+app.add_middleware(AuditoriaMiddleware)
 
 # CORS: as portas de dev local vêm por padrão; domínios de produção entram via
 # ALLOWED_ORIGINS (separados por vírgula), sem precisar editar código.

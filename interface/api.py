@@ -32,7 +32,7 @@ from interface.api_shared import (
 )
 
 # Import routers
-from interface.routers import usuarios
+from interface.routers import auditoria, usuarios
 from interface.routers import (
     auth,
     pacientes,
@@ -70,6 +70,7 @@ router.include_router(admin.router)
 # ao tentar trocar a propria senha. Mesmo problema que /agenda/check ja teve.
 router.include_router(usuarios.router_proprio)
 router.include_router(usuarios.router)
+router.include_router(auditoria.router)
 router.include_router(endpoints_agenda.router)
 
 # Test helpers (Facade)

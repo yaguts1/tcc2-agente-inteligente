@@ -12,6 +12,7 @@ registre-o nesta tabela.**
 | [COMO_USAR_ADMIN.md](COMO_USAR_ADMIN.md) | Uso da página de administração |
 | [GUIA_DEMONSTRACAO.md](GUIA_DEMONSTRACAO.md) | Roteiro de demonstração do sistema |
 | [esp32_spiffs_upload.md](esp32_spiffs_upload.md) | Gravação de arquivos no SPIFFS do ESP32 |
+| [AUDITORIA_LGPD.md](AUDITORIA_LGPD.md) | Trilha de auditoria: o que é registrado e como consultar |
 
 Na raiz do repositório: [`README.md`](../README.md),
 [`ARQUITETURA_DIAGRAMA.md`](../ARQUITETURA_DIAGRAMA.md),
