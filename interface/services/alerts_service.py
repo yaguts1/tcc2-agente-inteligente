@@ -128,6 +128,39 @@ async def listar_alertas_frontend(
     return paginated_results
 
 
+def _montar_payload_broadcast(alert_id: str, paciente_id: str, ws_status: str) -> dict:
+    """Monta a mensagem publicada no WS de alertas.
+
+    Precisa carregar `severity`, `patient_id` e `alert_type` porque é contra
+    esses campos que WebSocketFilter.matches() filtra (ws_manager_optimized.py).
+    O payload só tinha type/alert_id/status/timestamp, então qualquer cliente
+    conectado com ?severity=... ou ?patient_id=... nunca recebia nada.
+    """
+    severity = None
+    alert_type = None
+    try:
+        _, inicio = alert_id.split("__", 1)
+        for a in selecionar_alertas_janela(DB_PATH, horas=None):
+            if a.get("paciente_id") == paciente_id and a.get("inicio") == inicio:
+                severity = _RISK_MAP.get(str(a.get("perfil") or "").lower())
+                alert_type = a.get("tipo")
+                break
+    except Exception:
+        # Sem os metadados o cliente sem filtro ainda recebe a atualização;
+        # não vale derrubar a operação por causa do enriquecimento.
+        logger.warning("broadcast_metadata_falhou", alert_id=alert_id, exc_info=True)
+
+    return {
+        "type": "alert_update",
+        "alert_id": alert_id,
+        "status": ws_status,
+        "patient_id": paciente_id,
+        "severity": severity,
+        "alert_type": alert_type,
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
 async def _aplicar_operacao(alert_id: str, user: str, operacao: Literal["acknowledge", "complete"]) -> None:
     """Aplica reconhecer/completar a um único alerta: atualiza status,
     registra timeline, faz broadcast via WS e invalida o cache."""
@@ -165,12 +198,9 @@ async def _aplicar_operacao(alert_id: str, user: str, operacao: Literal["acknowl
             error=str(exc),
         )
 
-    await ws_manager_optimized.broadcast({
-        "type": "alert_update",
-        "alert_id": alert_id,
-        "status": config["ws_status"],
-        "timestamp": datetime.now(timezone.utc).isoformat(),
-    })
+    await ws_manager_optimized.broadcast(
+        _montar_payload_broadcast(alert_id, paciente_id, config["ws_status"])
+    )
     await api_cache.clear()
 
 
@@ -215,12 +245,10 @@ async def processar_lote(alert_ids: List[str], user: str, operacao: Literal["ack
                 logger.warning(f"batch_{operacao}_timeline_failed", alert_id=alert_id, error=str(timeline_err))
 
             try:
-                task = asyncio.create_task(ws_manager_optimized.broadcast({
-                    "type": "alert_update",
-                    "alert_id": alert_id,
-                    "status": config["ws_status"],
-                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                }))
+                payload = await asyncio.to_thread(
+                    _montar_payload_broadcast, alert_id, paciente_id, config["ws_status"]
+                )
+                task = asyncio.create_task(ws_manager_optimized.broadcast(payload))
                 broadcast_tasks.append(task)
             except Exception as ws_err:
                 logger.warning(f"batch_{operacao}_broadcast_queued_failed", error=str(ws_err))
