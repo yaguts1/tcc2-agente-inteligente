@@ -6,7 +6,7 @@ from typing import AsyncIterator
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile, status
 
-from interface.api_shared import DB_PATH
+from interface.api_shared import DB_PATH, erro_interno
 from interface.dao import inserir_alertas, ensure_minimal_paciente_ficha
 from interface.dependencies import usuario_de_jwt
 
@@ -100,4 +100,4 @@ async def api_admin_import_alerts(
     except ValueError as e:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={"code": "invalid_data", "message": str(e)})
     except Exception as e:
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={"code": "import_failed", "message": str(e)})
+        raise erro_interno("import_failed", e) from e

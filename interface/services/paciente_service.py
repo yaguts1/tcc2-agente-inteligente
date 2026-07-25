@@ -5,6 +5,18 @@ from typing import List, Optional, Dict
 from interface.repositories.pacientes import PatientRepository
 from interface.schemas import FrontendCreatePatient
 
+# Vocabulário do frontend (en) e do banco (pt) para o perfil de risco. A
+# validação de quais valores são aceitos fica no schema, que rejeita na borda.
+_RISK_PARA_PERFIL = {
+    "high": "alto",
+    "medium": "medio",
+    "low": "baixo",
+    "alto": "alto",
+    "medio": "medio",
+    "baixo": "baixo",
+}
+
+
 class PatientService:
     def __init__(self, repository: PatientRepository):
         self.repository = repository
@@ -62,16 +74,10 @@ class PatientService:
         return self._transform_patient(ficha)
 
     def create_patient(self, payload: FrontendCreatePatient) -> dict:
-        # Map riskLevel to perfil
-        risk_map = {
-            "high": "alto",
-            "medium": "medio",
-            "low": "baixo",
-            "alto": "alto",
-            "medio": "medio",
-            "baixo": "baixo"
-        }
-        perfil = risk_map.get(payload.riskLevel.lower(), "medio")
+        # riskLevel ja vem validado pelo schema (FrontendCreatePatient), entao
+        # aqui nao ha default silencioso: um valor fora do mapa e um bug, nao
+        # um paciente rebaixado para risco medio sem aviso.
+        perfil = _RISK_PARA_PERFIL[payload.riskLevel.lower()]
 
         # Construct cama_id
         cama_id = None
@@ -92,16 +98,10 @@ class PatientService:
         return self._transform_patient(novo_paciente)
 
     def update_patient(self, paciente_id: str, payload: FrontendCreatePatient) -> dict:
-        # Map riskLevel to perfil
-        risk_map = {
-            "high": "alto",
-            "medium": "medio",
-            "low": "baixo",
-            "alto": "alto",
-            "medio": "medio",
-            "baixo": "baixo"
-        }
-        perfil = risk_map.get(payload.riskLevel.lower(), "medio")
+        # riskLevel ja vem validado pelo schema (FrontendCreatePatient), entao
+        # aqui nao ha default silencioso: um valor fora do mapa e um bug, nao
+        # um paciente rebaixado para risco medio sem aviso.
+        perfil = _RISK_PARA_PERFIL[payload.riskLevel.lower()]
 
         # Construct cama_id
         cama_id = None

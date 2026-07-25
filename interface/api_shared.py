@@ -21,6 +21,31 @@ DEFAULT_PERFIL = "medio"
 APP_VERSION = "1.0.0"
 APP_START_TIME = time.time()
 
+def erro_interno(code: str, exc: Exception, **contexto: Any) -> HTTPException:
+    """Erro 500 sem vazar o detalhe da exceção para o cliente.
+
+    Devolver `str(exc)` no corpo da resposta entrega ao navegador texto cru de
+    SQLite e do Python: caminho do banco, nomes de tabelas e colunas, trechos
+    de SQL, tipos de exceção. Num sistema com dados clínicos isso é divulgação
+    de informação e ainda serve de mapa para quem estiver sondando a API.
+
+    O detalhe vai para o log (com stack trace) e o cliente recebe apenas o
+    `code`, que é estável e serve para o frontend decidir o que exibir.
+
+    Use apenas para falhas inesperadas. Erros de validação do próprio domínio
+    (ValueError/LookupError, que viram 400/404) têm mensagem escrita por nós e
+    devem continuar chegando ao usuário — é o que explica o que ele fez errado.
+    """
+    logger.exception(code, erro=str(exc), **contexto)
+    return HTTPException(
+        status.HTTP_500_INTERNAL_SERVER_ERROR,
+        detail={
+            "code": code,
+            "message": "Erro interno ao processar a requisição.",
+        },
+    )
+
+
 def _redes_confiaveis() -> list[ipaddress.IPv4Network | ipaddress.IPv6Network]:
     """Redes de onde um X-Forwarded-For pode ser acreditado.
 

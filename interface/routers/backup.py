@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from interface.dependencies import get_current_user
 
 from servicos.backup import BackupService
-from interface.api_shared import DB_PATH
+from interface.api_shared import DB_PATH, erro_interno
 
 # Endpoints administrativos de backup. Estavam totalmente abertos: um
 # POST /admin/backup/cleanup?keep_days=0 anonimo apagava todos os backups.
@@ -27,10 +27,7 @@ async def create_backup() -> dict:
         backup_path = await asyncio.to_thread(backup_service.create_backup)
         return {"ok": True, "backup_path": backup_path}
     except Exception as e:
-        raise HTTPException(
-            status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"code": "backup_failed", "message": str(e)}
-        )
+        raise erro_interno("backup_failed", e) from e
 
 
 @router.get("/admin/backup/list", status_code=status.HTTP_200_OK)
@@ -47,7 +44,4 @@ async def cleanup_backups(keep_days: int = 7) -> dict:
         removed = await asyncio.to_thread(backup_service.cleanup_old_backups, keep_days)
         return {"ok": True, "removed_count": removed}
     except Exception as e:
-        raise HTTPException(
-            status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"code": "cleanup_failed", "message": str(e)}
-        )
+        raise erro_interno("cleanup_failed", e, keep_days=keep_days) from e

@@ -174,7 +174,7 @@ def api_register(request: Request, req: RegisterRequest, _: None = Depends(_chec
         password_hash = bcrypt.hash(password)
     except Exception as exc:
         structlog.get_logger(__name__).exception("hash_error", erro=str(exc))
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={"code": "hash_error", "message": str(exc)})
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={"code": "hash_error", "message": "Erro interno ao processar a requisicao."})
 
     try:
         structlog.get_logger(__name__).info("register_attempt", username=username)
@@ -184,7 +184,7 @@ def api_register(request: Request, req: RegisterRequest, _: None = Depends(_chec
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={"code": "user_exists", "message": str(exc)})
     except Exception as exc:
         structlog.get_logger(__name__).exception("register_db_error", username=username, erro=str(exc))
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={"code": "db_error", "message": str(exc)})
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={"code": "db_error", "message": "Erro interno ao processar a requisicao."})
 
     # auto-login after register: set cookie
     
