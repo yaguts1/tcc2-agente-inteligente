@@ -40,6 +40,38 @@ router = APIRouter(tags=["agenda"], dependencies=[Depends(get_current_user)])
 # Models Pydantic
 # ============================================================================
 
+_TIPOS = ("refeicao", "cirurgia", "procedimento", "atendimento", "outro")
+_MODOS = ("suprimir", "reduzir", "monitorar")
+
+
+def _validar_hora(v: Optional[str]) -> Optional[str]:
+    """Exige HH:MM.
+
+    O casamento da agenda faz `strptime(hora, "%H:%M")`. Um valor fora desse
+    formato virava exceção lá no fundo do motor, onde o `except` de fail-safe
+    apenas registra um warning e mantém o alerta: a agenda ficava cadastrada,
+    visível na tela e sem efeito nenhum. Falhar aqui, no cadastro, é a única
+    forma de quem digitou ficar sabendo.
+    """
+    if v is None:
+        return v
+    try:
+        datetime.strptime(v.strip(), "%H:%M")
+    except (ValueError, AttributeError):
+        raise ValueError(f"hora deve estar no formato HH:MM (recebido: {v!r})")
+    return v.strip()
+
+
+def _validar_dias(v: Optional[list[int]]) -> Optional[list[int]]:
+    """0=segunda .. 6=domingo, como `date.weekday()`."""
+    if v is None:
+        return v
+    fora = [d for d in v if not 0 <= d <= 6]
+    if fora:
+        raise ValueError(f"dias_semana aceita 0-6 (Seg-Dom); invalidos: {fora}")
+    return v
+
+
 class AgendaCreate(BaseModel):
     """Criação de agenda."""
     tipo: str = Field(..., min_length=1, max_length=50)
@@ -55,22 +87,29 @@ class AgendaCreate(BaseModel):
     @field_validator("tipo")
     @classmethod
     def validate_tipo(cls, v):
-        allowed = ("refeicao", "cirurgia", "procedimento", "atendimento", "outro")
-        if v not in allowed:
-            raise ValueError(f"tipo deve ser um de: {allowed}")
+        if v not in _TIPOS:
+            raise ValueError(f"tipo deve ser um de: {_TIPOS}")
         return v
-    
+
     @field_validator("modo")
     @classmethod
     def validate_modo(cls, v):
-        allowed = ("suprimir", "reduzir", "monitorar")
-        if v not in allowed:
-            raise ValueError(f"modo deve ser um de: {allowed}")
+        if v not in _MODOS:
+            raise ValueError(f"modo deve ser um de: {_MODOS}")
         return v
+
+    _horas = field_validator("hora_inicio", "hora_fim")(_validar_hora)
+    _dias = field_validator("dias_semana")(_validar_dias)
 
 
 class AgendaUpdate(BaseModel):
-    """Atualização de agenda (campos opcionais)."""
+    """Atualização de agenda (campos opcionais).
+
+    Os mesmos validadores do cadastro: sem eles dava para criar uma agenda
+    valida e depois deixa-la inerte por um PATCH — `modo="supprimir"` (com o
+    erro de digitacao) e aceito, nao casa com nenhum modo conhecido e a
+    supressao simplesmente para de acontecer, sem erro em lugar nenhum.
+    """
     tipo: Optional[str] = None
     descricao: Optional[str] = None
     dias_semana: Optional[list[int]] = None
@@ -81,6 +120,23 @@ class AgendaUpdate(BaseModel):
     modo: Optional[str] = None
     reducao_janela_min: Optional[int] = None
     ativo: Optional[bool] = None
+
+    @field_validator("tipo")
+    @classmethod
+    def validate_tipo(cls, v):
+        if v is not None and v not in _TIPOS:
+            raise ValueError(f"tipo deve ser um de: {_TIPOS}")
+        return v
+
+    @field_validator("modo")
+    @classmethod
+    def validate_modo(cls, v):
+        if v is not None and v not in _MODOS:
+            raise ValueError(f"modo deve ser um de: {_MODOS}")
+        return v
+
+    _horas = field_validator("hora_inicio", "hora_fim")(_validar_hora)
+    _dias = field_validator("dias_semana")(_validar_dias)
 
 
 class AgendaResponse(BaseModel):
