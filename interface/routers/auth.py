@@ -11,7 +11,7 @@ from interface.repositories.users import UserRepository
 from interface.api_shared import _check_auth_rate_limit, DB_PATH
 from interface.schemas import RegisterRequest
 from interface.auth_utils import ACCESS_TOKEN_EXPIRE_SECONDS, create_access_token, em_producao
-from interface.dependencies import get_current_user
+from interface.dependencies import get_current_user, usuario_de_jwt
 
 router = APIRouter(tags=["auth"])
 user_repo = UserRepository(DB_PATH)
@@ -53,6 +53,45 @@ def _definir_cookie_sessao(response: Response, request: Request, token: str) -> 
         httponly=True,
         samesite="lax",
         secure=_requisicao_e_https(request),
+    )
+
+
+def _autorizar_cadastro(request: Request) -> None:
+    """Controla quem pode criar contas.
+
+    O cadastro era totalmente aberto: qualquer um criava uma conta num sistema
+    clinico e, com as rotas agora autenticadas, isso simplesmente contornaria a
+    autenticacao inteira — bastava se registrar para ver todos os pacientes.
+
+    Regras, na ordem:
+    1. Se ainda NAO existe nenhum usuario, libera — e o bootstrap da instalacao
+       (alguem precisa criar a primeira conta).
+    2. Caso contrario, aceita quem ja tem sessao valida (um profissional
+       cadastrando um colega) ou quem apresenta UPP_REGISTER_TOKEN.
+    """
+    try:
+        ja_existe_usuario = user_repo.count() > 0
+    except Exception:
+        # Se nao da para saber, assume o caminho restritivo.
+        ja_existe_usuario = True
+
+    if not ja_existe_usuario:
+        return
+
+    if usuario_de_jwt(request):
+        return
+
+    token_convite = os.getenv("UPP_REGISTER_TOKEN")
+    apresentado = request.headers.get("X-Register-Token", "")
+    if token_convite and apresentado and secrets.compare_digest(apresentado, token_convite):
+        return
+
+    raise HTTPException(
+        status.HTTP_403_FORBIDDEN,
+        detail={
+            "code": "cadastro_restrito",
+            "message": "Cadastro requer sessao ativa ou token de convite.",
+        },
     )
 
 
@@ -121,6 +160,8 @@ async def api_register(request: Request, req: RegisterRequest, _: None = Depends
     display = None if req.display_name is None else str(req.display_name).strip() or None
     if not username or not password:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={"code": "invalid_request", "message": "username e password necessarios"})
+
+    _autorizar_cadastro(request)
 
     # hash password
     try:
