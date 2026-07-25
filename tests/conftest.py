@@ -54,6 +54,7 @@ _MODULOS_EM_ORDEM = (
     "interface.routers.backup",
     "interface.routers.admin",
     "interface.routers.usuarios",
+    "interface.routers.auditoria",
     "interface.endpoints_agenda",
     "interface.api",
     "interface.web",
