@@ -854,9 +854,10 @@ Write-Host "✓ Alertas no banco: $dados" -ForegroundColor Green
 ## 10. Recursos Adicionais
 
 ### Documentação Técnica
-- `docs/JORNADA_INFORMACAO_ESP32.md` - Fluxo de dados completo
-- `docs/ESTRATEGIA_TESTES_COMPLETA.md` - Estratégia de testes
+- `JORNADA_INFORMACAO_ESP32.md` - Fluxo de dados completo
 - `docs/ARQUITETURA_ESP32_LEITO_PACIENTE.md` - Arquitetura do sistema
+- `tests/` - Suíte automatizada (roda no CI); `scripts_demo/README.md` cobre as
+  verificações manuais
 
 ### Apresentações
 - Slides (preparar em PowerPoint/Google Slides)

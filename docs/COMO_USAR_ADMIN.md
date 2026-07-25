@@ -243,7 +243,7 @@ WHERE processed_at < datetime('now', '-30 days');
 
 ## 📞 Ajuda Adicional
 
-- **Documentação Completa**: [JORNADA_INFORMACAO_ESP32.md](./JORNADA_INFORMACAO_ESP32.md)
+- **Documentação Completa**: [JORNADA_INFORMACAO_ESP32.md](../JORNADA_INFORMACAO_ESP32.md)
 - **Testes**: Execute `python scripts_demo/testar_admin_adequado.py` para validar reconciliação
 - **Logs**: Verifique terminal do servidor para detalhes de erros
 
