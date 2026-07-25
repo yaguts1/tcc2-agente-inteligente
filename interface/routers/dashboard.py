@@ -25,7 +25,7 @@ router = APIRouter(tags=["dashboard"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("/health", status_code=status.HTTP_200_OK)
-async def health_check() -> dict:
+def health_check() -> dict:
     """
     Comprehensive health check endpoint.
     Returns service status, database connectivity, WebSocket connections, version, and uptime.
@@ -72,7 +72,7 @@ async def health_check() -> dict:
 
 
 @router.get("/stats", status_code=status.HTTP_200_OK)
-async def get_stats() -> dict:
+def get_stats() -> dict:
     """Retorna estatísticas do dashboard para o frontend.
     
     ✅ CORRIGIDO: Usa janela temporal CONSISTENTE de 24h para todas as métricas
@@ -129,7 +129,7 @@ async def get_stats() -> dict:
 
 
 @router.get("/validate-repositioning/{paciente_id}", status_code=status.HTTP_200_OK)
-async def validate_repositioning_contract(paciente_id: str) -> dict:
+def validate_repositioning_contract(paciente_id: str) -> dict:
     """Valida o contrato Backend/Frontend para repouso.
     
     Valida:
@@ -225,7 +225,7 @@ async def validate_repositioning_contract(paciente_id: str) -> dict:
 
 
 @router.get("/timeline", status_code=status.HTTP_200_OK)
-async def get_timeline(
+def get_timeline(
     paciente_id: str | None = None,
     tipo: str | None = None,
     start_ms: int | None = None,

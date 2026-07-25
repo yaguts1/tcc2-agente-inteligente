@@ -104,7 +104,7 @@ async def frontend_complete(alert_id: str, user: str = Depends(get_current_user)
 # ==================== EXPORT ENDPOINTS ====================
 
 @router.get("/alerts/export/csv")
-async def export_alerts_csv(
+def export_alerts_csv(
     start_date: Optional[str] = Query(None, description="Data inicial (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="Data final (YYYY-MM-DD)"),
     status_filter: Optional[str] = Query(None, alias="status", description="Status: pending, acknowledged, completed"),
@@ -165,7 +165,7 @@ async def export_alerts_csv(
 
 
 @router.get("/alerts/export/pdf")
-async def export_alerts_pdf(
+def export_alerts_pdf(
     start_date: Optional[str] = Query(None, description="Data inicial (YYYY-MM-DD)"),
     end_date: Optional[str] = Query(None, description="Data final (YYYY-MM-DD)"),
     status_filter: Optional[str] = Query(None, alias="status", description="Status: pending, acknowledged, completed"),

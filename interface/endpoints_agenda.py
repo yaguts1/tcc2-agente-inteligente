@@ -117,7 +117,7 @@ class SuppressionCheckResponse(BaseModel):
     status_code=status.HTTP_201_CREATED,
     response_model=AgendaResponse
 )
-async def criar_agenda(paciente_id: str, payload: AgendaCreate) -> AgendaResponse:
+def criar_agenda(paciente_id: str, payload: AgendaCreate) -> AgendaResponse:
     """Cria uma nova agenda de supressão."""
     try:
         agenda = dao_criar_agenda(
@@ -157,7 +157,7 @@ async def criar_agenda(paciente_id: str, payload: AgendaCreate) -> AgendaRespons
     "/pacientes/{paciente_id}/agenda",
     response_model=list[AgendaResponse]
 )
-async def listar_agendas(
+def listar_agendas(
     paciente_id: str,
     ativo: bool = Query(True, description="Apenas agendas ativas")
 ) -> list[AgendaResponse]:
@@ -180,7 +180,7 @@ async def listar_agendas(
     "/pacientes/{paciente_id}/agenda/check",
     response_model=SuppressionCheckResponse
 )
-async def verificar_supressao(
+def verificar_supressao(
     paciente_id: str,
     timestamp: str = Query(..., description="ISO format timestamp YYYY-MM-DDTHH:MM:SS")
 ) -> SuppressionCheckResponse:
@@ -233,7 +233,7 @@ async def verificar_supressao(
     "/pacientes/{paciente_id}/agenda/{agenda_id}",
     response_model=AgendaResponse
 )
-async def obter_agenda(paciente_id: str, agenda_id: int) -> AgendaResponse:
+def obter_agenda(paciente_id: str, agenda_id: int) -> AgendaResponse:
     """Obtém uma agenda específica."""
     try:
         agenda = dao_obter_agenda(DB_PATH, paciente_id, agenda_id)
@@ -257,7 +257,7 @@ async def obter_agenda(paciente_id: str, agenda_id: int) -> AgendaResponse:
     "/pacientes/{paciente_id}/agenda/{agenda_id}",
     response_model=AgendaResponse
 )
-async def atualizar_agenda(
+def atualizar_agenda(
     paciente_id: str,
     agenda_id: int,
     payload: AgendaUpdate
@@ -295,7 +295,7 @@ async def atualizar_agenda(
     "/pacientes/{paciente_id}/agenda/{agenda_id}",
     status_code=status.HTTP_204_NO_CONTENT
 )
-async def deletar_agenda(paciente_id: str, agenda_id: int):
+def deletar_agenda(paciente_id: str, agenda_id: int):
     """Deleta uma agenda."""
     try:
         deleted = dao_deletar_agenda(DB_PATH, paciente_id, agenda_id)

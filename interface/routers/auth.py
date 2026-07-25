@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import os
 import secrets
@@ -114,7 +115,12 @@ async def api_login(request: Request, _: None = Depends(_check_auth_rate_limit))
     if user is not None and user.get("password_hash"):
         ph = user.get("password_hash")
         try:
-            ok = bcrypt.verify(password, ph)
+            # bcrypt e deliberadamente caro (~100ms de CPU). Este handler
+            # precisa continuar `async` por causa do `await request.json()`
+            # acima, entao o hash vai para uma thread: rodando no event loop,
+            # meia duzia de logins simultaneos travava o servidor inteiro,
+            # incluindo os WebSockets de ingestao.
+            ok = await asyncio.to_thread(bcrypt.verify, password, ph)
         except Exception:
             ok = False
         if not ok:
@@ -154,7 +160,7 @@ async def api_login(request: Request, _: None = Depends(_check_auth_rate_limit))
 
 
 @router.post("/auth/register", status_code=status.HTTP_201_CREATED)
-async def api_register(request: Request, req: RegisterRequest, _: None = Depends(_check_auth_rate_limit)) -> dict:
+def api_register(request: Request, req: RegisterRequest, _: None = Depends(_check_auth_rate_limit)) -> dict:
     username = str(req.username or "").strip()
     password = str(req.password or "")
     display = None if req.display_name is None else str(req.display_name).strip() or None
@@ -193,7 +199,7 @@ async def api_register(request: Request, req: RegisterRequest, _: None = Depends
 
 
 @router.post("/auth/logout", status_code=status.HTTP_200_OK)
-async def api_logout() -> dict:
+def api_logout() -> dict:
     response = Response(content=json.dumps({"ok": True}), media_type="application/json", status_code=status.HTTP_200_OK)
     response.delete_cookie("session_user")
     response.delete_cookie("access_token")
@@ -201,7 +207,7 @@ async def api_logout() -> dict:
 
 
 @router.get("/auth/me", status_code=status.HTTP_200_OK)
-async def api_me(user: str = Depends(get_current_user)) -> dict:
+def api_me(user: str = Depends(get_current_user)) -> dict:
     # Autenticação via get_current_user (JWT only) — não confia mais no
     # cookie session_user forjável.
     # try to include display_name and role when available
