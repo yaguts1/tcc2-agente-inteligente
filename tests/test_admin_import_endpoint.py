@@ -32,10 +32,17 @@ def test_admin_import_endpoint_creates_ficha_and_alert(app_isolado):
         assert resp.status_code == 200, resp.text
 
         # prepare alerts payload in DAO format expected by import (not frontend-shaped)
+        # `tipo` precisa ser um dos aceitos pelo CHECK da tabela. Este teste
+        # mandava "sensor", que a importacao descartava em silencio por causa do
+        # `INSERT OR IGNORE` — e o proprio teste sacramentava isso, afirmando
+        # apenas que `inserted is not None` e comentando que "a presenca do
+        # alerta nao e estritamente garantida". Nao era dedup: o alerta nunca
+        # chegava ao banco, e quem importasse um arquivo inteiro receberia
+        # `ok: true` sem nenhum registro gravado.
         rec = {
             "paciente_id": "PAC-7777",
             "inicio": "2025-10-25T09:00:00",
-            "tipo": "sensor",
+            "tipo": "imobilidade",
             "perfil": "medio",
             "janela_min": 30,
             "status": "aberto",
@@ -47,14 +54,51 @@ def test_admin_import_endpoint_creates_ficha_and_alert(app_isolado):
         resp2 = client.post("/api/admin/import_alerts", files=files)
         assert resp2.status_code == 200, resp2.text
     body = resp2.json()
-    # we expect the endpoint to have received one record and returned an inserted count (may be 0 depending on dedup)
     assert body.get("received") == 1
-    assert body.get("inserted") is not None
+    assert body.get("inserted") == 1, (
+        f"a importacao respondeu ok mas gravou {body.get('inserted')} de 1 alerta"
+    )
 
     # verify ficha exists (ensure_minimal_paciente_ficha should have created it)
+    import sqlite3
+
     from interface.dao import obter_ficha_paciente
 
     app_db = db_path
     ficha = obter_ficha_paciente(app_db, "PAC-7777")
     assert ficha is not None
-    # alert row presence is not strictly guaranteed here (dedup/insert rules); ficha creation is the main contract
+
+    with sqlite3.connect(app_db) as conn:
+        linhas = conn.execute(
+            "SELECT inicio, tipo, status FROM alertas WHERE paciente_id = 'PAC-7777'"
+        ).fetchall()
+    assert linhas == [("2025-10-25T09:00:00", "imobilidade", "aberto")]
+
+
+def test_import_rejeita_alerta_invalido(app_isolado):
+    """Importar dado que o esquema recusa tem de FALHAR, e dizer por que.
+
+    Descartar em silencio e o pior desfecho para uma importacao: o operador ve
+    "ok" e acredita que o historico foi carregado.
+    """
+    from fastapi.testclient import TestClient
+
+    with TestClient(app_isolado.app) as client:
+        client.post("/api/auth/register", json={"username": "imp", "password": "senha-de-teste"})
+        client.post("/api/auth/login", json={"username": "imp", "password": "senha-de-teste"})
+
+        rec = {
+            "paciente_id": "PAC-8888",
+            "inicio": "2025-10-25T09:00:00",
+            "tipo": "sensor",
+            "perfil": "medio",
+            "janela_min": 30,
+            "status": "aberto",
+        }
+        resp = client.post(
+            "/api/admin/import_alerts",
+            files={"arquivo": ("a.jsonl", json.dumps(rec) + "\n", "application/jsonl")},
+        )
+
+    assert resp.status_code == 400, resp.text
+    assert "tipo" in resp.text
