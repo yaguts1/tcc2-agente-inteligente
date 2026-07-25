@@ -74,6 +74,10 @@ class UserRepository:
             return None
         with connect(self.db_path) as conn:
             self._ensure_users_role_column(conn)
-            cur = conn.execute("SELECT username, password_hash, display_name, created_at, role FROM users WHERE username = ?", (uname,))
+            cur = conn.execute(
+                "SELECT username, password_hash, display_name, created_at, role, ativo,"
+                " tokens_validos_apos FROM users WHERE username = ?",
+                (uname,),
+            )
             row = cur.fetchone()
         return None if row is None else dict(row)

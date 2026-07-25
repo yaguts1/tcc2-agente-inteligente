@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+from datetime import datetime, timezone
 import os
 import secrets
 import structlog
@@ -12,7 +13,8 @@ from interface.repositories.users import UserRepository
 from interface.api_shared import _check_auth_rate_limit, DB_PATH
 from interface.schemas import RegisterRequest
 from interface.auth_utils import ACCESS_TOKEN_EXPIRE_SECONDS, create_access_token, em_producao
-from interface.dependencies import get_current_user, usuario_de_jwt
+from interface.dependencies import _payload_do_jwt, get_current_user, usuario_de_jwt
+from interface.repositories.sessoes import revogar_token
 
 router = APIRouter(tags=["auth"])
 user_repo = UserRepository(DB_PATH)
@@ -125,6 +127,15 @@ async def api_login(request: Request, _: None = Depends(_check_auth_rate_limit))
             ok = False
         if not ok:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail={"code": "invalid_credentials", "message": "Usuario ou senha invalidos"})
+
+        # Conta desativada nao entra. Sem isto, revogar as sessoes de alguem
+        # desligado seria inutil: bastaria fazer login de novo.
+        if not user.get("ativo", 1):
+            structlog.get_logger(__name__).warning("login_conta_desativada", username=username)
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                detail={"code": "conta_desativada", "message": "Esta conta esta desativada."},
+            )
     else:
         # Fallback legado por variavel de ambiente, para bancada/dev.
         #
@@ -201,7 +212,31 @@ def api_register(request: Request, req: RegisterRequest, _: None = Depends(_chec
 
 
 @router.post("/auth/logout", status_code=status.HTTP_200_OK)
-def api_logout() -> dict:
+def api_logout(request: Request) -> dict:
+    """Encerra a sessao de verdade.
+
+    Antes apenas apagava os cookies: quem tivesse copiado o token (ou usasse o
+    header Authorization) continuava autenticado pelas 8h restantes. Sair do
+    sistema num computador compartilhado nao tirava o acesso de ninguem.
+
+    Agora o `jti` do token vai para a denylist, entao aquela sessao morre
+    imediatamente. As demais sessoes do usuario seguem valendo — sair num
+    dispositivo nao deve desconectar os outros.
+    """
+    payload = _payload_do_jwt(request)
+    if payload and payload.get("jti") and payload.get("exp"):
+        try:
+            revogar_token(
+                DB_PATH,
+                jti=payload["jti"],
+                expira_em=datetime.fromtimestamp(int(payload["exp"]), tz=timezone.utc),
+                username=payload.get("sub"),
+            )
+        except Exception:
+            # Nao impedir o logout por falha ao registrar a revogacao: os
+            # cookies ainda sao apagados abaixo.
+            structlog.get_logger(__name__).warning("falha_ao_revogar_token", exc_info=True)
+
     response = Response(content=json.dumps({"ok": True}), media_type="application/json", status_code=status.HTTP_200_OK)
     response.delete_cookie("session_user")
     response.delete_cookie("access_token")
