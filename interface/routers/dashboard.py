@@ -5,7 +5,7 @@ from datetime import datetime, timezone
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from interface.api_shared import DB_PATH, APP_VERSION, APP_START_TIME, DEFAULT_PERFIL
+from interface.api_shared import DB_PATH, APP_VERSION, APP_START_TIME, DEFAULT_PERFIL, erro_interno
 from interface.dao import (
     selecionar_alertas_janela,
     listar_fichas_pacientes,
@@ -14,6 +14,10 @@ from interface.dao import (
 )
 from interface.db_core import connect
 from interface.dependencies import get_current_user
+from interface.repositories.monitoramento import (
+    resumo as resumo_monitoramento,
+    status_por_paciente,
+)
 from interface.tempo import agora_utc_naive
 from interface.ws_manager_optimized import ws_manager_optimized
 
@@ -113,12 +117,22 @@ def get_stats() -> dict:
             if total_relevant > 0 else 0
         )
         
+        # Saúde do monitoramento entra no MESMO payload das estatísticas de
+        # propósito. O dashboard afirmava "Todos os pacientes estão com
+        # reposicionamento em dia" sempre que não havia alertas — mas ausência
+        # de alerta também é o que acontece quando o sensor morre, o WiFi cai
+        # ou a ingestão quebra. Sem este número ao lado, a tela não tem como
+        # distinguir "está tudo bem" de "parei de receber dados".
+        saude = resumo_monitoramento(DB_PATH)
+
         return {
             "activeAlerts": active_alerts,
             "acknowledgedAlerts": acked_alerts,
             "completedToday": completed_today,
             "totalPatients": total_patients,
-            "completionRate": round(completion_rate, 1)
+            "completionRate": round(completion_rate, 1),
+            "unmonitoredPatients": saude["sem_monitoramento"],
+            "monitoringLimitMin": saude["limite_min"],
         }
     except Exception as exc:
         logger.exception("stats_error", erro=str(exc))
@@ -126,6 +140,25 @@ def get_stats() -> dict:
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={"code": "stats_error", "message": "Erro interno ao processar a requisicao."}
         ) from exc
+
+
+@router.get("/monitoramento", status_code=status.HTTP_200_OK)
+def status_monitoramento() -> dict:
+    """Quais pacientes estão (ou não) com dados chegando.
+
+    Responde à pergunta que o dashboard não conseguia responder: "não há
+    alertas porque está tudo bem, ou porque parei de receber dados?".
+
+    `nunca_recebeu_dados` separa "o sensor parou" de "nunca chegou leitura
+    nenhuma" — a segunda costuma ser erro de instalação ou de vínculo
+    device↔leito, e a ação corretiva é diferente.
+    """
+    try:
+        detalhe = status_por_paciente(DB_PATH)
+        agregado = resumo_monitoramento(DB_PATH)
+        return {**agregado, "pacientes": detalhe}
+    except Exception as exc:
+        raise erro_interno("monitoramento_error", exc) from exc
 
 
 @router.get("/validate-repositioning/{paciente_id}", status_code=status.HTTP_200_OK)

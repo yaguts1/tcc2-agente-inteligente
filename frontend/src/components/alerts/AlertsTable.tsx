@@ -188,7 +188,12 @@ export function AlertsTable({
       <EmptyState
         icon={CheckCircle2}
         title="Nenhum alerta ativo"
-        description="Todos os pacientes estão com reposicionamento em dia. Continue monitorando!"
+        // A frase anterior — "Todos os pacientes estão com reposicionamento em
+        // dia" — AFIRMAVA algo que a tela não tem como saber: lista vazia é
+        // igual quando está tudo bem e quando o sistema parou de receber
+        // dados. Quem informa a diferença é o aviso de monitoramento no
+        // Dashboard; aqui o texto apenas descreve o que de fato se sabe.
+        description="Nenhum reposicionamento pendente no período. Confira o aviso de monitoramento acima para saber se há dados chegando."
       />
     );
   }

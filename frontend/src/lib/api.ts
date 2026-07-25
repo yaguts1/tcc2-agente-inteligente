@@ -470,6 +470,14 @@ export interface DashboardStats {
   completedToday: number;
   totalPatients: number;
   completionRate: number;
+  /**
+   * Pacientes com leito atribuído SEM leituras recentes (sensor, rede ou
+   * ingestão com problema). Existe porque "nenhum alerta" é ambíguo: pode
+   * significar que está tudo bem, ou que o sistema parou de receber dados.
+   */
+  unmonitoredPatients: number;
+  /** Minutos sem dados a partir dos quais o paciente conta como não monitorado. */
+  monitoringLimitMin: number;
 }
 
 export const statsApi = {

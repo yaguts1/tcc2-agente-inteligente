@@ -31,6 +31,15 @@ HTTP_REQUEST_DURATION = Histogram(
   buckets=(0.01, 0.05, 0.1, 0.5, 1.0, 2.0, 5.0, 10.0, float("inf"))
 )
 
+# Saúde do monitoramento. Esta é a métrica mais importante para alertagem de
+# infraestrutura: o sistema é orientado a evento, então um sensor morto não
+# gera erro nenhum — apenas para de produzir alertas, e a tela fica calma.
+# Um valor > 0 aqui significa paciente em leito SEM cobertura de monitoramento.
+PACIENTES_SEM_MONITORAMENTO = Gauge(
+  "pacientes_sem_monitoramento",
+  "Pacientes com leito atribuído sem leituras recentes (sensor/rede/ingestão)"
+)
+
 # Métricas de WebSocket
 WEBSOCKET_CONNECTIONS = Gauge(
   "websocket_connections_active",
@@ -106,6 +115,11 @@ def registrar_request(method: str, endpoint: str, status: int, duration: float) 
 def atualizar_websocket_connections(count: int) -> None:
   """Atualiza o número de conexões WebSocket ativas."""
   WEBSOCKET_CONNECTIONS.set(count)
+
+
+def registrar_pacientes_sem_monitoramento(quantidade: int) -> None:
+    """Atualiza quantos pacientes estão sem leituras recentes."""
+    PACIENTES_SEM_MONITORAMENTO.set(max(0, int(quantidade)))
 
 
 def registrar_websocket_message() -> None:
