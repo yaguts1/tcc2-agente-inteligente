@@ -25,6 +25,7 @@ from starlette.middleware.base import BaseHTTPMiddleware
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
 from interface.api import router as api_router
+from interface.auth_utils import em_producao
 from interface.db_core import criar_esquema
 from interface.lifespan_tasks import (
     start_reconciler_task,
@@ -121,18 +122,24 @@ _extra_origins = [
     for origin in os.getenv("ALLOWED_ORIGINS", "").split(",")
     if origin.strip()
 ]
-_allowed_origins = _DEV_ORIGINS + _extra_origins
-try:
-    app.add_middleware(
-        CORSMiddleware,
-        allow_origins=_allowed_origins,
-        allow_credentials=True,
-        allow_methods=["*"],
-        allow_headers=["*"],
-    )
-except Exception:
-    # não falhar o startup se o middleware não puder ser adicionado
-    pass
+# Em produção as portas de dev não entram: com allow_credentials=True, deixar
+# http://localhost:5173 na lista permite que uma página rodando na máquina de
+# quem estiver logado leia a API com o cookie de sessão junto.
+if em_producao():
+    _allowed_origins = _extra_origins
+else:
+    _allowed_origins = _DEV_ORIGINS + _extra_origins
+
+# Sem try/except: um CORS que falha ao ser instalado precisa derrubar o
+# startup. Engolir a exceção fazia o app subir SEM política de CORS nenhuma —
+# o modo de falha mais permissivo possível, e silencioso.
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_allowed_origins,
+    allow_credentials=True,
+    allow_methods=["*"],
+    allow_headers=["*"],
+)
 
 
 # --- Detecção da SPA buildada ---------------------------------------------
