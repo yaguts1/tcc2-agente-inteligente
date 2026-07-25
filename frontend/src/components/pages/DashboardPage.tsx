@@ -215,6 +215,35 @@ export function DashboardPage() {
         />
       )}
 
+      {/*
+        Aviso de monitoramento interrompido.
+        Fica ACIMA de tudo e não pode ser dispensado: o sistema é orientado a
+        evento, então um sensor morto não gera erro nenhum — apenas para de
+        produzir alertas, e a tela ficava dizendo "todos os pacientes em dia".
+        Sem este aviso, silêncio é indistinguível de normalidade, que é o pior
+        modo de falha num monitoramento de segurança do paciente.
+      */}
+      {(stats?.unmonitoredPatients ?? 0) > 0 && (
+        <div
+          role="alert"
+          className="flex items-start gap-3 rounded-lg border border-danger bg-danger-light p-4"
+        >
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-danger" aria-hidden="true" />
+          <div>
+            <p className="font-bold text-foreground">
+              {stats!.unmonitoredPatients === 1
+                ? '1 paciente sem monitoramento'
+                : `${stats!.unmonitoredPatients} pacientes sem monitoramento`}
+            </p>
+            <p className="text-sm text-muted-foreground">
+              Sem leituras há mais de {stats!.monitoringLimitMin} minutos. A ausência de
+              alertas <strong>não</strong> significa que está tudo bem — verifique o sensor,
+              a rede do leito e a ingestão.
+            </p>
+          </div>
+        </div>
+      )}
+
       {/* Filter Bar */}
       <FilterBar
         filters={filters}

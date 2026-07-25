@@ -34,6 +34,8 @@ from interface.lifespan_tasks import (
     stop_reconciler_task,
     start_backup_task,
     stop_backup_task,
+    start_watchdog_task,
+    stop_watchdog_task,
 )
 from configuracao import carregar_configuracao
 from servicos import metricas
@@ -113,12 +115,16 @@ async def _lifespan(app: FastAPI):
     # Tasks de background (reconciler de device_events + backup periódico).
     start_reconciler_task(app)
     start_backup_task(app, DB_PATH, BACKUP_DIR)
+    # Vigia a AUSENCIA de dados: sem isto, um sensor morto nao gera erro
+    # nenhum — o sistema so para de emitir alertas e a tela fica calma.
+    start_watchdog_task(app, DB_PATH)
 
     try:
         yield
     finally:
         await stop_reconciler_task(app)
         await stop_backup_task(app)
+        await stop_watchdog_task(app)
 
 
 app = FastAPI(title="Monitor de Alertas UPP", lifespan=_lifespan)

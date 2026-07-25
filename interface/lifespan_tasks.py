@@ -48,6 +48,76 @@ def start_reconciler_task(app: FastAPI) -> asyncio.Task:
     return task
 
 
+def start_watchdog_task(app: FastAPI, db_path: str) -> asyncio.Task:
+    """Vigia a AUSENCIA de dados.
+
+    O motor de alertas so processa quando dado chega. Se o sensor morrer, o
+    WiFi cair ou a ingestao quebrar, nao ha processamento, nao ha alerta — e a
+    tela mostra "todos os pacientes em dia". O sistema falha CALADO, e silencio
+    fica indistinguivel de normalidade.
+
+    Este loop existe para que a falta de dado gere sinal por conta propria, sem
+    depender de alguem abrir a tela: registra no log estruturado (para
+    alertagem de infraestrutura) e atualiza a metrica Prometheus
+    `pacientes_sem_monitoramento`, que pode disparar aviso operacional.
+    """
+    try:
+        intervalo = max(10, int(os.getenv("MONITORAMENTO_CHECK_INTERVAL", "60")))
+    except Exception:
+        intervalo = 60
+
+    async def _loop() -> None:
+        from interface.repositories.monitoramento import resumo
+        from servicos import metricas
+
+        logger.info("watchdog_started", interval=intervalo)
+        ultimo_alarme: set[str] = set()
+        while True:
+            try:
+                dados = await asyncio.to_thread(resumo, db_path)
+                metricas.registrar_pacientes_sem_monitoramento(dados["sem_monitoramento"])
+
+                atuais = {p["paciente_id"] for p in dados["pacientes_sem_monitoramento"]}
+                # Loga a transicao, nao o estado: repetir o alarme a cada ciclo
+                # treinaria a equipe a ignorar a mensagem.
+                novos = atuais - ultimo_alarme
+                recuperados = ultimo_alarme - atuais
+                if novos:
+                    logger.error(
+                        "monitoramento_interrompido",
+                        pacientes=sorted(novos),
+                        limite_min=dados["limite_min"],
+                        motivo="sem leituras dentro do limite — sensor, rede ou ingestao",
+                    )
+                if recuperados:
+                    logger.info("monitoramento_restabelecido", pacientes=sorted(recuperados))
+                ultimo_alarme = atuais
+            except asyncio.CancelledError:
+                logger.info("watchdog_cancelled")
+                raise
+            except Exception as exc:
+                logger.exception("watchdog_error", motivo=str(exc))
+            try:
+                await asyncio.sleep(intervalo)
+            except asyncio.CancelledError:
+                logger.info("watchdog_sleep_cancelled")
+                raise
+
+    task = asyncio.create_task(_loop(), name="watchdog_monitoramento")
+    app.state._watchdog_task = task
+    return task
+
+
+async def stop_watchdog_task(app: FastAPI) -> None:
+    task = getattr(app.state, "_watchdog_task", None)
+    if task is not None and not task.done():
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            logger.info("watchdog_stopped")
+
+
 async def stop_reconciler_task(app: FastAPI) -> None:
     task = getattr(app.state, "_reconcile_task", None)
     if task is not None and not task.done():
