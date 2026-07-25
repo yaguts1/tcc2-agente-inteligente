@@ -32,6 +32,7 @@ from interface.api_shared import (
 )
 
 # Import routers
+from interface.routers import usuarios
 from interface.routers import (
     auth,
     pacientes,
@@ -63,6 +64,12 @@ router.include_router(dashboard.router)
 router.include_router(ingestao.router)
 router.include_router(backup.router)
 router.include_router(admin.router)
+# IMPORTANTE: router_proprio ANTES de usuarios.router. O FastAPI casa rotas na
+# ordem de registro, e /usuarios/eu/senha casaria com /usuarios/{username}/senha
+# (do router administrativo) se este viesse primeiro — o usuario receberia 403
+# ao tentar trocar a propria senha. Mesmo problema que /agenda/check ja teve.
+router.include_router(usuarios.router_proprio)
+router.include_router(usuarios.router)
 router.include_router(endpoints_agenda.router)
 
 # Test helpers (Facade)

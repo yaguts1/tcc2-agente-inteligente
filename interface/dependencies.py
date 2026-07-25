@@ -108,6 +108,12 @@ def sessao_valida(payload: dict) -> bool:
                 # Token antigo, emitido antes de existir `iat`: não dá para
                 # saber se é anterior ao corte, então recusa.
                 return False
+            # Comparacao estrita: `tokens_validos_apos` significa "tokens
+            # emitidos ANTES deste instante nao valem". Quem grava o corte ja o
+            # arredonda para o proximo segundo (ver
+            # repositories/sessoes.revogar_sessoes_do_usuario), porque o `iat`
+            # do JWT tem resolucao de 1s e, sem isso, a sessao criada no mesmo
+            # segundo da revogacao sobreviveria.
             corte_dt = datetime.fromisoformat(str(corte)[:19]).replace(tzinfo=timezone.utc)
             if datetime.fromtimestamp(int(emitido_em), tz=timezone.utc) < corte_dt:
                 return False
