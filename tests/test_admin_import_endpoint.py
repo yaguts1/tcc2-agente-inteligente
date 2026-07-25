@@ -1,6 +1,5 @@
 import json
 
-import pytest
 
 
 def test_admin_import_endpoint_creates_ficha_and_alert(app_isolado):
@@ -53,7 +52,7 @@ def test_admin_import_endpoint_creates_ficha_and_alert(app_isolado):
     assert body.get("inserted") is not None
 
     # verify ficha exists (ensure_minimal_paciente_ficha should have created it)
-    from interface.dao import obter_ficha_paciente, selecionar_alertas_janela
+    from interface.dao import obter_ficha_paciente
 
     app_db = db_path
     ficha = obter_ficha_paciente(app_db, "PAC-7777")

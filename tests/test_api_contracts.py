@@ -5,7 +5,6 @@ expected by the frontend or by device firmware (ESP32).
 """
 from __future__ import annotations
 
-import asyncio
 from datetime import datetime
 
 import pytest

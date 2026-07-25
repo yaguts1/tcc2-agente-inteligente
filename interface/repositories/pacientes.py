@@ -5,10 +5,9 @@ import re
 import sqlite3
 import pandas as pd
 import structlog
-from typing import List, Sequence, Optional, Dict
+from typing import List, Sequence, Optional
 
 from interface.db_core import connect, utc_now_iso
-from interface.api_shared import DEFAULT_PERFIL
 
 logger = structlog.get_logger(__name__)
 

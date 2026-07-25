@@ -311,7 +311,11 @@ export interface SimulationRequest {
 
 export interface SimulationResult {
   success: boolean;
+  /** Eventos brutos gravados. Antes este campo carregava a contagem de
+   *  AMOSTRAS da grade, então a tela exibia "N eventos" com outro número. */
   eventos: number;
+  /** Amostras da grade de postura gravadas. */
+  amostras: number;
   alertas: number;
   duracao: number;
   error?: string;

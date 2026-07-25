@@ -1,11 +1,9 @@
 """Testes para WebSocket de eventos (ESP32 firmware)."""
 
-import asyncio
-import json
 import pytest
 from fastapi.testclient import TestClient
 from interface.web import app
-from unittest.mock import patch, MagicMock
+from unittest.mock import patch
 
 
 @pytest.mark.asyncio

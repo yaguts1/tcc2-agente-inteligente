@@ -126,6 +126,9 @@ class SimulationRequest(BaseModel):
 class SimulationResult(BaseModel):
     success: bool
     eventos: int
+    """Eventos brutos gravados (tabela `eventos`)."""
+    amostras: int = 0
+    """Amostras da grade de postura gravadas (tabela `grade`)."""
     alertas: int
     duracao: float
     message: str
@@ -200,11 +203,18 @@ def simular_paciente_endpoint(paciente_id: str, payload: SimulationRequest) -> S
     _, alertas = processar_alertas(df_grade, perfil_nome, paciente_id)
     alertas_count = inserir_alertas(DB_PATH, alertas)
     
+    # `eventos` reportava grade_count — a contagem de AMOSTRAS da grade — e o
+    # eventos_count real era calculado e descartado. A tela exibia "N eventos"
+    # mostrando outro numero. Agora cada campo carrega a grandeza do seu nome.
     return SimulationResult(
         success=True,
-        eventos=grade_count,
+        eventos=eventos_count,
+        amostras=grade_count,
         alertas=alertas_count,
         duracao=duracao,
-        message=f"Simulacao concluida: {grade_count} amostras, {alertas_count} alertas gerados."
+        message=(
+            f"Simulacao concluida: {grade_count} amostras, {eventos_count} eventos "
+            f"e {alertas_count} alertas gerados."
+        ),
     )
 

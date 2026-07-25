@@ -40,7 +40,7 @@ def test_reconcile_with_cama_id():
         response = requests.post(f"{BASE_URL}/api/patients", json=patient_data)
         assert response.status_code == 200, f"Erro ao criar paciente: {response.text}"
         print(f"✅ Paciente criado: {test_patient_id}")
-        print(f"   Leito: TEST-101-A (cama_id)")
+        print("   Leito: TEST-101-A (cama_id)")
         
         # ===== PASSO 2: Criar eventos órfãos ANTES do cadastro =====
         print_step(2, "Simular eventos órfãos (ESP32 enviou dados antes do cadastro)")
@@ -115,7 +115,7 @@ def test_reconcile_with_cama_id():
         assert response.status_code == 200, f"Erro na reconciliação: {response.text}"
         
         result = response.json()
-        print(f"✅ Reconciliação executada:")
+        print("✅ Reconciliação executada:")
         print(f"   Processed: {result['processed']}")
         print(f"   Skipped: {result['skipped']}")
         print(f"   Patient Name: {result['patient_name']}")
@@ -133,7 +133,7 @@ def test_reconcile_with_cama_id():
         
         remaining = cursor.fetchone()[0]
         assert remaining == 0, f"Ainda há {remaining} eventos órfãos! Deveriam ter sido deletados."
-        print(f"✅ Eventos órfãos deletados (processed)")
+        print("✅ Eventos órfãos deletados (processed)")
         
         # ===== PASSO 7: Verificar timeline_events =====
         print_step(7, "Verificar que timeline_events foram criados")
@@ -155,7 +155,7 @@ def test_reconcile_with_cama_id():
         conn.commit()
         conn.close()
         
-        print(f"✅ Limpeza concluída")
+        print("✅ Limpeza concluída")
         
         # ===== RESULTADO FINAL =====
         print("\n" + "="*60)

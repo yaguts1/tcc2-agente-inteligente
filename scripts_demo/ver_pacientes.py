@@ -47,7 +47,7 @@ def main():
         cursor.execute('SELECT COUNT(*) FROM alertas')
         total_alertas = cursor.fetchone()[0]
         
-        print(f"📊 Estatísticas:")
+        print("📊 Estatísticas:")
         print(f"   • Eventos de postura: {total_eventos:,}")
         print(f"   • Alertas gerados: {total_alertas:,}\n")
         

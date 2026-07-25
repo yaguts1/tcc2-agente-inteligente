@@ -12,7 +12,7 @@ def test_lifespan_starts_and_stops_reconciler():
     app = web.app
 
     # Start the TestClient context which triggers lifespan startup
-    with TestClient(app) as client:
+    with TestClient(app):
         # allow a tiny moment for the background task to be created
         time.sleep(0.05)
         task = getattr(app.state, "_reconcile_task", None)

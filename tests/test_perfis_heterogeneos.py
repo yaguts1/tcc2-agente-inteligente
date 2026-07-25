@@ -6,7 +6,7 @@ Verifica que diferentes perfis de risco produzem variações significativas
 no padrão de posicionamento dos pacientes.
 """
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime
 from dados_simulados.gerador import (
     gerar_sessao_multi,
     gerar_sessao_simulada,

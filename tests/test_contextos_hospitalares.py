@@ -8,7 +8,7 @@ são corretamente modelados e evitam falsos positivos.
 """
 
 import pytest
-from datetime import datetime, timedelta
+from datetime import datetime
 import pandas as pd
 
 from dados_simulados.contextos import (
@@ -18,12 +18,10 @@ from dados_simulados.contextos import (
     validar_eventos_contextuais,
     resumir_contextos,
     filtrar_alertas_por_contexto,
-    TIPOS_EVENTO_CONTEXTO,
 )
 from dados_simulados.gerador import (
     gerar_sessao_simulada,
     gerar_sessao_multi,
-    PerfilPaciente,
 )
 
 
@@ -44,7 +42,7 @@ class TestEventoContextual:
         
         assert evento.tipo == "refeicao"
         assert evento.duracao_min == 30.0
-        assert evento.suprime_alerta == True
+        assert evento.suprime_alerta
     
     def test_evento_inicio_maior_que_fim_falha(self):
         """Evento com inicio >= fim deve falhar."""
@@ -226,7 +224,7 @@ class TestAdicionarContextosNaGrade:
         # Timestamps dentro da refeição devem ter contexto marcado
         assert grade_com_contexto.loc[1, "contexto"] == "refeicao"
         assert grade_com_contexto.loc[2, "contexto"] == "refeicao"
-        assert grade_com_contexto.loc[1, "suprime_alerta"] == True
+        assert grade_com_contexto.loc[1, "suprime_alerta"]
         
         # Antes e depois não devem ter contexto
         assert pd.isna(grade_com_contexto.loc[0, "contexto"])
@@ -256,7 +254,7 @@ class TestValidarEventosContextuais:
         
         is_valid, erros = validar_eventos_contextuais(eventos, inicio, fim)
         
-        assert is_valid == True
+        assert is_valid
         assert len([e for e in erros if e.startswith("❌")]) == 0
     
     def test_validar_evento_fora_do_periodo_falha(self):
@@ -274,7 +272,7 @@ class TestValidarEventosContextuais:
         
         is_valid, erros = validar_eventos_contextuais(eventos, inicio, fim)
         
-        assert is_valid == False
+        assert not is_valid
         assert any("❌" in e for e in erros)
 
 

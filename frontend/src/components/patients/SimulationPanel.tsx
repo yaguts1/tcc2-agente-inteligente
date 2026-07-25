@@ -39,7 +39,9 @@ export function SimulationPanel({ patientId, onSuccess }: SimulationPanelProps) 
 
     try {
       const result = await simulate(formData);
-      toast.success(`✅ Simulação concluída! ${result.eventos} eventos e ${result.alertas} alertas gerados`);
+      toast.success(
+        `✅ Simulação concluída! ${result.amostras} amostras, ${result.eventos} eventos e ${result.alertas} alertas gerados`,
+      );
       onSuccess?.(result);
     } catch (err) {
       // Erro já é tratado pelo hook
@@ -78,6 +80,10 @@ export function SimulationPanel({ patientId, onSuccess }: SimulationPanelProps) 
               <div>
                 <p className="text-sm text-muted-foreground">Duração</p>
                 <p className="text-lg font-semibold">{result.duracao}h</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Amostras geradas</p>
+                <p className="text-lg font-semibold text-blue-600">{result.amostras}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Eventos gerados</p>

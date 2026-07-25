@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import json
 from datetime import timezone
-from typing import Any, Optional
+from typing import Any
 
 import structlog
 
@@ -120,8 +120,8 @@ def consultar(
         linhas = conn.execute(sql, tuple(params)).fetchall()
 
     resultado = []
-    for l in linhas:
-        item = dict(l)
+    for linha in linhas:
+        item = dict(linha)
         item["negado"] = bool(item["negado"])
         if item.get("detalhe"):
             try:

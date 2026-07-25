@@ -254,10 +254,10 @@ Este arquivo contém diagramas interativos da arquitetura do sistema.
         f.write(content)
     
     print(f"✅ Diagrama gerado: {OUTPUT_FILE}")
-    print(f"\n📖 Como visualizar:")
-    print(f"   1. Abra o arquivo no GitHub (renderização automática)")
-    print(f"   2. VS Code: Instale 'Markdown Preview Mermaid Support'")
-    print(f"   3. Online: https://mermaid.live/")
+    print("\n📖 Como visualizar:")
+    print("   1. Abra o arquivo no GitHub (renderização automática)")
+    print("   2. VS Code: Instale 'Markdown Preview Mermaid Support'")
+    print("   3. Online: https://mermaid.live/")
 
 if __name__ == "__main__":
     main()

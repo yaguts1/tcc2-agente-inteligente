@@ -5,9 +5,8 @@ Gerencia agendas de supressão de alertas para pacientes.
 """
 
 from __future__ import annotations
-from datetime import datetime, time
+from datetime import datetime
 from typing import Optional, Union
-import sqlite3
 import json
 
 from interface.dao import _connect, _ensure_paciente

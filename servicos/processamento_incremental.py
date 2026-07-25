@@ -8,7 +8,7 @@ import sqlite3
 import time
 from collections import defaultdict
 from datetime import datetime, timedelta, timezone
-from typing import Dict, Iterable, Mapping, MutableMapping, Optional
+from typing import Dict, Iterable, Mapping, Optional
 
 import structlog
 

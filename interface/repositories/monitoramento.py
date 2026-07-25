@@ -67,8 +67,8 @@ def status_por_paciente(db_path: str, limite_min: int | None = None) -> list[dic
         ).fetchall()
 
     resultado = []
-    for l in linhas:
-        ultima = l["ultima_leitura"]
+    for linha in linhas:
+        ultima = linha["ultima_leitura"]
         silencioso = (ultima is None) or (str(ultima) < corte)
         minutos = None
         if ultima:
@@ -82,9 +82,9 @@ def status_por_paciente(db_path: str, limite_min: int | None = None) -> list[dic
                 minutos = None
         resultado.append(
             {
-                "paciente_id": l["paciente_id"],
-                "nome": l["nome"],
-                "cama_id": l["cama_id"],
+                "paciente_id": linha["paciente_id"],
+                "nome": linha["nome"],
+                "cama_id": linha["cama_id"],
                 "ultima_leitura": ultima,
                 "minutos_sem_dados": minutos,
                 "monitorado": not silencioso,

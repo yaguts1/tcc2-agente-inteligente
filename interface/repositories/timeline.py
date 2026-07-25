@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import json
-from typing import List
 
 from interface.db_core import connect, ensure_paciente
 
@@ -58,7 +57,7 @@ def ultimo_evento_por_paciente(
     )
     with connect(db_path) as conn:
         linhas = conn.execute(sql, (*paciente_ids, *tipos)).fetchall()
-    return {str(l["paciente_id"]): l["ts"] for l in linhas if l["ts"] is not None}
+    return {str(linha["paciente_id"]): linha["ts"] for linha in linhas if linha["ts"] is not None}
 
 
 def selecionar_timeline(

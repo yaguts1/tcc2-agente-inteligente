@@ -1,7 +1,7 @@
 """Service layer for Patient operations."""
 from __future__ import annotations
 
-from typing import List, Optional, Dict
+from typing import List, Optional
 from interface.repositories.pacientes import PatientRepository
 from interface.schemas import FrontendCreatePatient
 

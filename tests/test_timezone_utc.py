@@ -9,7 +9,6 @@ import types
 from datetime import datetime, timedelta, timezone
 
 import pandas as pd
-import pytest
 
 from interface.db_core import connect, criar_esquema, utc_now_iso
 from interface.repositories.alertas import inserir_alertas, selecionar_alertas_janela

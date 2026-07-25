@@ -1,6 +1,5 @@
 import sqlite3
 from datetime import datetime, timedelta
-import json
 
 conn = sqlite3.connect('dados.db')
 cursor = conn.cursor()

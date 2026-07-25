@@ -1,8 +1,7 @@
 """Testes unitários para o serviço de exportação."""
 
 import pytest
-from datetime import datetime, timedelta
-from io import StringIO
+from datetime import datetime
 import os
 import tempfile
 

@@ -20,9 +20,7 @@ from interface.dao import obter_ficha_paciente, obter_ficha_por_cama
 from interface.repositories.alertas import inserir_alertas
 from interface.repositories.devices import (
     delete_device_event,
-    inserir_device_event,
     listar_device_events,
-    resolver_paciente_por_device_em,
 )
 from interface.repositories.grade import inserir_eventos, inserir_grade
 from interface.schemas import EventPayload

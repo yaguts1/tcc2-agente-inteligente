@@ -46,10 +46,42 @@ from interface.routers import (
 from interface import endpoints_agenda
 
 # Import symbols needed for tests (Facade pattern)
-# These are re-exported so that 'from interface.api import PROCESSADOR' works
-from interface.routers.ingestao import PROCESSADOR, reconcile_device_events
+# These are re-exported so that 'from interface.api import PROCESSADOR' works.
+#
+# Vêm do SERVIÇO, não do router: o router apenas os importava para uso próprio,
+# e puxá-los de lá fazia dele um intermediário acidental na cadeia de imports.
+from interface.services.ingestao_service import PROCESSADOR, reconcile_device_events
 from interface.routers.alerts import frontend_alerts
 from quality.filtro import reset_filtro
+
+# `__all__` declara que estes nomes sao REEXPORTS intencionais desta
+# fachada, e nao imports esquecidos. Sem isso o `ruff --fix` os remove
+# como F401 (nada os referencia dentro do arquivo) e derruba a
+# aplicacao no import — foi exatamente o que aconteceu ao ligar o lint.
+__all__ = [
+    "APIRouter",
+    "DB_PATH",
+    "PROCESSADOR",
+    "_aplicar_rate_limit",
+    "_rate_buckets",
+    "_reset_auth_rate_limits",
+    "admin",
+    "alerts",
+    "annotations",
+    "auditoria",
+    "auth",
+    "backup",
+    "dashboard",
+    "devices",
+    "endpoints_agenda",
+    "frontend_alerts",
+    "ingestao",
+    "pacientes",
+    "reconcile_device_events",
+    "reset_filtro",
+    "reset_rate_limiter",
+    "usuarios",
+]
 
 # Create main router to aggregate all modules. Mounted into the real app
 # (interface.web:app, the only app actually served — see Dockerfile) with
