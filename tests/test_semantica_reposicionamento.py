@@ -110,3 +110,23 @@ async def test_offset_preserva_o_instante(app_isolado, servico):
     assert abs((devolvido - inicio).total_seconds()) < 2, (
         f"o instante mudou: gravado {inicio}, devolvido {devolvido}"
     )
+
+
+@pytest.mark.parametrize("perfil,nivel", [("alto", "high"), ("medio", "medium"), ("baixo", "low")])
+def test_intervalo_exibido_bate_com_a_janela_do_motor(perfil, nivel):
+    """Uma unica fonte de verdade para o intervalo de reposicionamento.
+
+    Havia dois mapas divergentes: o motor usava 60/90/120 min e a tela de
+    pacientes exibia 2/3/4 h — o DOBRO. A tela informava "reposicionar a cada
+    2h" para um paciente de alto risco enquanto o sistema alertava a cada 1h.
+    Num parametro clinico, duas fontes significam que pelo menos uma esta
+    errada, e ninguem consegue saber qual olhando a tela.
+    """
+    from configuracao import carregar_configuracao
+    from interface.services.paciente_service import intervalo_horas
+
+    minutos_do_motor = carregar_configuracao().janela_por_perfil[perfil]
+    assert intervalo_horas(perfil) == round(minutos_do_motor / 60, 2), (
+        f"o intervalo exibido para {nivel} divergiu da janela do motor "
+        f"({minutos_do_motor} min)"
+    )

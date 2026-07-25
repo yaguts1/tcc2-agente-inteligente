@@ -1,5 +1,5 @@
-import { useState } from 'react';
-import { patientsApi, Patient, CreatePatientRequest, ApiException } from '../../lib/api';
+import { useEffect, useState } from 'react';
+import { patientsApi, Patient, CreatePatientRequest, ApiException, PerfisRisco } from '../../lib/api';
 import { Card, CardContent } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -23,12 +23,21 @@ export function PatientForm({ patient, onSuccess, onCancel }: PatientFormProps) 
     room: patient?.room || '',
     bed: patient?.bed || '',
     riskLevel: patient?.riskLevel || 'medium',
-    repositioningInterval: patient?.repositioningInterval || 2,
   });
+  // Intervalo por nivel de risco, vindo do BACKEND (mesma configuracao do
+  // motor de alertas). Antes o formulario assumia 2h fixo, que so por acaso
+  // batia com algum perfil — e nao batia com o motor.
+  const [perfis, setPerfis] = useState<PerfisRisco | null>(null);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSimulation, setShowSimulation] = useState(false);
   const [createdPatient, setCreatedPatient] = useState<Patient | null>(null);
+
+  useEffect(() => {
+    patientsApi.getPerfisRisco().then(setPerfis).catch(() => setPerfis(null));
+  }, []);
+
+  const intervaloDoPerfil = perfis?.[formData.riskLevel as keyof PerfisRisco];
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -178,28 +187,31 @@ export function PatientForm({ patient, onSuccess, onCancel }: PatientFormProps) 
               </Select>
             </div>
 
+            {/*
+              Campo somente-leitura, e não por simplificação: o intervalo é
+              DERIVADO do perfil de risco (a mesma configuração que o motor de
+              alertas usa para disparar). O backend nunca leu este valor —
+              `create_patient` e `update_patient` sempre o descartaram. Ou seja,
+              o campo era editável, o valor era enviado e nada acontecia: quem
+              alterasse acreditaria ter mudado o protocolo do paciente sem ter
+              mudado coisa alguma.
+
+              Para mudar o intervalo, muda-se o perfil de risco (ou a
+              configuração da instalação).
+            */}
             <div className="space-y-2">
-              <Label htmlFor="interval">Intervalo de Reposicionamento (horas) *</Label>
+              <Label htmlFor="interval">Intervalo de Reposicionamento</Label>
               <Input
                 id="interval"
-                type="number"
-                min="1"
-                max="24"
-                step="0.5"
-                placeholder="2"
-                value={formData.repositioningInterval || ''}
-                onChange={(e) => {
-                  const val = parseFloat(e.target.value);
-                  setFormData({
-                    ...formData,
-                    repositioningInterval: isNaN(val) ? 0 : val,
-                  });
-                }}
-                disabled={isLoading}
-                required
+                type="text"
+                readOnly
+                aria-describedby="interval-ajuda"
+                value={intervaloDoPerfil ? `${intervaloDoPerfil}h` : '—'}
+                className="bg-muted"
               />
-              <p className="text-muted-foreground">
-                Tempo entre cada reposicionamento
+              <p id="interval-ajuda" className="text-muted-foreground">
+                Definido pelo perfil de risco selecionado acima — é o mesmo
+                intervalo que dispara os alertas.
               </p>
             </div>
           </div>
