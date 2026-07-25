@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import secrets
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any, AsyncIterator, Dict
@@ -10,6 +11,11 @@ import structlog
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status, WebSocket, WebSocketDisconnect
 
 from interface.api_shared import DB_PATH, _aplicar_rate_limit
+from interface.dependencies import (
+    TOKEN_DISPOSITIVO_HEADER,
+    token_dispositivo_configurado,
+    verificar_token_dispositivo,
+)
 from interface.repositories.devices import inserir_device_event, registrar_device, resolver_paciente_por_device_em
 from interface.schemas import ApiResponse
 from interface.services.ingestao_service import (
@@ -55,6 +61,7 @@ async def receber_evento(
     request: Request,
     payload: Dict[str, Any],
     _: None = Depends(_aplicar_rate_limit),
+    __: None = Depends(verificar_token_dispositivo),
 ) -> ApiResponse:
     device_header = request.headers.get("X-Device-Id")
     evento = normalizar_payload(payload, device_header)
@@ -184,6 +191,7 @@ async def receber_grade(
     request: Request,
     arquivo: UploadFile = File(...),
     _: None = Depends(_aplicar_rate_limit),
+    __: None = Depends(verificar_token_dispositivo),
 ) -> ApiResponse:
     if arquivo.content_type not in {"application/jsonl", "application/octet-stream", "text/plain"}:
         raise HTTPException(
@@ -315,10 +323,14 @@ async def websocket_eventos(websocket: WebSocket):
     WebSocket endpoint for receiving events from devices (ESP32).
     Protocol:
     1. Client connects
-    2. Client sends auth: {"device_id": "...", "cama_id": "..."
+    2. Client sends auth: {"device_id": "...", "cama_id": "...", "token": "..."}
     3. Server responds: {"status": "connected", "device_id": "..."
     4. Client sends events: {"seq": 1, ...}
     5. Server responds ACK: {"status": "ok", "seq": 1}
+
+    O token pode vir no header X-Device-Token (handshake HTTP) ou no campo
+    `token` da mensagem de auth — o segundo caminho existe porque nem toda
+    biblioteca de WebSocket em firmware permite definir headers.
     """
     await websocket.accept()
     device_id = None
@@ -337,6 +349,15 @@ async def websocket_eventos(websocket: WebSocket):
             await websocket.send_json({"status": "error", "error": "Missing device_id"})
             await websocket.close()
             return
+
+        esperado = token_dispositivo_configurado()
+        if esperado:
+            recebido = websocket.headers.get(TOKEN_DISPOSITIVO_HEADER) or auth_data.get("token") or ""
+            if not secrets.compare_digest(recebido, esperado):
+                logger.warning("ws_device_token_invalido", device_id=device_id)
+                await websocket.send_json({"status": "error", "error": "invalid_device_token"})
+                await websocket.close()
+                return
 
         # Register device if needed (falha benigna: device já pode existir)
         try:

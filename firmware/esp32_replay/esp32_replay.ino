@@ -176,11 +176,24 @@ String urlEncode(const String &valor) {
   return saida;
 }
 
+// Autentica este dispositivo na ingestão. Precisa ser chamado depois de
+// g_http.begin() e antes do GET/POST. O X-Device-Id que já era enviado é
+// escolhido pelo próprio firmware: identifica, mas não prova nada.
+// Sem DEVICE_TOKEN definido, não envia nada — o backend só exige o header se
+// UPP_DEVICE_TOKEN estiver configurado do lado dele.
+void adicionarTokenDispositivo() {
+#ifdef DEVICE_TOKEN
+  if (strlen(DEVICE_TOKEN) > 0) {
+    g_http.addHeader("X-Device-Token", DEVICE_TOKEN);
+  }
+#endif
+}
+
 bool atualizarPacienteDaCama() {
   if (g_config.camaId.isEmpty()) { registrarLog("[ERRO] Cama ID nao configurado"); return false; }
   if (WiFi.status()!=WL_CONNECTED) { conectarWiFi(); if (WiFi.status()!=WL_CONNECTED) { registrarLog("[ERRO] Sem Wi-Fi para consultar paciente"); return false; } }
   String rota = "/api/pacientes/cama/" + urlEncode(g_config.camaId); String url = montarUrl(rota); registrarLog("[PACIENTE] Consultando " + url);
-  g_http.begin(g_client, url); g_http.addHeader("Accept","application/json"); int status = g_http.GET(); if (status != 200) { registrarLog("[ERRO] Falha ao obter paciente da cama. HTTP=" + String(status)); g_http.end(); return false; }
+  g_http.begin(g_client, url); g_http.addHeader("Accept","application/json"); adicionarTokenDispositivo(); int status = g_http.GET(); if (status != 200) { registrarLog("[ERRO] Falha ao obter paciente da cama. HTTP=" + String(status)); g_http.end(); return false; }
   String corpo = g_http.getString(); g_http.end(); DynamicJsonDocument doc(2048); DeserializationError err = deserializeJson(doc, corpo); if (err) { registrarLog("[ERRO] Resposta paciente invalida: " + String(err.c_str())); return false; }
   const char *pac = doc["paciente_id"] | ""; const char *perfil = doc["perfil"] | ""; if (strlen(pac)==0) { registrarLog("[ERRO] Resposta nao contem paciente_id"); return false; }
   g_config.pacienteId = String(pac); g_config.perfilPaciente = String(perfil); String p = g_config.perfilPaciente; if (p.isEmpty()) p = "-"; registrarLog("[PACIENTE] Vinculado a " + g_config.pacienteId + " (perfil=" + p + ")"); return true;
@@ -190,7 +203,7 @@ bool garantirPacienteConfigurado() { if (g_pacienteSincronizado) return true; if
 
 bool enviarEvento(const EventoReplay &evento) {
   if (WiFi.status()!=WL_CONNECTED) { conectarWiFi(); if (WiFi.status()!=WL_CONNECTED) { registrarLog("[ERRO] Sem Wi-Fi"); return false; } }
-  String url = montarUrlEventos(); g_http.begin(g_client, url); g_http.addHeader("Content-Type","application/json"); g_http.addHeader("X-Seq", String(evento.seq)); g_http.addHeader("X-Device-Id", g_config.deviceId);
+  String url = montarUrlEventos(); g_http.begin(g_client, url); g_http.addHeader("Content-Type","application/json"); g_http.addHeader("X-Seq", String(evento.seq)); g_http.addHeader("X-Device-Id", g_config.deviceId); adicionarTokenDispositivo();
   int status = g_http.POST(evento.payload); g_http.end(); if (status>=200 && status<300) { g_status.totalEnviados++; g_status.ultimaRespostaMs = millis(); registrarLog("[ACK] seq=" + String(evento.seq) + " status=" + String(status)); return true; }
   g_status.totalFalhas++; registrarLog("[FALHA] seq=" + String(evento.seq) + " status=" + String(status)); return false;
 }
@@ -236,7 +249,7 @@ void processarReplay() {
         String head = "--" + boundary + crlf; head += "Content-Disposition: form-data; name=\"arquivo\"; filename=\"eventos.jsonl\"" + crlf; head += "Content-Type: application/jsonl" + crlf + crlf;
         String tail = crlf + "--" + boundary + "--" + crlf;
         g_arquivoEventos.seek(0, SeekSet); String content=""; while (g_arquivoEventos.available()) { String part = g_arquivoEventos.readStringUntil('\n'); content += part + "\n"; }
-        String body = head + content + tail; String url = montarUrl("/api/grade"); g_http.begin(g_client, url); g_http.addHeader("Content-Type","multipart/form-data; boundary=" + boundary); g_http.addHeader("X-Device-Id", g_config.deviceId);
+        String body = head + content + tail; String url = montarUrl("/api/grade"); g_http.begin(g_client, url); g_http.addHeader("Content-Type","multipart/form-data; boundary=" + boundary); g_http.addHeader("X-Device-Id", g_config.deviceId); adicionarTokenDispositivo();
         int status = g_http.POST(body); g_http.end(); if (status>=200 && status<300) { registrarLog("[ACK] upload status=" + String(status)); atualizarEstado(ReplayState::FINALIZADO); return; } else { registrarLog("[FALHA] upload status=" + String(status)); }
       }
       atualizarEstado(ReplayState::ESPERANDO_ACK);

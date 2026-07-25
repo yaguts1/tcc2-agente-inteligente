@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from datetime import timedelta
 
 from interface.api_shared import DB_PATH, DEFAULT_PERFIL
-from interface.dependencies import get_current_user
+from interface.dependencies import get_current_user, verificar_token_dispositivo
 from interface.tempo import agora_utc_naive
 from interface.schemas import PacienteConfigResponse, RotinaConfig, FrontendCreatePatient
 from interface.repositories.pacientes import PatientRepository
@@ -27,10 +27,11 @@ router = APIRouter(tags=["pacientes"], dependencies=[Depends(get_current_user)])
 
 # Router separado para o endpoint que o FIRMWARE consome
 # (GET /api/pacientes/cama/{cama_id}, ver firmware/esp32_replay/esp32_replay.ino):
-# um ESP32 nao tem sessao de usuario, entao exigir JWT aqui derrubaria a
-# ingestao. A protecao adequada para este endpoint e o token de dispositivo,
-# aplicado junto com /eventos e /grade.
-router_dispositivos = APIRouter(tags=["pacientes"])
+# um ESP32 nao tem sessao de usuario, entao aqui vale o token de dispositivo,
+# o mesmo usado por /eventos e /grade — e nao o JWT.
+router_dispositivos = APIRouter(
+    tags=["pacientes"], dependencies=[Depends(verificar_token_dispositivo)]
+)
 
 # Dependency Injection (Manual for now)
 repository = PatientRepository(DB_PATH)
