@@ -11,6 +11,7 @@ import sqlite3
 import json
 
 from interface.dao import _connect, _ensure_paciente
+from interface.tempo import agora_utc_naive
 
 
 def ensure_agendas_table(db_path: str) -> None:
@@ -202,7 +203,8 @@ def atualizar_agenda(
         updates["dias_semana"] = json.dumps(updates["dias_semana"]) if updates["dias_semana"] else None
     
     set_clause = ", ".join(f"{k} = ?" for k in updates.keys())
-    values = list(updates.values()) + [datetime.now().isoformat(), agenda_id, paciente_id]
+    # updated_at segue o mesmo referencial do resto do banco: UTC naive.
+    values = list(updates.values()) + [agora_utc_naive().isoformat(), agenda_id, paciente_id]
     
     with _connect(db_path) as conn:
         conn.execute(f"""
