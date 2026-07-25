@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import os
 import sqlite3
 import time
 from collections import defaultdict
@@ -30,6 +31,16 @@ class _SQLiteStateStore:
     self._ensure_table()
 
   def _ensure_table(self) -> None:
+    # Garante o diretorio do banco antes de abrir. Este modulo e construido no
+    # IMPORT (ingestao_service.PROCESSADOR), entao um diretorio inexistente nao
+    # dava um erro de runtime: derrubava o processo inteiro no boot com
+    # "unable to open database file". Acontecia ao rodar a imagem sem o volume
+    # do compose montado em /data — foi assim que o smoke test do CI pegou.
+    # interface/db_core.connect ja fazia isso via ensure_db_path(); aqui o
+    # sqlite3.connect era chamado cru.
+    pasta = os.path.dirname(os.path.abspath(self._db_path))
+    if pasta:
+      os.makedirs(pasta, exist_ok=True)
     with sqlite3.connect(self._db_path) as conn:
       conn.execute(
         """
