@@ -5,7 +5,7 @@ Gerencia agendas de supressão de alertas para pacientes.
 """
 
 from __future__ import annotations
-from datetime import datetime
+from datetime import datetime, timedelta
 from typing import Optional, Union
 import json
 
@@ -304,15 +304,31 @@ def _timestamp_matches_agenda(timestamp: Union[datetime, str], agenda: dict) -> 
     
     ts_time = timestamp.time()
     ts_date = timestamp.date()
-    
+
     # Parse horários
     hora_inicio = datetime.strptime(agenda["hora_inicio"], "%H:%M").time()
     hora_fim = datetime.strptime(agenda["hora_fim"], "%H:%M").time()
-    
-    # Verificar horário
-    if not (hora_inicio <= ts_time <= hora_fim):
+
+    # Janela que CRUZA A MEIA-NOITE (ex. 22:00–06:00, "não perturbar durante o
+    # sono"). A comparação simples `inicio <= ts <= fim` é sempre falsa quando
+    # fim < inicio, então a agenda era aceita pela API, aparecia na tela e nunca
+    # suprimia nada — o pior modo de falha para uma regra de supressão, porque a
+    # equipe acredita que o período está configurado.
+    #
+    # Nesse caso a ocorrência da janela COMEÇA no dia anterior para os
+    # timestamps da madrugada, e é a data desse início que vale para a checagem
+    # de dia da semana / data específica: uma agenda de segunda 22:00–06:00
+    # cobre a madrugada de terça.
+    if hora_fim < hora_inicio:
+        if ts_time >= hora_inicio:
+            pass                      # noite: a janela começou hoje
+        elif ts_time <= hora_fim:
+            ts_date = ts_date - timedelta(days=1)   # madrugada: começou ontem
+        else:
+            return False
+    elif not (hora_inicio <= ts_time <= hora_fim):
         return False
-    
+
     # Verificar dia/data
     if agenda["dias_semana"]:
         # Recorrente - verificar dia da semana
