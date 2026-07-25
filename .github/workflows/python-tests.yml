@@ -13,9 +13,11 @@ jobs:
   test:
     runs-on: ubuntu-latest
     env:
-      # A aplicação assume o fuso do hospital (America/Sao_Paulo) em vários pontos
-      # que usam datetime.now() sem timezone explícito. Fixamos o TZ do runner
-      # para casar com o ambiente real de produção.
+      # O runner roda no mesmo fuso do ambiente real (America/Sao_Paulo), que é
+      # o que o container usa. Isso não é cosmético: os testes de fuso
+      # (tests/test_timezone_utc.py) só conseguem distinguir UTC de hora local
+      # quando o fuso é diferente de UTC — sob TZ=UTC eles passariam mesmo com
+      # o bug de `utc_now_iso()` gravando hora local.
       TZ: America/Sao_Paulo
     steps:
       - uses: actions/checkout@v4
@@ -23,12 +25,6 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-
-      - name: Show files (debug)
-        run: |
-          pwd
-          ls -la
-          if [ -f requirements.txt ]; then echo "=== requirements.txt ==="; cat requirements.txt; fi
 
       - name: Install dependencies
         run: |
@@ -121,3 +117,59 @@ jobs:
 
       - name: Build Docker image
         run: docker build -t upp-app:ci .
+
+      # O job só construía a imagem e parava aí: um container que respondesse
+      # 404 em todas as rotas passaria. Aqui ele é de fato executado, com a
+      # mesma configuração do docker-compose (APP_PREFIX=/TCC), e as rotas são
+      # exercitadas — inclusive a exigência de autenticação.
+      - name: Smoke test da imagem
+        run: |
+          set -euo pipefail
+          docker run -d --name upp_ci -p 8000:8000 \
+            -e ENVIRONMENT=production \
+            -e APP_PREFIX=/TCC \
+            -e JWT_SECRET_KEY=chave-de-ci-nao-usar-em-producao \
+            -e UPP_DB_PATH=/data/dados.db \
+            -e TZ=America/Sao_Paulo \
+            upp-app:ci
+
+          echo "Aguardando o container ficar saudável..."
+          for i in $(seq 1 30); do
+            if curl -fsS http://localhost:8000/healthz >/dev/null 2>&1; then
+              echo "healthz OK (tentativa $i)"; break
+            fi
+            if [ "$i" = "30" ]; then
+              echo "::error::container não respondeu em /healthz"
+              docker logs upp_ci
+              exit 1
+            fi
+            sleep 2
+          done
+
+          verificar() {
+            local descricao="$1" url="$2" esperado="$3"
+            local codigo
+            codigo=$(curl -s -o /dev/null -w '%{http_code}' "$url")
+            if [ "$codigo" != "$esperado" ]; then
+              echo "::error::$descricao: esperado $esperado, veio $codigo ($url)"
+              docker logs upp_ci
+              exit 1
+            fi
+            echo "OK  $descricao -> $codigo"
+          }
+
+          # A SPA precisa estar sendo servida sob o prefixo (o build do frontend
+          # entra na imagem no estágio 1 do Dockerfile).
+          verificar "SPA sob o prefixo"        http://localhost:8000/TCC/            200
+          # Dados clínicos exigem sessão.
+          verificar "API exige autenticação"   http://localhost:8000/TCC/api/pacientes 401
+          # Sem o prefixo a API não existe.
+          verificar "API fora do prefixo"      http://localhost:8000/api/pacientes     404
+
+      - name: Logs do container (em caso de falha)
+        if: failure()
+        run: docker logs upp_ci || true
+
+      - name: Encerrar container
+        if: always()
+        run: docker rm -f upp_ci || true
