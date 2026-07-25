@@ -60,11 +60,12 @@ async def receber_evento(
     evento = normalizar_payload(payload, device_header)
     evento_dict = evento.model_dump(mode="python")
 
-    # Ensure device known
+    # Ensure device known. Falha aqui é benigna: o device já pode estar
+    # registrado e a amostra ainda pode ser processada — mas precisa ser vista.
     try:
         registrar_device(DB_PATH, evento.device_id, meta=None)
     except Exception:
-        pass
+        logger.warning("registrar_device_falhou", device_id=evento.device_id, exc_info=True)
 
     # Resolve paciente by device and timestamp if paciente_id not provided
     try:
@@ -72,24 +73,37 @@ async def receber_evento(
     except Exception:
         ts_ms = None
     if not evento.paciente_id and ts_ms is not None:
+        # Falha na resolução é benigna: cai no caminho de evento órfão abaixo,
+        # que persiste a amostra para reconciliação posterior.
         try:
             pid = resolver_paciente_por_device_em(DB_PATH, evento.device_id, ts_ms)
             if pid:
                 evento.paciente_id = pid
                 evento_dict["paciente_id"] = pid
         except Exception:
-            pass
+            logger.warning(
+                "resolver_paciente_falhou", device_id=evento.device_id, ts_ms=ts_ms, exc_info=True
+            )
 
     metricas.registrar_recebido()
 
     # If still no paciente_id, persist raw device event for later reconciliation and return
     if not evento.paciente_id:
+        # Este é o ÚNICO lugar onde a amostra é guardada. Se falhar, o dado do
+        # sensor está perdido — não pode responder "accepted".
         try:
             ts_iso = evento.ts_utc.strftime("%Y-%m-%dT%H:%M:%S")
             ts_ms = int(evento.ts_utc.timestamp() * 1000)
             ev_id = inserir_device_event(DB_PATH, evento.device_id, ts_iso, ts_ms, evento_dict)
-        except Exception:
-            ev_id = None
+        except Exception as exc:
+            logger.exception("evento_orfao_nao_persistido", device_id=evento.device_id)
+            raise HTTPException(
+                status.HTTP_503_SERVICE_UNAVAILABLE,
+                detail={
+                    "code": "persistencia_indisponivel",
+                    "message": "Falha ao armazenar o evento; reenvie.",
+                },
+            ) from exc
         logger.info("evento_sem_paciente", device_id=evento.device_id, event_id=ev_id)
         return ApiResponse(
             code="accepted",
@@ -181,6 +195,7 @@ async def receber_grade(
     contagem_por_paciente: Dict[str, int] = defaultdict(int)
     total_alertas = 0
     linhas_lidas = 0
+    perdidos = 0  # amostras que nao puderam ser persistidas
 
     try:
         async for linha in _iterar_jsonl(arquivo):
@@ -197,34 +212,44 @@ async def receber_grade(
                 ) from exc
             evento = normalizar_payload(dados, device_header)
             evento_dict = evento.model_dump(mode="python")
-            # ensure device registered
+            # ensure device registered (falha benigna: device já pode existir)
             try:
                 registrar_device(DB_PATH, evento.device_id, meta=None)
             except Exception:
-                pass
+                logger.warning("registrar_device_falhou", device_id=evento.device_id, exc_info=True)
             # try resolve paciente
             try:
                 ts_ms = int(evento.ts_utc.timestamp() * 1000)
             except Exception:
                 ts_ms = None
             if not evento.paciente_id and ts_ms is not None:
+                # Falha benigna: cai no caminho de órfão, que persiste a amostra.
                 try:
                     pid = resolver_paciente_por_device_em(DB_PATH, evento.device_id, ts_ms)
                     if pid:
                         evento.paciente_id = pid
                         evento_dict["paciente_id"] = pid
                 except Exception:
-                    pass
+                    logger.warning(
+                        "resolver_paciente_falhou", device_id=evento.device_id, ts_ms=ts_ms, exc_info=True
+                    )
             metricas.registrar_recebido()
             # if still no paciente, store raw device event and continue
             if not evento.paciente_id:
+                # Perder isto significa perder a amostra. Não aborta o lote
+                # inteiro por uma linha, mas contabiliza e reporta na resposta.
                 try:
                     ts_iso = evento.ts_utc.strftime("%Y-%m-%dT%H:%M:%S")
                     if ts_ms is None:
                         ts_ms = int(evento.ts_utc.timestamp() * 1000)
                     inserir_device_event(DB_PATH, evento.device_id, ts_iso, ts_ms, evento_dict)
                 except Exception:
-                    pass
+                    perdidos += 1
+                    logger.exception(
+                        "evento_orfao_nao_persistido",
+                        device_id=evento.device_id,
+                        linha=linhas_lidas,
+                    )
                 continue
             resultado = filtrar_evento(evento_dict)
             if resultado.descartado:
@@ -245,16 +270,26 @@ async def receber_grade(
         device_id=device_header,
         processados=processados,
         alertas=total_alertas,
+        perdidos=perdidos,
     )
 
+    if perdidos:
+        mensagem = (
+            f"{processados} amostras processadas; {perdidos} nao puderam ser "
+            "armazenadas e devem ser reenviadas."
+        )
+    else:
+        mensagem = f"{processados} amostras processadas com sucesso."
+
     return ApiResponse(
-        code="success",
-        message=f"{processados} amostras processadas com sucesso.",
+        code="partial" if perdidos else "success",
+        message=mensagem,
         ids={
             "pacientes": dict(contagem_por_paciente),
             "device_id": device_header,
             "processados": processados,
             "alertas": total_alertas,
+            "perdidos": perdidos,
         },
     )
 
@@ -303,11 +338,11 @@ async def websocket_eventos(websocket: WebSocket):
             await websocket.close()
             return
 
-        # Register device if needed
+        # Register device if needed (falha benigna: device já pode existir)
         try:
             registrar_device(DB_PATH, device_id, meta={"cama_id": auth_data.get("cama_id")})
         except Exception:
-            pass
+            logger.warning("registrar_device_falhou", device_id=device_id, exc_info=True)
 
         await websocket.send_json({"status": "connected", "device_id": device_id})
 
@@ -343,11 +378,12 @@ async def websocket_eventos(websocket: WebSocket):
                     # We can reuse normalizar_payload logic but we need to be careful about exceptions
                     # For now, let's just try to persist it as a device event if we can't fully validate
 
+                    persistido = False
                     try:
                         evento = normalizar_payload(payload, device_header=device_id)
                         evento_dict = evento.model_dump(mode="python")
 
-                        # Try to resolve patient
+                        # Try to resolve patient (falha benigna: cai no raw abaixo)
                         if not evento.paciente_id:
                             try:
                                 ts_ms = int(evento.ts_utc.timestamp() * 1000)
@@ -356,7 +392,9 @@ async def websocket_eventos(websocket: WebSocket):
                                     evento.paciente_id = pid
                                     evento_dict["paciente_id"] = pid
                             except Exception:
-                                pass
+                                logger.warning(
+                                    "resolver_paciente_falhou", device_id=evento.device_id, exc_info=True
+                                )
 
                         if evento.paciente_id:
                             # Full processing
@@ -366,16 +404,31 @@ async def websocket_eventos(websocket: WebSocket):
                             ts_iso = evento.ts_utc.strftime("%Y-%m-%dT%H:%M:%S")
                             ts_ms = int(evento.ts_utc.timestamp() * 1000)
                             inserir_device_event(DB_PATH, evento.device_id, ts_iso, ts_ms, evento_dict)
+                        persistido = True
 
                     except Exception as e:
-                        # If validation fails, just log and maybe store raw if possible
+                        # Validação falhou. O fallback abaixo era prometido num
+                        # comentário mas nunca existiu: o evento era descartado e
+                        # mesmo assim recebia ACK "ok", então o device o dava por
+                        # entregue e a amostra sumia.
                         logger.warning("ws_event_validation_failed", error=str(e))
-                        # fallback: store raw if we have at least device_id
-                        pass
+                        try:
+                            ts_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+                            ts_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+                            inserir_device_event(DB_PATH, device_id, ts_iso, ts_ms, payload)
+                            persistido = True
+                        except Exception:
+                            logger.exception("ws_event_nao_persistido", device_id=device_id)
 
-                    # Send ACK
+                    # ACK só quando a amostra está realmente guardada; caso
+                    # contrário o device precisa saber para reenviar.
                     if seq is not None:
-                        await websocket.send_json({"status": "ok", "seq": seq})
+                        if persistido:
+                            await websocket.send_json({"status": "ok", "seq": seq})
+                        else:
+                            await websocket.send_json(
+                                {"status": "error", "seq": seq, "error": "persist_failed"}
+                            )
 
                 except Exception as e:
                     logger.error("ws_processing_error", error=str(e))

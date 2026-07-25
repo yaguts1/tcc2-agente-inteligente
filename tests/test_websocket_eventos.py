@@ -171,5 +171,41 @@ async def test_websocket_eventos_reconexao():
             assert resp2["device_id"] == "DEV-RC"
 
 
+@pytest.mark.asyncio
+async def test_websocket_nao_confirma_evento_que_nao_foi_persistido():
+    """Se a amostra nao pode ser guardada, o ACK precisa sinalizar erro.
+
+    Antes o handler logava a falha, seguia com `pass` e mandava
+    {"status": "ok"} assim mesmo — o ESP32 dava a amostra por entregue e a
+    descartava, entao a leitura sumia em silencio.
+    """
+    with TestClient(app) as client:
+        with client.websocket_connect("/api/ws/eventos") as websocket:
+            websocket.send_json({"device_id": "DEV-FAIL", "cama_id": "C-01"})
+            assert websocket.receive_json()["status"] == "connected"
+
+            # Toda tentativa de persistir falha (banco indisponivel, por ex.)
+            with patch(
+                "interface.routers.ingestao.inserir_device_event",
+                side_effect=RuntimeError("db indisponivel"),
+            ), patch(
+                "interface.routers.ingestao.registrar_evento",
+                side_effect=RuntimeError("db indisponivel"),
+            ):
+                websocket.send_json({
+                    "seq": 99,
+                    "device_id": "DEV-FAIL",
+                    "ts_utc": "2025-10-27T14:30:00Z",
+                    "tipo": "postura",
+                    "valor": 1,
+                })
+                resposta = websocket.receive_json()
+
+            assert resposta["seq"] == 99
+            assert resposta["status"] == "error", (
+                f"evento perdido foi confirmado como ok: {resposta}"
+            )
+
+
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
