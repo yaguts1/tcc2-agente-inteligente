@@ -18,7 +18,7 @@ from interface.repositories.monitoramento import (
     resumo as resumo_monitoramento,
     status_por_paciente,
 )
-from interface.tempo import agora_utc_naive
+from interface.tempo import agora_utc_naive, para_iso_utc
 from interface.ws_manager_optimized import ws_manager_optimized
 
 logger = structlog.get_logger(__name__)
@@ -297,8 +297,12 @@ def get_timeline(
         for ev in eventos:
             pid = ev.get("paciente_id")
             ev["paciente_name"] = paciente_map.get(pid, "Desconhecido") if pid else None
+            # `ts` sai do banco em UTC naive. Sem offset explícito o browser o
+            # lê como hora LOCAL e a linha do tempo do paciente aparece 3h
+            # adiantada para quem está no Brasil.
+            ev["ts"] = para_iso_utc(ev.get("ts"))
             result.append(ev)
-            
+
         return result
     except Exception as exc:
         logger.exception("timeline_error", erro=str(exc))
