@@ -124,17 +124,31 @@ export function AlertsTable({
     }
   };
 
+  // `finally` aqui não é zelo: o AlertsContext RE-LANÇA o erro depois de
+  // avisar o usuário. Sem ele, uma ação que falha deixa `processingId` preso —
+  // o botão da linha fica desabilitado para sempre e a enfermeira não consegue
+  // tentar de novo sem recarregar a página. No caso de concluir era pior: o
+  // diálogo de confirmação também ficava aberto, sem responder.
+  //
+  // Os handlers de lote logo abaixo já faziam isso corretamente; os
+  // individuais é que ficaram para trás.
   const handleAcknowledgeClick = async (alertId: string) => {
     setProcessingId(alertId);
-    await onAcknowledge(alertId);
-    setProcessingId(null);
+    try {
+      await onAcknowledge(alertId);
+    } finally {
+      setProcessingId(null);
+    }
   };
 
   const handleCompleteClick = async (alertId: string) => {
     setProcessingId(alertId);
-    await onComplete(alertId);
-    setProcessingId(null);
-    setConfirmingComplete(null);
+    try {
+      await onComplete(alertId);
+    } finally {
+      setProcessingId(null);
+      setConfirmingComplete(null);
+    }
   };
 
   // Bulk action handlers
