@@ -27,6 +27,7 @@ from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 from interface.api import router as api_router
 from interface.auth_utils import em_producao
 from interface.db_core import criar_esquema
+from interface.dependencies import token_dispositivo_configurado
 from interface.lifespan_tasks import (
     start_reconciler_task,
     stop_reconciler_task,
@@ -91,6 +92,22 @@ async def _lifespan(app: FastAPI):
         logger.info("schema_garantido", db_path=DB_PATH)
     except Exception as exc:  # pragma: no cover - log but do not fail startup
         logger.warning("schema_nao_garantido", motivo=str(exc))
+
+    # A ingestao so autentica a origem se UPP_DEVICE_TOKEN estiver definido.
+    # Sem ele, qualquer um que alcance a rede pode injetar leituras de sensor
+    # em nome de um paciente — o X-Device-Id vem do proprio cliente e nao e
+    # segredo. Deixamos ligado por padrao para nao derrubar bancadas ja
+    # montadas, mas o aviso precisa aparecer.
+    if not token_dispositivo_configurado():
+        logger.warning(
+            "device_token_nao_configurado",
+            motivo=(
+                "UPP_DEVICE_TOKEN nao definido: os endpoints de ingestao "
+                "(/api/eventos, /api/grade, /api/ws/eventos) aceitam qualquer "
+                "origem. Defina a variavel e grave o mesmo valor no config.h "
+                "do firmware."
+            ),
+        )
 
     # Tasks de background (reconciler de device_events + backup periódico).
     start_reconciler_task(app)

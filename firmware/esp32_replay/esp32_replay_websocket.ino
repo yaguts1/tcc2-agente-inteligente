@@ -171,9 +171,17 @@ void webSocketEvent(WStype_t type, uint8_t *payload, size_t length) {
         Serial.println("[WS] ✅ Conectado ao servidor WebSocket");
         g_websocketConectado = true;
         
-        // Enviar autenticação
-        String auth = "{\"device_id\":\"" + g_config.deviceId + 
-                     "\",\"cama_id\":\"" + g_config.camaId + "\"}";
+        // Enviar autenticação. O token vai no corpo (e não como header) porque
+        // a lib de WebSocket do ESP32 não permite definir headers no handshake;
+        // o backend aceita os dois caminhos.
+        String tokenCampo = "";
+#ifdef DEVICE_TOKEN
+        if (strlen(DEVICE_TOKEN) > 0) {
+          tokenCampo = ",\"token\":\"" + String(DEVICE_TOKEN) + "\"";
+        }
+#endif
+        String auth = "{\"device_id\":\"" + g_config.deviceId +
+                     "\",\"cama_id\":\"" + g_config.camaId + "\"" + tokenCampo + "}";
         webSocket.sendTXT(auth);
         atualizarEstado(ReplayState::ENVIANDO);
       }
