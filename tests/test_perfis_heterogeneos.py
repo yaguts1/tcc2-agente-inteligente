@@ -171,17 +171,27 @@ class TestHeterogeneidade:
         assert len(set(valores)) > 1, "Esperava variação entre pacientes"
     
     def test_variacao_40_porcento(self):
-        """Testa que há pelo menos 40% variação entre riscos."""
+        """Testa que há pelo menos 40% variação entre riscos.
+
+        `inicio` é fixo de propósito. Sem ele, `gerar_sessao_simulada` usa
+        `datetime.now()` como referência e o resultado passa a depender do
+        MINUTO em que a suíte roda: medindo os 60 minutos de uma hora, a
+        variação fica >= 30% em 59 deles e cai para 27,3% em um — ou seja, o
+        teste falhava sozinho em ~1,7% das execuções, sem nada ter mudado no
+        código. Seed fixa e horário livre não combinam.
+        """
+        inicio = datetime(2026, 1, 15, 12, 0, 0)
         duracao_por_risco = {}
-        
+
         for risco in ["baixo", "alto"]:
             params = PERFIS_PREDEFINIDOS[risco]
             perfil = PerfilPaciente(**params)
-            
+
             grade, _ = gerar_sessao_simulada(
                 duracao_horas=24,
                 seed=42,
                 passo_min=5,
+                inicio=inicio,
                 perfil=perfil,
             )
             
