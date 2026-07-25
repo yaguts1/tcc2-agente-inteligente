@@ -46,10 +46,27 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
       setError(null);
       setIsOffline(false);
     } catch (err) {
-      if (err instanceof ApiException) {
-        if (err.status === 0 || !navigator.onLine) {
-          setIsOffline(true);
-        }
+      // Antes este bloco só chamava console.error: `error` ficava null e a
+      // tela seguia exibindo a ÚLTIMA lista carregada, sem qualquer indicação
+      // de que os dados pararam de atualizar. Num monitor de leito isso é pior
+      // do que uma tela de erro — a equipe decide sobre dado velho achando que
+      // é atual. (Mesma classe da detecção de silêncio do backend.)
+      //
+      // A lista anterior é mantida de propósito: apagá-la mostraria "nenhum
+      // alerta", que é justamente a leitura errada. Ela fica na tela, mas
+      // acompanhada do aviso.
+      //
+      // `err.status === 0` nunca acontecia: uma falha de rede do fetch lança
+      // TypeError, não ApiException, então o ramo inteiro era inalcançável.
+      const falhaDeRede = err instanceof TypeError || !navigator.onLine;
+      setIsOffline(falhaDeRede);
+
+      if (falhaDeRede) {
+        setError('Sem conexão com o servidor. Os alertas exibidos podem estar desatualizados.');
+      } else if (err instanceof ApiException) {
+        setError(`Falha ao atualizar alertas: ${err.message}`);
+      } else {
+        setError('Falha ao atualizar alertas. Os dados exibidos podem estar desatualizados.');
       }
       console.error('Error fetching alerts:', err);
     } finally {

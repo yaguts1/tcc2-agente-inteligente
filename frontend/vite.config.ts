@@ -18,6 +18,8 @@
     },
     test: {
       environment: 'jsdom',
+      globals: true,
+      setupFiles: './src/setupTests.ts',
     },
     server: {
       port: 3000,
