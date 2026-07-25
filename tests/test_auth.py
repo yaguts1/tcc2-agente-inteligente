@@ -50,8 +50,48 @@ def test_register_duplicate(tmp_path: Path):
     with TestClient(app) as client:
         r = client.post("/api/auth/register", json={"username": "bob", "password": "pw"})
         assert r.status_code == 201
+        # Reusa a sessao criada no cadastro acima (o cadastro ja nao e aberto).
         r2 = client.post("/api/auth/register", json={"username": "bob", "password": "pw2"})
         assert r2.status_code == 400
+
+
+def test_primeiro_cadastro_e_liberado_depois_exige_credencial(tmp_path: Path):
+    """Cadastro aberto anularia toda a autenticacao das rotas clinicas: bastaria
+    criar uma conta para ver os pacientes. A primeira conta e liberada (bootstrap
+    da instalacao); a partir dai exige sessao ou token de convite."""
+    app = _make_app_with_db(tmp_path)
+    with TestClient(app) as bootstrap:
+        r = bootstrap.post("/api/auth/register", json={"username": "primeiro", "password": "pw"})
+        assert r.status_code == 201, "primeiro cadastro deveria ser liberado"
+
+    # Cliente novo, sem cookie de sessao.
+    with TestClient(app) as anonimo:
+        r = anonimo.post("/api/auth/register", json={"username": "invasor", "password": "pw"})
+        assert r.status_code == 403, f"cadastro anonimo foi aceito: {r.text}"
+        assert r.json()["detail"]["code"] == "cadastro_restrito"
+
+
+def test_cadastro_aceita_token_de_convite(tmp_path: Path, monkeypatch):
+    monkeypatch.setenv("UPP_REGISTER_TOKEN", "convite-secreto")
+    app = _make_app_with_db(tmp_path)
+    with TestClient(app) as c:
+        assert c.post("/api/auth/register", json={"username": "primeiro", "password": "pw"}).status_code == 201
+
+    with TestClient(app) as anonimo:
+        r = anonimo.post(
+            "/api/auth/register",
+            json={"username": "convidado", "password": "pw"},
+            headers={"X-Register-Token": "convite-secreto"},
+        )
+        assert r.status_code == 201, f"token de convite valido foi recusado: {r.text}"
+
+    with TestClient(app) as anonimo:
+        r = anonimo.post(
+            "/api/auth/register",
+            json={"username": "outro", "password": "pw"},
+            headers={"X-Register-Token": "errado"},
+        )
+        assert r.status_code == 403
 
 
 def test_login_wrong_password(tmp_path: Path):

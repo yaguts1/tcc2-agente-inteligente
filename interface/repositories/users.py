@@ -34,6 +34,17 @@ class UserRepository:
             conn.execute("INSERT INTO users (username, password_hash, display_name, created_at) VALUES (?, ?, ?, ?)", (uname, ph, disp, agora))
             conn.commit()
 
+    def count(self) -> int:
+        """Quantidade de usuarios cadastrados.
+
+        Usado pelo /auth/register para liberar o cadastro do PRIMEIRO usuario
+        (bootstrap da instalacao) e exigir credencial dai em diante.
+        """
+        with connect(self.db_path) as conn:
+            self._ensure_users_role_column(conn)
+            cur = conn.execute("SELECT COUNT(*) FROM users")
+            return int(cur.fetchone()[0])
+
     def get_by_username(self, username: str) -> Optional[Dict]:
         uname = str(username or "").strip()
         if not uname:
