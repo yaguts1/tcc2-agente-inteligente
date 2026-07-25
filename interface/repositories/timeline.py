@@ -31,6 +31,36 @@ def inserir_timeline_event(
         return int(cursor.lastrowid)
 
 
+def ultimo_evento_por_paciente(
+    db_path: str,
+    paciente_ids: list[str],
+    tipos: list[str],
+) -> dict[str, str]:
+    """Timestamp do evento mais recente de cada paciente, entre os `tipos` dados.
+
+    Uma unica query para todos os pacientes. Existe para eliminar o N+1 de
+    `listar_alertas_frontend`, que chamava `selecionar_timeline(limit=50)` uma
+    vez POR ALERTA so para descobrir o ultimo reposicionamento.
+
+    Retorna {paciente_id: ts}. Pacientes sem evento ficam de fora.
+    """
+    if not paciente_ids or not tipos:
+        return {}
+
+    marcadores_ids = ",".join("?" for _ in paciente_ids)
+    marcadores_tipos = ",".join("?" for _ in tipos)
+    # `ts` acompanha o MAX(ts_ms) do grupo: no SQLite, uma coluna "solta" junto
+    # de MAX() vem da linha que produziu esse maximo (bare columns).
+    sql = (
+        "SELECT paciente_id, ts, MAX(ts_ms) AS ts_ms FROM timeline_events "
+        f"WHERE paciente_id IN ({marcadores_ids}) AND tipo IN ({marcadores_tipos}) "
+        "GROUP BY paciente_id"
+    )
+    with connect(db_path) as conn:
+        linhas = conn.execute(sql, (*paciente_ids, *tipos)).fetchall()
+    return {str(l["paciente_id"]): l["ts"] for l in linhas if l["ts"] is not None}
+
+
 def selecionar_timeline(
     db_path: str,
     paciente_id: str | None = None,

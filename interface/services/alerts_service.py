@@ -12,7 +12,13 @@ from typing import List, Literal
 import structlog
 
 from interface.api_shared import DB_PATH, api_cache
-from interface.dao import obter_ficha_paciente, selecionar_alertas_janela, selecionar_timeline, alterar_status_alerta, inserir_timeline_event
+from interface.dao import (
+    alterar_status_alerta,
+    inserir_timeline_event,
+    listar_fichas_pacientes,
+    selecionar_alertas_janela,
+)
+from interface.repositories.timeline import ultimo_evento_por_paciente
 from interface.ws_manager_optimized import ws_manager_optimized
 from servicos import metricas
 
@@ -60,39 +66,62 @@ async def listar_alertas_frontend(
     if cached_result is not None:
         return cached_result
 
+    # Estrutura em 3 queries de custo fixo, independentemente do numero de
+    # alertas. Antes eram duas consultas POR ALERTA (obter_ficha_paciente e
+    # selecionar_timeline), cada uma abrindo a propria conexao: 500 alertas na
+    # janela viravam ~1000 conexoes. Pior, os filtros e o limit/offset so eram
+    # aplicados DEPOIS desse laco, entao limit=10 pagava o custo inteiro.
     raw_alerts = selecionar_alertas_janela(DB_PATH, horas)
-    results: list[dict] = []
+
+    # 1) Filtros que nao dependem do banco, aplicados ANTES de qualquer I/O.
+    candidatos = []
     for a in raw_alerts:
+        risk_level_val = _RISK_MAP.get(str(a.get("perfil") or "medio"), "medium")
+        status_val = _STATUS_MAP.get(str(a.get("status") or "aberto"), "pending")
+        if risk_level and risk_level_val != risk_level:
+            continue
+        if status_filter and status_val != status_filter:
+            continue
+        candidatos.append((a, risk_level_val, status_val))
+
+    # 2) Fichas de todos os pacientes de uma vez (1 query).
+    fichas = {
+        str(f.get("paciente_id")): f
+        for f in listar_fichas_pacientes(DB_PATH, incluir_rotinas=False)
+    }
+
+    def _quarto_e_leito(paciente_id: str) -> tuple[str, str, str]:
+        ficha = fichas.get(str(paciente_id))
+        nome = ficha.get("nome") if ficha else paciente_id
+        cama_id = (ficha.get("cama_id") if ficha else None) or ""
+        if cama_id and "/" in cama_id:
+            partes = [p.strip() for p in cama_id.split("/")]
+            return nome, partes[0], (partes[1] if len(partes) > 1 else "")
+        return nome, cama_id, ""
+
+    # O filtro por quarto depende da ficha, entao vem depois do passo 2.
+    if room:
+        alvo = room.lower()
+        candidatos = [
+            c for c in candidatos
+            if alvo in _quarto_e_leito(c[0].get("paciente_id"))[1].lower()
+        ]
+
+    # 3) Pagina ANTES de buscar a timeline: so o que vai ser devolvido custa I/O.
+    pagina = candidatos[offset: offset + limit]
+
+    ultimos = ultimo_evento_por_paciente(
+        DB_PATH,
+        paciente_ids=list({str(a.get("paciente_id")) for a, _, _ in pagina}),
+        tipos=["alert_ack", "repositioned", "alert_close", "alert_open"],
+    )
+
+    results: list[dict] = []
+    for a, risk_level_val, status_val in pagina:
         paciente_id = a.get("paciente_id")
         inicio = a.get("inicio")
         janela_min = int(a.get("janela_min") or 0)
-        perfil = str(a.get("perfil") or "medio")
-        status_raw = str(a.get("status") or "aberto")
-
-        aid = f"{paciente_id}__{inicio}"
-
-        ficha = obter_ficha_paciente(DB_PATH, paciente_id, incluir_rotinas=False)
-        patient_name = ficha.get("nome") if ficha else paciente_id
-        cama_id = (ficha.get("cama_id") if ficha else None) or ""
-        room_val = cama_id
-        bed = ""
-        if cama_id and "/" in cama_id:
-            parts = [p.strip() for p in cama_id.split("/")]
-            room_val = parts[0]
-            if len(parts) > 1:
-                bed = parts[1]
-
-        last_ts = None
-        try:
-            timeline = selecionar_timeline(DB_PATH, paciente_id=paciente_id, limit=50)
-            for ev in sorted(timeline, key=lambda r: int(r.get("ts_ms", 0)), reverse=True):
-                if ev.get("tipo") in {"alert_ack", "repositioned", "alert_close", "alert_open"}:
-                    last_ts = ev.get("ts")
-                    break
-        except Exception:
-            last_ts = None
-        if last_ts is None:
-            last_ts = inicio
+        patient_name, room_val, bed = _quarto_e_leito(paciente_id)
 
         try:
             next_dt = datetime.fromisoformat(inicio[:19]) + timedelta(minutes=janela_min)
@@ -100,32 +129,21 @@ async def listar_alertas_frontend(
         except Exception:
             next_iso = inicio
 
-        risk_level_val = _RISK_MAP.get(perfil, "medium")
-        status_val = _STATUS_MAP.get(status_raw, "pending")
-
-        if risk_level and risk_level_val != risk_level:
-            continue
-        if status_filter and status_val != status_filter:
-            continue
-        if room and room.lower() not in room_val.lower():
-            continue
-
         results.append(
             {
-                "id": aid,
+                "id": f"{paciente_id}__{inicio}",
                 "patientName": patient_name,
                 "room": room_val,
                 "bed": bed,
-                "lastRepositioning": last_ts,
+                "lastRepositioning": ultimos.get(str(paciente_id)) or inicio,
                 "nextRepositioning": next_iso,
                 "riskLevel": risk_level_val,
                 "status": status_val,
             }
         )
 
-    paginated_results = results[offset: offset + limit]
-    await api_cache.set(cache_key, paginated_results, ttl_seconds=30)
-    return paginated_results
+    await api_cache.set(cache_key, results, ttl_seconds=30)
+    return results
 
 
 def _montar_payload_broadcast(alert_id: str, paciente_id: str, ws_status: str) -> dict:
