@@ -2,12 +2,16 @@ from __future__ import annotations
 
 import asyncio
 import os
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
+
+from interface.dependencies import get_current_user
 
 from servicos.backup import BackupService
 from interface.api_shared import DB_PATH
 
-router = APIRouter(tags=["backup"])
+# Endpoints administrativos de backup. Estavam totalmente abertos: um
+# POST /admin/backup/cleanup?keep_days=0 anonimo apagava todos os backups.
+router = APIRouter(tags=["backup"], dependencies=[Depends(get_current_user)])
 
 # Backup endpoints. O diretório de backup precisa estar dentro do volume
 # persistente do Docker (ver docker-compose.yml) — um default relativo

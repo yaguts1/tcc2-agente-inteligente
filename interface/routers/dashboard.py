@@ -4,7 +4,7 @@ import time
 import sqlite3
 from datetime import datetime, timezone
 import structlog
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
 from interface.api_shared import DB_PATH, APP_VERSION, APP_START_TIME, DEFAULT_PERFIL
 from interface.dao import (
@@ -13,11 +13,15 @@ from interface.dao import (
     obter_ficha_paciente,
     selecionar_timeline,
 )
+from interface.dependencies import get_current_user
 from interface.tempo import agora_utc_naive
 from interface.ws_manager_optimized import ws_manager_optimized
 
 logger = structlog.get_logger(__name__)
-router = APIRouter(tags=["dashboard"])
+# Exige sessao: /stats e /timeline expoem dados clinicos e /health detalha
+# DB_PATH e contagem de alertas. O healthcheck do container usa /healthz
+# (interface/web.py), que segue publico de proposito.
+router = APIRouter(tags=["dashboard"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("/health", status_code=status.HTTP_200_OK)

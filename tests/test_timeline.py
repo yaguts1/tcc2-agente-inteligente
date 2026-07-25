@@ -49,9 +49,26 @@ async def api_client(tmp_path, monkeypatch):
     api_module.reset_processador()
     api_module.reset_rate_limiter()
 
+    # /api/timeline expoe dados clinicos e passou a exigir sessao. O client
+    # carrega um JWT REAL (assinado pela mesma SECRET_KEY que verify_token usa).
+    from interface.auth_utils import create_access_token
+
     transport = ASGITransport(app=web_module.app)
-    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+        headers={"Authorization": f"Bearer {create_access_token({'sub': 'tester'})}"},
+    ) as client:
         yield {"client": client, "db_path": tmp_db}
+
+
+@pytest.mark.asyncio
+async def test_timeline_exige_autenticacao(api_client):
+    """Sem credencial, /api/timeline responde 401."""
+    transport = ASGITransport(app=__import__("interface.web", fromlist=["app"]).app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as anon:
+        resp = await anon.get("/api/timeline")
+    assert resp.status_code == 401
 
 @pytest.mark.asyncio
 async def test_get_timeline_empty(api_client):
