@@ -26,6 +26,24 @@ if not SECRET_KEY:
 
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 8  # 8 hours
+# Fonte unica do TTL da sessao: os cookies de login precisam expirar junto com
+# o JWT (antes o valor 8h estava repetido em varios set_cookie e podia
+# dessincronizar do token).
+ACCESS_TOKEN_EXPIRE_SECONDS = ACCESS_TOKEN_EXPIRE_MINUTES * 60
+
+
+def ambiente_atual() -> str:
+    """Ambiente de execucao, lido dinamicamente.
+
+    `_ENVIRONMENT` acima e resolvido no import (necessario para falhar cedo sem
+    JWT_SECRET_KEY); aqui a leitura e por chamada para que testes e cenarios de
+    runtime possam alternar o ambiente.
+    """
+    return os.getenv("ENVIRONMENT", "development").lower()
+
+
+def em_producao() -> bool:
+    return ambiente_atual() == "production"
 
 def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
     to_encode = data.copy()
