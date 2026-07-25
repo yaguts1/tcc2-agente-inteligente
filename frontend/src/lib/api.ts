@@ -299,7 +299,13 @@ export interface CreatePatientRequest {
   room: string;
   bed: string;
   riskLevel: 'high' | 'medium' | 'low';
-  repositioningInterval: number;
+  /**
+   * Opcional e ignorado pelo backend: o intervalo é derivado do perfil de
+   * risco. Era obrigatório aqui, o formulário deixava editá-lo e o valor era
+   * descartado sem aviso — quem alterasse acreditaria ter mudado o protocolo
+   * do paciente. Use `patientsApi.getPerfisRisco()` para exibir o valor real.
+   */
+  repositioningInterval?: number;
 }
 
 // Simulation API
@@ -322,7 +328,14 @@ export interface SimulationResult {
   message?: string;
 }
 
+/** Intervalo de reposicionamento por nivel de risco, em horas. Vem do backend
+ *  (mesma configuracao que o motor de alertas usa) para o formulario nao
+ *  manter uma copia divergente da tabela. */
+export type PerfisRisco = Record<'high' | 'medium' | 'low', number>;
+
 export const patientsApi = {
+  getPerfisRisco: () => request<PerfisRisco>('/api/perfis-risco'),
+
   getPatients: () => request<Patient[]>('/api/pacientes'),
 
   getPatient: (id: string) => request<Patient>(`/api/pacientes/${id}`),

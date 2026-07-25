@@ -53,6 +53,24 @@ def listar_pacientes_endpoint() -> List[dict]:
     return service.list_patients()
 
 
+@router.get("/perfis-risco", status_code=status.HTTP_200_OK)
+def listar_perfis_risco() -> dict:
+    """Intervalo de reposicionamento de cada perfil de risco.
+
+    Existe para o formulário mostrar o intervalo correto ANTES de salvar, sem
+    manter uma cópia da tabela no frontend. Já houve dois mapas divergentes
+    (motor 60/90/120 min vs. tela 2/3/4 h, o dobro) informando coisas
+    diferentes sobre o mesmo paciente; um terceiro no JavaScript repetiria o
+    problema. A fonte é a configuração que o motor de alertas usa.
+    """
+    from interface.services.paciente_service import intervalo_horas
+
+    return {
+        nivel: intervalo_horas(perfil)
+        for nivel, perfil in (("high", "alto"), ("medium", "medio"), ("low", "baixo"))
+    }
+
+
 @router_dispositivos.get(
     "/pacientes/cama/{cama_id}",
     response_model=PacienteConfigResponse,
