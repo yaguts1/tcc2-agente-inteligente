@@ -68,6 +68,67 @@ class UserRepository:
             cur = conn.execute("SELECT COUNT(*) FROM users")
             return int(cur.fetchone()[0])
 
+    PAPEIS_VALIDOS = frozenset({"admin", "staff"})
+
+    def listar(self) -> list[Dict]:
+        """Lista os usuarios, sem expor o hash de senha."""
+        with connect(self.db_path) as conn:
+            self._ensure_users_role_column(conn)
+            linhas = conn.execute(
+                "SELECT username, display_name, role, ativo, created_at"
+                " FROM users ORDER BY created_at"
+            ).fetchall()
+        return [
+            {**dict(l), "ativo": bool(l["ativo"])}
+            for l in linhas
+        ]
+
+    def contar_admins_ativos(self, exceto: str | None = None) -> int:
+        """Quantos admins ativos existem (opcionalmente ignorando um).
+
+        Serve para impedir que a instalacao fique sem nenhum administrador —
+        rebaixar ou desativar o ultimo admin deixaria backup, importacao e
+        gestao de usuarios permanentemente inacessiveis.
+        """
+        sql = "SELECT COUNT(*) FROM users WHERE role = 'admin' AND ativo = 1"
+        params: tuple = ()
+        if exceto:
+            sql += " AND username != ?"
+            params = (exceto,)
+        with connect(self.db_path) as conn:
+            self._ensure_users_role_column(conn)
+            return int(conn.execute(sql, params).fetchone()[0])
+
+    def definir_papel(self, username: str, role: str) -> None:
+        if role not in self.PAPEIS_VALIDOS:
+            raise ValueError(f"papel invalido: {role}")
+        with connect(self.db_path) as conn:
+            cur = conn.execute(
+                "UPDATE users SET role = ? WHERE username = ?", (role, username)
+            )
+            if cur.rowcount == 0:
+                raise LookupError("usuario nao encontrado")
+
+    def definir_ativo(self, username: str, ativo: bool) -> None:
+        with connect(self.db_path) as conn:
+            cur = conn.execute(
+                "UPDATE users SET ativo = ? WHERE username = ?",
+                (1 if ativo else 0, username),
+            )
+            if cur.rowcount == 0:
+                raise LookupError("usuario nao encontrado")
+
+    def definir_senha(self, username: str, password_hash: str) -> None:
+        ph = str(password_hash or "").strip()
+        if not ph:
+            raise ValueError("password_hash necessario")
+        with connect(self.db_path) as conn:
+            cur = conn.execute(
+                "UPDATE users SET password_hash = ? WHERE username = ?", (ph, username)
+            )
+            if cur.rowcount == 0:
+                raise LookupError("usuario nao encontrado")
+
     def get_by_username(self, username: str) -> Optional[Dict]:
         uname = str(username or "").strip()
         if not uname:

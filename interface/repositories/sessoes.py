@@ -15,12 +15,13 @@ Tres mecanismos, cada um para um caso (ver migrations/0002_sessoes_e_contas.sql)
 
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from typing import Optional
 
 import structlog
 
 from interface.db_core import connect, utc_now_iso
+from interface.tempo import agora_utc_naive
 
 logger = structlog.get_logger(__name__)
 
@@ -52,13 +53,21 @@ def revogar_sessoes_do_usuario(db_path: str, username: str) -> None:
     Grava o instante do corte; tokens com `iat` anterior deixam de ser aceitos.
     Mais barato e mais confiavel do que tentar enumerar os tokens em circulacao
     — nao sabemos quais existem.
+
+    O corte e o PROXIMO segundo, nao o atual. O `iat` do JWT tem resolucao de
+    1 segundo (e o padrao), entao um token emitido no mesmo segundo da
+    revogacao teria `iat` igual ao corte e sobreviveria a uma comparacao
+    estrita. Arredondando para cima, toda sessao daquele segundo cai; o unico
+    efeito colateral e que um login feito dentro do mesmo segundo tambem e
+    recusado e precisa ser repetido — janela de 1s, e falha fechada.
     """
+    corte = (agora_utc_naive() + timedelta(seconds=1)).strftime("%Y-%m-%dT%H:%M:%S")
     with connect(db_path) as conn:
         conn.execute(
             "UPDATE users SET tokens_validos_apos = ? WHERE username = ?",
-            (utc_now_iso(), username),
+            (corte, username),
         )
-    logger.info("sessoes_revogadas", usuario=username)
+    logger.info("sessoes_revogadas", usuario=username, corte=corte)
 
 
 def limpar_tokens_expirados(db_path: str) -> int:
