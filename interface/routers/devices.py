@@ -1,6 +1,8 @@
 from __future__ import annotations
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
+
+from interface.dependencies import get_current_user
 
 from interface.api_shared import DB_PATH
 from interface.dao import (
@@ -11,7 +13,10 @@ from interface.dao import (
 )
 from interface.schemas import DeviceRegisterRequest
 
-router = APIRouter(tags=["devices"])
+# Painel de dispositivos (listagem, eventos brutos, estatisticas): consumido
+# pela tela de administracao, nao pelo firmware — o ESP32 se registra pelo
+# proprio fluxo de ingestao.
+router = APIRouter(tags=["devices"], dependencies=[Depends(get_current_user)])
 
 
 @router.post("/devices/register", status_code=status.HTTP_201_CREATED)

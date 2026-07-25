@@ -30,7 +30,8 @@ async def frontend_alerts(
     status_filter: str | None = None,
     room: str | None = None,
     limit: int = 100,
-    offset: int = 0
+    offset: int = 0,
+    _: str = Depends(get_current_user),
 ) -> list[dict]:
     """Return alerts in a shape convenient for the React frontend with optional filters.
 

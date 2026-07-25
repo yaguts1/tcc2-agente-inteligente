@@ -8,7 +8,9 @@ from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, Field, field_validator
 
-from fastapi import APIRouter, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+
+from interface.dependencies import get_current_user
 
 from interface.dao_agenda import (
     ensure_agendas_table,
@@ -29,7 +31,9 @@ DB_PATH = os.getenv("UPP_DB_PATH", "dados.db")
 # Garantir que tabela existe
 ensure_agendas_table(DB_PATH)
 
-router = APIRouter(tags=["agenda"])
+# Agendas sao vinculadas a um paciente e definem quando alertas ficam
+# suprimidos — quem altera isso muda o cuidado prestado. Exige sessao.
+router = APIRouter(tags=["agenda"], dependencies=[Depends(get_current_user)])
 
 
 # ============================================================================

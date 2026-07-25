@@ -1,11 +1,12 @@
 from __future__ import annotations
 
 from typing import List
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from datetime import timedelta
 
 from interface.api_shared import DB_PATH, DEFAULT_PERFIL
+from interface.dependencies import get_current_user
 from interface.tempo import agora_utc_naive
 from interface.schemas import PacienteConfigResponse, RotinaConfig, FrontendCreatePatient
 from interface.repositories.pacientes import PatientRepository
@@ -19,7 +20,17 @@ from dados_simulados.gerador import (
 from interface.dao import inserir_grade, inserir_eventos, inserir_alertas
 from modulo_alerta.engine import processar_alertas
 
-router = APIRouter(tags=["pacientes"])
+# Todo o CRUD de pacientes exige sessao autenticada: sao dados clinicos
+# identificaveis (nome, leito, perfil de risco). Antes o router inteiro era
+# publico — dava para ler, criar e alterar pacientes sem credencial nenhuma.
+router = APIRouter(tags=["pacientes"], dependencies=[Depends(get_current_user)])
+
+# Router separado para o endpoint que o FIRMWARE consome
+# (GET /api/pacientes/cama/{cama_id}, ver firmware/esp32_replay/esp32_replay.ino):
+# um ESP32 nao tem sessao de usuario, entao exigir JWT aqui derrubaria a
+# ingestao. A protecao adequada para este endpoint e o token de dispositivo,
+# aplicado junto com /eventos e /grade.
+router_dispositivos = APIRouter(tags=["pacientes"])
 
 # Dependency Injection (Manual for now)
 repository = PatientRepository(DB_PATH)
@@ -41,7 +52,7 @@ async def listar_pacientes_endpoint() -> List[dict]:
     return service.list_patients()
 
 
-@router.get(
+@router_dispositivos.get(
     "/pacientes/cama/{cama_id}",
     response_model=PacienteConfigResponse,
     status_code=status.HTTP_200_OK,

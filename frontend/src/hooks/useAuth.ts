@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { authApi, ApiException } from '../lib/api';
-import { getStoredUser, getStoredToken, getSessionTimeRemaining, storeUser, storeToken, clearAuth } from '../lib/storage';
+import { getStoredUser, getStoredToken, getSessionTimeRemaining, storeUser, clearAuth } from '../lib/storage';
 
 export function useAuth() {
   const [user, setUser] = useState<{ username: string } | null>(null);
@@ -21,15 +21,14 @@ export function useAuth() {
         
         // Also restore localStorage from backend response for consistency
         const storedUser = getStoredUser();
-        const storedToken = getStoredToken();
-        
-        // If we have user data but no stored token, generate one
-        // (happens when returning to site and /me validates via cookie)
-        if (data.username && !storedToken) {
-          const fallbackToken = `${data.username}:${Math.floor(Date.now() / 1000)}`;
-          storeToken(fallbackToken);
-        }
-        
+
+        // NAO fabricar token aqui. Antes, quando /me validava pelo cookie mas
+        // o localStorage estava vazio, isto gravava `${username}:${timestamp}`
+        // e passava a mandar esse texto como `Authorization: Bearer ...`.
+        // Nao e um JWT: verify_token sempre rejeita, e so funcionava porque o
+        // backend cai para o cookie access_token quando o header e invalido.
+        // A sessao ja vem do cookie httpOnly — nao ha token a inventar.
+
         // Update user info if missing
         if (!storedUser) {
           storeUser({

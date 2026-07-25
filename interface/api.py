@@ -36,6 +36,7 @@ from quality.filtro import reset_filtro
 router = APIRouter(prefix="/api")
 router.include_router(auth.router)
 router.include_router(pacientes.router)
+router.include_router(pacientes.router_dispositivos)
 router.include_router(devices.router)
 router.include_router(alerts.router)
 router.include_router(dashboard.router)
