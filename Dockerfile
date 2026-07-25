@@ -1,5 +1,9 @@
 # Stage 1: Build Frontend
-FROM node:18-alpine as frontend-build
+# Node 20: o 18 esta em EOL, varias deps do frontend pedem >=20.19 (avisos
+# EBADENGINE no npm ci) e o @tailwindcss/vite e ESM-only — sob o 18 o vite
+# carrega o config como CommonJS e o build morre com ERR_REQUIRE_ESM.
+# O frontend/Dockerfile ja usava node:20; este aqui e que estava defasado.
+FROM node:20-alpine AS frontend-build
 WORKDIR /app/frontend
 COPY frontend/package*.json ./
 RUN npm ci
