@@ -1,39 +1,23 @@
-import os
 import json
-from pathlib import Path
 
 import pytest
 
 
-def test_admin_import_endpoint_creates_ficha_and_alert(tmp_path):
-    # ensure the app uses a temp DB
-    db_path = tmp_path / "admin_test.db"
-    os.environ["UPP_DB_PATH"] = str(db_path)
-    # ensure no UPP_ADMIN_TOKEN so endpoint falls back to session cookie
-    os.environ.pop("UPP_ADMIN_TOKEN", None)
+def test_admin_import_endpoint_creates_ficha_and_alert(app_isolado):
+    """Usa a fixture `app_isolado` (tests/conftest.py), que liga a app a um
+    banco temporario proprio.
 
-    # Recarrega os modulos depois de fixar UPP_DB_PATH. Sem isto o teste herda
-    # os modulos que outro arquivo (ex. tests/test_auth.py) ja recarregou
-    # apontando para o banco temporario DELE, e a verificacao da ficha falha
-    # por estar lendo de outro banco. A correcao estrutural (conftest com
-    # fixture compartilhada) vale para toda a suite.
-    import importlib
+    Antes o teste escrevia em os.environ sem restaurar e nao recarregava os
+    modulos, entao herdava os que test_auth.py havia religado ao banco
+    temporario DELE: passava isolado e falhava na suite completa.
 
-    import interface.api_shared as api_shared
-    import interface.api as api
-    import interface.routers.auth as auth_router
-    import interface.routers.admin as admin_router
-    import interface.web as web
-
-    for modulo in (api_shared, auth_router, admin_router, api, web):
-        importlib.reload(modulo)
-    api._reset_auth_rate_limits()
-
+    Sem UPP_ADMIN_TOKEN (o conftest o remove), o endpoint exige sessao JWT.
+    """
     from fastapi.testclient import TestClient
 
-    app = web.app
+    db_path = app_isolado.db_path
 
-    with TestClient(app) as client:
+    with TestClient(app_isolado.app) as client:
         # Registra um usuario real e autentica com ele. Antes este teste logava
         # como "tester" com UPP_ADMIN_PASS, apoiando-se no bypass em que
         # qualquer username servia — caminho que foi fechado. Usar um usuario
@@ -69,10 +53,9 @@ def test_admin_import_endpoint_creates_ficha_and_alert(tmp_path):
     assert body.get("inserted") is not None
 
     # verify ficha exists (ensure_minimal_paciente_ficha should have created it)
-    import interface.api as api
     from interface.dao import obter_ficha_paciente, selecionar_alertas_janela
 
-    app_db = api.DB_PATH
+    app_db = db_path
     ficha = obter_ficha_paciente(app_db, "PAC-7777")
     assert ficha is not None
     # alert row presence is not strictly guaranteed here (dedup/insert rules); ficha creation is the main contract

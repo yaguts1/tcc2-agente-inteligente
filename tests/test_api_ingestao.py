@@ -1,44 +1,33 @@
 from __future__ import annotations
 
+import importlib
 import json
 import sqlite3
-from importlib import reload
 from pathlib import Path
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
-from interface.dao import criar_esquema
-
 
 FIXTURES_DIR = Path(__file__).resolve().parent / "fixtures"
 
 
 @pytest_asyncio.fixture()
-async def api_client(tmp_path, monkeypatch):
-    tmp_db = tmp_path / "dados.db"
-    monkeypatch.setenv("UPP_DB_PATH", str(tmp_db))
-    criar_esquema(str(tmp_db))
+async def api_client(app_isolado):
+    """Usa a fixture compartilhada `app_isolado` (tests/conftest.py).
 
-    import interface.web as web_module
-    import interface.api_shared as api_shared
-    import interface.services.ingestao_service as ingestao_service
-    import interface.routers.ingestao as ingestao_router
-    from interface import api as api_module
-
-    reload(api_shared)
-    reload(ingestao_service)
-    reload(ingestao_router)
-    reload(api_module)
-    reload(web_module)
-
-    api_module.reset_processador()
-    api_module.reset_rate_limiter()
-
-    transport = ASGITransport(app=web_module.app)
+    A ingestao nao usa JWT de usuario: autentica por token de dispositivo, que
+    o conftest deixa desconfigurado — nesse modo a verificacao fica desligada,
+    entao nao ha header a enviar aqui.
+    """
+    transport = ASGITransport(app=app_isolado.app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as client:
-        yield {"client": client, "db_path": tmp_db, "api": api_module}
+        yield {
+            "client": client,
+            "db_path": Path(app_isolado.db_path),
+            "api": importlib.import_module("interface.api"),
+        }
 
 
 @pytest.mark.asyncio

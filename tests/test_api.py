@@ -1,60 +1,33 @@
 from __future__ import annotations
 
+import importlib
 import io
 import json
 import sqlite3
 from datetime import datetime
-from importlib import reload
 from pathlib import Path
 
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 
-from interface.dao import criar_esquema, criar_paciente
+from interface.dao import criar_paciente
 
 
 @pytest_asyncio.fixture()
-async def api_client(tmp_path, monkeypatch):
-    tmp_db = tmp_path / "dados.db"
-    monkeypatch.setenv("UPP_DB_PATH", str(tmp_db))
-    criar_esquema(str(tmp_db))
-
-    # Importacao tardia para respeitar as variaveis de ambiente definidas acima.
-    import interface.api_shared as api_shared
-    import interface.routers.auth as auth
-    import interface.routers.pacientes as pacientes
-    import interface.routers.devices as devices
-    import interface.services.alerts_service as alerts_service
-    import interface.routers.alerts as alerts
-    import interface.routers.dashboard as dashboard
-    import interface.services.ingestao_service as ingestao_service
-    import interface.routers.ingestao as ingestao
-    import interface.routers.backup as backup
-    import interface.routers.admin as admin
-    import interface.web as web_module
-    from interface import api as api_module
-
-    reload(api_shared)
-    reload(auth)
-    reload(pacientes)
-    reload(devices)
-    reload(alerts_service)
-    reload(alerts)
-    reload(dashboard)
-    reload(ingestao_service)
-    reload(ingestao)
-    reload(backup)
-    reload(admin)
-    reload(api_module)
-    reload(web_module)
-
-    api_module.reset_processador()
-    api_module.reset_rate_limiter()
-
-    transport = ASGITransport(app=web_module.app)
-    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
-        yield {"client": client, "db_path": tmp_db, "api_module": api_module}
+async def api_client(app_isolado, cabecalho_auth):
+    """Usa a fixture compartilhada `app_isolado` (tests/conftest.py) no lugar da
+    cadeia de reload de 12 modulos que era copiada aqui, em test_timeline.py e
+    em test_api_ingestao.py."""
+    transport = ASGITransport(app=app_isolado.app)
+    async with AsyncClient(
+        transport=transport, base_url="http://testserver", headers=cabecalho_auth()
+    ) as client:
+        yield {
+            "client": client,
+            "db_path": Path(app_isolado.db_path),
+            "api_module": importlib.import_module("interface.api"),
+        }
 
 
 @pytest.mark.asyncio
