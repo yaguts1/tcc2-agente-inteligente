@@ -4,68 +4,33 @@ from __future__ import annotations
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from importlib import reload
 from pathlib import Path
 import sqlite3
 from datetime import datetime
 
-from interface.dao import criar_esquema, criar_paciente, inserir_timeline_event
+from interface.dao import criar_paciente, inserir_timeline_event
+
 
 @pytest_asyncio.fixture()
-async def api_client(tmp_path, monkeypatch):
-    tmp_db = tmp_path / "dados.db"
-    monkeypatch.setenv("UPP_DB_PATH", str(tmp_db))
-    criar_esquema(str(tmp_db))
+async def api_client(app_isolado, cabecalho_auth):
+    """A cadeia de reload de 12 modulos que vivia aqui (copiada tambem em
+    test_api.py e test_api_ingestao.py) virou a fixture `app_isolado` em
+    tests/conftest.py.
 
-    # Importacao tardia para respeitar as variaveis de ambiente definidas acima.
-    import interface.api_shared as api_shared
-    import interface.routers.auth as auth
-    import interface.routers.pacientes as pacientes
-    import interface.routers.devices as devices
-    import interface.services.alerts_service as alerts_service
-    import interface.routers.alerts as alerts
-    import interface.routers.dashboard as dashboard
-    import interface.services.ingestao_service as ingestao_service
-    import interface.routers.ingestao as ingestao
-    import interface.routers.backup as backup
-    import interface.routers.admin as admin
-    import interface.web as web_module
-    from interface import api as api_module
-
-    reload(api_shared)
-    reload(auth)
-    reload(pacientes)
-    reload(devices)
-    reload(alerts_service)
-    reload(alerts)
-    reload(dashboard)
-    reload(ingestao_service)
-    reload(ingestao)
-    reload(backup)
-    reload(admin)
-    reload(api_module)
-    reload(web_module)
-
-    api_module.reset_processador()
-    api_module.reset_rate_limiter()
-
-    # /api/timeline expoe dados clinicos e passou a exigir sessao. O client
-    # carrega um JWT REAL (assinado pela mesma SECRET_KEY que verify_token usa).
-    from interface.auth_utils import create_access_token
-
-    transport = ASGITransport(app=web_module.app)
+    /api/timeline expoe dados clinicos e exige sessao, entao o client carrega
+    um JWT REAL — nunca um token forjado.
+    """
+    transport = ASGITransport(app=app_isolado.app)
     async with AsyncClient(
-        transport=transport,
-        base_url="http://testserver",
-        headers={"Authorization": f"Bearer {create_access_token({'sub': 'tester'})}"},
+        transport=transport, base_url="http://testserver", headers=cabecalho_auth()
     ) as client:
-        yield {"client": client, "db_path": tmp_db}
+        yield {"client": client, "db_path": Path(app_isolado.db_path)}
 
 
 @pytest.mark.asyncio
-async def test_timeline_exige_autenticacao(api_client):
+async def test_timeline_exige_autenticacao(app_isolado):
     """Sem credencial, /api/timeline responde 401."""
-    transport = ASGITransport(app=__import__("interface.web", fromlist=["app"]).app)
+    transport = ASGITransport(app=app_isolado.app)
     async with AsyncClient(transport=transport, base_url="http://testserver") as anon:
         resp = await anon.get("/api/timeline")
     assert resp.status_code == 401

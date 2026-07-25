@@ -1,37 +1,35 @@
-import os
 from pathlib import Path
+
+import pytest
 from fastapi.testclient import TestClient
-import importlib
+
+from tests.conftest import recarregar_app
 
 
-def _make_app_with_db(tmp_path: Path, env_pass: str | None = None, env_user: str | None = None):
-    db_path = tmp_path / "test_auth.db"
-    # ensure fresh environment for import-time DB_PATH resolution
-    os.environ["UPP_DB_PATH"] = str(db_path)
-    if env_pass is not None:
-        os.environ["UPP_ADMIN_PASS"] = env_pass
-    else:
-        os.environ.pop("UPP_ADMIN_PASS", None)
-    if env_user is not None:
-        os.environ["UPP_ADMIN_USER"] = env_user
-    else:
-        os.environ.pop("UPP_ADMIN_USER", None)
-    # import interface.web after env var set so DB_PATH is bound correctly
-    import interface.api_shared as api_shared
-    import interface.routers.auth as auth_router
-    import interface.web as web
-    import interface.api as api
-    importlib.reload(api_shared)
-    importlib.reload(auth_router)
-    importlib.reload(api)
-    importlib.reload(web)
-    # Reset rate limiting for tests
-    api._reset_auth_rate_limits()
-    return web.app
+@pytest.fixture
+def make_app(tmp_path: Path, monkeypatch):
+    """Constroi a app com um banco temporario.
+
+    Antes este helper escrevia direto em os.environ e nunca restaurava, entao
+    UPP_DB_PATH e UPP_ADMIN_PASS vazavam para os arquivos seguintes da suite —
+    era a causa de test_admin_import_endpoint.py passar isolado e falhar junto.
+    Com monkeypatch o ambiente volta ao normal ao fim de cada teste.
+    """
+
+    def _make(env_pass: str | None = None, env_user: str | None = None):
+        monkeypatch.setenv("UPP_DB_PATH", str(tmp_path / "test_auth.db"))
+        for nome, valor in (("UPP_ADMIN_PASS", env_pass), ("UPP_ADMIN_USER", env_user)):
+            if valor is None:
+                monkeypatch.delenv(nome, raising=False)
+            else:
+                monkeypatch.setenv(nome, valor)
+        return recarregar_app().app
+
+    return _make
 
 
-def test_register_and_login_success(tmp_path: Path):
-    app = _make_app_with_db(tmp_path)
+def test_register_and_login_success(make_app):
+    app = make_app()
     with TestClient(app) as client:
         # register
         r = client.post("/api/auth/register", json={"username": "alice", "password": "secret"})
@@ -45,8 +43,8 @@ def test_register_and_login_success(tmp_path: Path):
         assert r2.json().get("username") == "alice"
 
 
-def test_register_duplicate(tmp_path: Path):
-    app = _make_app_with_db(tmp_path)
+def test_register_duplicate(make_app):
+    app = make_app()
     with TestClient(app) as client:
         r = client.post("/api/auth/register", json={"username": "bob", "password": "pw"})
         assert r.status_code == 201
@@ -55,11 +53,11 @@ def test_register_duplicate(tmp_path: Path):
         assert r2.status_code == 400
 
 
-def test_primeiro_cadastro_e_liberado_depois_exige_credencial(tmp_path: Path):
+def test_primeiro_cadastro_e_liberado_depois_exige_credencial(make_app):
     """Cadastro aberto anularia toda a autenticacao das rotas clinicas: bastaria
     criar uma conta para ver os pacientes. A primeira conta e liberada (bootstrap
     da instalacao); a partir dai exige sessao ou token de convite."""
-    app = _make_app_with_db(tmp_path)
+    app = make_app()
     with TestClient(app) as bootstrap:
         r = bootstrap.post("/api/auth/register", json={"username": "primeiro", "password": "pw"})
         assert r.status_code == 201, "primeiro cadastro deveria ser liberado"
@@ -71,9 +69,9 @@ def test_primeiro_cadastro_e_liberado_depois_exige_credencial(tmp_path: Path):
         assert r.json()["detail"]["code"] == "cadastro_restrito"
 
 
-def test_cadastro_aceita_token_de_convite(tmp_path: Path, monkeypatch):
+def test_cadastro_aceita_token_de_convite(make_app, monkeypatch):
     monkeypatch.setenv("UPP_REGISTER_TOKEN", "convite-secreto")
-    app = _make_app_with_db(tmp_path)
+    app = make_app()
     with TestClient(app) as c:
         assert c.post("/api/auth/register", json={"username": "primeiro", "password": "pw"}).status_code == 201
 
@@ -94,8 +92,8 @@ def test_cadastro_aceita_token_de_convite(tmp_path: Path, monkeypatch):
         assert r.status_code == 403
 
 
-def test_login_wrong_password(tmp_path: Path):
-    app = _make_app_with_db(tmp_path)
+def test_login_wrong_password(make_app):
+    app = make_app()
     with TestClient(app) as client:
         r = client.post("/api/auth/register", json={"username": "carol", "password": "goodpass"})
         assert r.status_code == 201
@@ -103,17 +101,17 @@ def test_login_wrong_password(tmp_path: Path):
         assert r2.status_code == 401
 
 
-def test_login_env_fallback(tmp_path: Path, monkeypatch):
+def test_login_env_fallback(make_app, monkeypatch):
     """O fallback por env vale apenas para o usuario admin configurado."""
     monkeypatch.setenv("ENVIRONMENT", "development")
-    app = _make_app_with_db(tmp_path, env_pass="envsecret", env_user="admin")
+    app = make_app(env_pass="envsecret", env_user="admin")
     with TestClient(app) as client:
         r = client.post("/api/auth/login", json={"username": "admin", "password": "envsecret"})
         assert r.status_code == 200
         assert r.json().get("username") == "admin"
 
 
-def test_login_env_fallback_rejeita_username_arbitrario(tmp_path: Path, monkeypatch):
+def test_login_env_fallback_rejeita_username_arbitrario(make_app, monkeypatch):
     """UPP_ADMIN_PASS nao pode autenticar um username qualquer.
 
     Este ramo do login so roda quando o usuario NAO existe no banco. Antes
@@ -125,7 +123,7 @@ def test_login_env_fallback_rejeita_username_arbitrario(tmp_path: Path, monkeypa
     existe, entao e onde o bypass precisa ser provado fechado.
     """
     monkeypatch.setenv("ENVIRONMENT", "development")
-    app = _make_app_with_db(tmp_path, env_pass="envsecret", env_user="admin")
+    app = make_app(env_pass="envsecret", env_user="admin")
     with TestClient(app) as client:
         r = client.post("/api/auth/login", json={"username": "noone", "password": "envsecret"})
         assert r.status_code == 401, (
@@ -133,19 +131,19 @@ def test_login_env_fallback_rejeita_username_arbitrario(tmp_path: Path, monkeypa
         )
 
 
-def test_login_env_fallback_desabilitado_em_producao(tmp_path: Path, monkeypatch):
+def test_login_env_fallback_desabilitado_em_producao(make_app, monkeypatch):
     """Em producao a autenticacao tem que passar pelo banco."""
     monkeypatch.setenv("ENVIRONMENT", "production")
-    app = _make_app_with_db(tmp_path, env_pass="envsecret", env_user="admin")
+    app = make_app(env_pass="envsecret", env_user="admin")
     with TestClient(app) as client:
         r = client.post("/api/auth/login", json={"username": "admin", "password": "envsecret"})
         assert r.status_code == 401, f"fallback de dev ativo em producao: {r.text}"
 
 
-def test_cookie_de_sessao_tem_samesite(tmp_path: Path):
+def test_cookie_de_sessao_tem_samesite(make_app):
     """Sem SameSite, com allow_credentials=True no CORS, todo endpoint que muda
     estado fica exposto a CSRF."""
-    app = _make_app_with_db(tmp_path)
+    app = make_app()
     with TestClient(app) as client:
         r = client.post("/api/auth/register", json={"username": "dave", "password": "pw"})
         assert r.status_code == 201
@@ -157,14 +155,14 @@ def test_cookie_de_sessao_tem_samesite(tmp_path: Path):
         assert "session_user=" not in set_cookie, f"session_user voltou a ser emitido: {set_cookie}"
 
 
-def test_cookie_secure_segue_o_protocolo_da_requisicao(tmp_path: Path):
+def test_cookie_secure_segue_o_protocolo_da_requisicao(make_app):
     """Secure precisa vir do protocolo, nao de ENVIRONMENT.
 
     O container roda com ENVIRONMENT=production e ainda publica a porta 8000 em
     HTTP para debug. Se Secure fosse ligado por ambiente, o browser descartaria
     o cookie nesse acesso e o login simplesmente nao funcionaria.
     """
-    app = _make_app_with_db(tmp_path)
+    app = make_app()
     with TestClient(app) as client:
         r = client.post("/api/auth/register", json={"username": "erin", "password": "pw"})
         assert r.status_code == 201

@@ -1,23 +1,34 @@
-import pytest
-from fastapi.testclient import TestClient
-from interface.web import app
-from interface.dao import inserir_alertas, selecionar_timeline, criar_usuario
-from interface.auth_utils import create_access_token
-from interface.api_shared import DB_PATH
+"""Autenticacao e autoria nas acoes de alerta (reconhecer / concluir).
+
+Este arquivo escrevia no banco REAL: importava DB_PATH de interface.api_shared
+(que aponta para o dados.db do diretorio de trabalho, ou /data/dados.db no
+container), criava o usuario "nurse_joy" e alertas de teste ali, e construia o
+TestClient no escopo do modulo — antes de qualquer fixture poder trocar o
+banco. O `except ValueError: pass` na criacao do usuario era justamente para
+tolerar a linha deixada por uma execucao anterior.
+
+Agora usa a fixture `app_isolado` (tests/conftest.py), que liga a app a um
+banco temporario por teste.
+"""
+
 import sqlite3
 
-client = TestClient(app)
+import pytest
+from fastapi.testclient import TestClient
+
+from interface.auth_utils import create_access_token
+
+ALERTA_ID = "PAC-TEST-AUTH__2025-01-01T10:00:00"
+
 
 @pytest.fixture
-def setup_db():
-    # Create a test user
-    try:
-        criar_usuario(DB_PATH, "nurse_joy", "hashed_password", "Nurse Joy")
-    except ValueError:
-        pass # User might already exist
-    
-    # Create a test alert
-    alert = {
+def ambiente(app_isolado):
+    """Cria usuario e alerta no banco temporario deste teste."""
+    from interface.dao import criar_usuario, inserir_alertas
+
+    db = app_isolado.db_path
+    criar_usuario(db, "nurse_joy", "hashed_password", "Nurse Joy")
+    inserir_alertas(db, [{
         "paciente_id": "PAC-TEST-AUTH",
         "inicio": "2025-01-01T10:00:00",
         "fim": "2025-01-01T10:30:00",
@@ -25,63 +36,51 @@ def setup_db():
         "perfil": "medio",
         "janela_min": 120,
         "status": "aberto",
-        "duracao_min": 30
-    }
-    inserir_alertas(DB_PATH, [alert])
-    
-    yield
-    
-    # Cleanup
-    with sqlite3.connect(DB_PATH) as conn:
-        conn.execute("DELETE FROM alertas WHERE paciente_id = 'PAC-TEST-AUTH'")
-        conn.execute("DELETE FROM timeline_events WHERE paciente_id = 'PAC-TEST-AUTH'")
-        conn.execute("DELETE FROM users WHERE username = 'nurse_joy'")
+        "duracao_min": 30,
+    }])
+    return app_isolado
 
-def test_acknowledge_requires_auth(setup_db):
-    alert_id = "PAC-TEST-AUTH__2025-01-01T10:00:00"
-    response = client.post(f"/api/frontend/alerts/{alert_id}/acknowledge")
-    assert response.status_code == 401
 
-def test_acknowledge_records_user(setup_db):
-    alert_id = "PAC-TEST-AUTH__2025-01-01T10:00:00"
-    
-    # Generate token
+def _timeline(db_path: str):
+    from interface.dao import selecionar_timeline
+
+    return selecionar_timeline(db_path, paciente_id="PAC-TEST-AUTH")
+
+
+def test_acknowledge_requires_auth(ambiente):
+    with TestClient(ambiente.app) as client:
+        resp = client.post(f"/api/frontend/alerts/{ALERTA_ID}/acknowledge")
+    assert resp.status_code == 401
+
+
+def test_acknowledge_records_user(ambiente):
     token = create_access_token({"sub": "nurse_joy"})
-    
-    response = client.post(
-        f"/api/frontend/alerts/{alert_id}/acknowledge",
-        headers={"Authorization": f"Bearer {token}"}
-    )
-    assert response.status_code == 200
-    
-    # Verify timeline
-    timeline = selecionar_timeline(DB_PATH, paciente_id="PAC-TEST-AUTH")
-    ack_event = next((e for e in timeline if e["tipo"] == "alert_ack"), None)
-    
-    assert ack_event is not None
-    assert "nurse_joy" in ack_event["descricao"]
-    assert ack_event["meta"]["user"] == "nurse_joy"
+    with TestClient(ambiente.app) as client:
+        resp = client.post(
+            f"/api/frontend/alerts/{ALERTA_ID}/acknowledge",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert resp.status_code == 200, resp.text
 
-def test_complete_records_user(setup_db):
-    # Reset alert status first
-    with sqlite3.connect(DB_PATH) as conn:
+    evento = next((e for e in _timeline(ambiente.db_path) if e["tipo"] == "alert_ack"), None)
+    assert evento is not None
+    assert "nurse_joy" in evento["descricao"]
+    assert evento["meta"]["user"] == "nurse_joy"
+
+
+def test_complete_records_user(ambiente):
+    with sqlite3.connect(ambiente.db_path) as conn:
         conn.execute("UPDATE alertas SET status = 'aberto' WHERE paciente_id = 'PAC-TEST-AUTH'")
-        
-    alert_id = "PAC-TEST-AUTH__2025-01-01T10:00:00"
-    
-    # Generate token
+
     token = create_access_token({"sub": "nurse_joy"})
-    
-    response = client.post(
-        f"/api/frontend/alerts/{alert_id}/complete",
-        headers={"Authorization": f"Bearer {token}"}
-    )
-    assert response.status_code == 200
-    
-    # Verify timeline
-    timeline = selecionar_timeline(DB_PATH, paciente_id="PAC-TEST-AUTH")
-    close_event = next((e for e in timeline if e["tipo"] == "alert_close"), None)
-    
-    assert close_event is not None
-    assert "nurse_joy" in close_event["descricao"]
-    assert close_event["meta"]["user"] == "nurse_joy"
+    with TestClient(ambiente.app) as client:
+        resp = client.post(
+            f"/api/frontend/alerts/{ALERTA_ID}/complete",
+            headers={"Authorization": f"Bearer {token}"},
+        )
+    assert resp.status_code == 200, resp.text
+
+    evento = next((e for e in _timeline(ambiente.db_path) if e["tipo"] == "alert_close"), None)
+    assert evento is not None
+    assert "nurse_joy" in evento["descricao"]
+    assert evento["meta"]["user"] == "nurse_joy"
