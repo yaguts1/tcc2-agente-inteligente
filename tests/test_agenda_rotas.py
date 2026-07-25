@@ -16,19 +16,19 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from interface.auth_utils import create_access_token
 from interface.endpoints_agenda import router
 
 
 @pytest.fixture
-def client():
+def client(cabecalho_auth):
     app = FastAPI()
     app.include_router(router)
-    # O router de agenda exige sessao autenticada (dados clinicos), entao os
-    # testes precisam de um JWT REAL — assinado pela mesma SECRET_KEY que
-    # verify_token usa. Nao usar token forjado.
+    # O router de agenda exige sessao autenticada (dados clinicos). O
+    # `cabecalho_auth` (tests/conftest.py) emite um JWT REAL e cria o usuario
+    # correspondente no banco — a validacao de sessao recusa token cujo `sub`
+    # nao existe, justamente para que remover uma conta encerre o acesso.
     c = TestClient(app)
-    c.headers.update({"Authorization": f"Bearer {create_access_token({'sub': 'tester'})}"})
+    c.headers.update(cabecalho_auth())
     return c
 
 

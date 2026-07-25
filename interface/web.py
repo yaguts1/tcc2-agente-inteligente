@@ -21,6 +21,7 @@ from fastapi import APIRouter, FastAPI, Response
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.exceptions import HTTPException as StarletteHTTPException
 from starlette.middleware.base import BaseHTTPMiddleware
 from prometheus_client import CONTENT_TYPE_LATEST, generate_latest
 
@@ -172,6 +173,40 @@ app.add_middleware(
 )
 
 
+class SPAStaticFiles(StaticFiles):
+    """Estáticos da SPA com fallback de rota no cliente.
+
+    `StaticFiles(html=True)` serve index.html apenas para DIRETÓRIOS. Um deep
+    link como /TCC/pacientes procura um arquivo chamado "pacientes", não acha e
+    devolve 404 — ou seja, a navegação por URL só funcionaria enquanto o
+    usuário não recarregasse a página nem colasse um link.
+
+    Aqui, caminho não encontrado e SEM extensão de arquivo cai no index.html,
+    deixando o roteamento para o React.
+
+    O que NÃO cai no fallback:
+      * caminhos com extensão (.js, .css, .png). Devolver HTML no lugar de um
+        asset ausente produziria erro de MIME confuso no browser em vez do 404
+        honesto, escondendo um build quebrado.
+      * `api/...`. As rotas da API são registradas individualmente, então um
+        caminho de API inexistente NÃO casa com nenhuma e cai aqui. Sem esta
+        exclusão ele receberia 200 com HTML, e quem chamasse o endpoint errado
+        veria um erro de parse de JSON em vez de um 404 claro.
+    """
+
+    _NAO_USAM_FALLBACK = ("api/", "api")
+
+    async def get_response(self, path: str, scope):
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            if exc.status_code != 404:
+                raise
+            if Path(path).suffix or path.startswith(self._NAO_USAM_FALLBACK):
+                raise
+            return await super().get_response("index.html", scope)
+
+
 # --- Detecção da SPA buildada ---------------------------------------------
 # O Vite deste repo builda para frontend/build (ver frontend/vite.config.ts).
 _ROOT = Path(__file__).resolve().parents[1]
@@ -220,7 +255,7 @@ def global_health_check() -> Dict[str, str]:
 if SITE_UI_DIST is not None:
     try:
         mount_path = APP_PREFIX if APP_PREFIX else "/"
-        app.mount(mount_path, StaticFiles(directory=str(SITE_UI_DIST), html=True), name="site_ui")
+        app.mount(mount_path, SPAStaticFiles(directory=str(SITE_UI_DIST), html=True), name="site_ui")
     except Exception:
         # não falhar se o mount dos estáticos não for possível
         SITE_UI_DIST = None
