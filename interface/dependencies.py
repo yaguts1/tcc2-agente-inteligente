@@ -1,5 +1,6 @@
 import os
 import secrets
+from datetime import datetime, timezone
 from typing import Optional
 
 import structlog
@@ -43,9 +44,8 @@ def verificar_token_dispositivo(request: Request) -> None:
         )
 
 
-def usuario_de_jwt(request: Request) -> Optional[str]:
-    """Extrai o usuário de um JWT válido — header `Authorization: Bearer <jwt>`
-    ou cookie `access_token`. Retorna None se não houver JWT válido.
+def _payload_do_jwt(request: Request) -> Optional[dict]:
+    """Payload do JWT apresentado (header ou cookie), ou None.
 
     NÃO confia no cookie `session_user` (texto puro, não assinado, forjável):
     qualquer um poderia mandar `Cookie: session_user=admin` e ser autenticado.
@@ -55,15 +55,75 @@ def usuario_de_jwt(request: Request) -> Optional[str]:
     if auth_header.startswith("Bearer "):
         payload = verify_token(auth_header[7:])
         if payload:
-            return payload.get("sub")
+            return payload
 
     token_cookie = request.cookies.get("access_token")
     if token_cookie:
         payload = verify_token(token_cookie)
         if payload:
-            return payload.get("sub")
+            return payload
 
     return None
+
+
+def sessao_valida(payload: dict) -> bool:
+    """Verifica se a sessão do token continua valendo do lado do servidor.
+
+    A assinatura do JWT prova apenas que nós o emitimos e que ainda não
+    expirou. Sem esta checagem o token era irrevogável: valia as 8h inteiras
+    mesmo depois do logout, da troca de senha ou do desligamento da conta.
+
+    Três motivos para recusar:
+      1. o `jti` está na denylist (logout daquela sessão);
+      2. a conta foi desativada;
+      3. o token foi emitido antes do corte `tokens_validos_apos` (troca de
+         senha ou saída forçada de todas as sessões).
+
+    Falha fechada: se a consulta ao banco quebrar, a sessão é recusada — o
+    caminho seguro é negar acesso, não liberar.
+    """
+    from interface.api_shared import DB_PATH
+    from interface.repositories.sessoes import estado_da_conta, token_esta_revogado
+
+    username = payload.get("sub")
+    if not username:
+        return False
+
+    try:
+        if token_esta_revogado(DB_PATH, payload.get("jti", "")):
+            return False
+
+        conta = estado_da_conta(DB_PATH, username)
+        if conta is None:
+            # Usuário não existe no banco. Pode ser o login de fallback por
+            # variável de ambiente (dev/bancada), que não cria linha em users.
+            return True
+        if not conta["ativo"]:
+            return False
+
+        corte = conta["tokens_validos_apos"]
+        if corte:
+            emitido_em = payload.get("iat")
+            if emitido_em is None:
+                # Token antigo, emitido antes de existir `iat`: não dá para
+                # saber se é anterior ao corte, então recusa.
+                return False
+            corte_dt = datetime.fromisoformat(str(corte)[:19]).replace(tzinfo=timezone.utc)
+            if datetime.fromtimestamp(int(emitido_em), tz=timezone.utc) < corte_dt:
+                return False
+    except Exception:
+        logger.warning("falha_ao_validar_sessao", usuario=username, exc_info=True)
+        return False
+
+    return True
+
+
+def usuario_de_jwt(request: Request) -> Optional[str]:
+    """Username autenticado, ou None se não houver sessão válida."""
+    payload = _payload_do_jwt(request)
+    if not payload or not sessao_valida(payload):
+        return None
+    return payload.get("sub")
 
 
 async def get_current_user(request: Request) -> str:
@@ -78,13 +138,15 @@ async def get_current_user(request: Request) -> str:
 
 
 def papel_do_jwt(request: Request) -> Optional[str]:
-    """Papel declarado no JWT, ou None se nao houver token valido."""
-    auth_header = request.headers.get("Authorization", "")
-    token = auth_header[7:] if auth_header.startswith("Bearer ") else request.cookies.get("access_token")
-    if not token:
+    """Papel declarado no JWT, ou None se nao houver sessao valida.
+
+    Passa pela mesma validacao de sessao que `usuario_de_jwt`: um token
+    revogado (ou de conta desativada) nao pode conceder papel nenhum.
+    """
+    payload = _payload_do_jwt(request)
+    if not payload or not sessao_valida(payload):
         return None
-    payload = verify_token(token)
-    return payload.get("role") if payload else None
+    return payload.get("role")
 
 
 def exigir_papel(*papeis: str):

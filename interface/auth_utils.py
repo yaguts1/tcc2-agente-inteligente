@@ -3,6 +3,7 @@ from datetime import datetime, timedelta, timezone
 from typing import Optional
 from jose import jwt, JWTError
 import os
+import secrets
 import structlog
 
 logger = structlog.get_logger(__name__)
@@ -53,8 +54,18 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
         expire = agora + expires_delta
     else:
         expire = agora + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
-    
-    to_encode.update({"exp": expire})
+
+    # `jti` e `iat` existem para permitir revogação:
+    #  - jti identifica ESTE token, para o logout encerrar só aquela sessão;
+    #  - iat data a emissão, para o corte `tokens_validos_apos` invalidar de
+    #    uma vez todas as sessões anteriores (troca de senha, saída forçada).
+    # Sem eles o token era irrevogável: valia as 8h inteiras, acontecesse o
+    # que acontecesse.
+    to_encode.update({
+        "exp": expire,
+        "iat": agora,
+        "jti": secrets.token_urlsafe(16),
+    })
     encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
     return encoded_jwt
 
