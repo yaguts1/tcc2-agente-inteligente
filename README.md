@@ -121,7 +121,7 @@ cd frontend && npm install && cd ..
 | **Clínico Básico** | Dashboard + Alertas + Timeline | `preparar_demo.ps1` |
 | **Técnico** | APIs + WebSocket + Reconciliação | Ver [`docs/GUIA_DEMONSTRACAO.md`](docs/GUIA_DEMONSTRACAO.md) |
 | **Performance** | Carga de eventos em massa | Ver seção 4.5 do guia |
-| **Integração IoT** | ESP32 real enviando dados | Ver [`docs/JORNADA_INFORMACAO_ESP32.md`](docs/JORNADA_INFORMACAO_ESP32.md) |
+| **Integração IoT** | ESP32 real enviando dados | Ver [`JORNADA_INFORMACAO_ESP32.md`](JORNADA_INFORMACAO_ESP32.md) |
 
 ### 🔍 Verificação de Saúde
 
@@ -410,9 +410,10 @@ No primeiro acesso, criar conta através da interface de registro.
 
 | Documento | Descrição |
 |-----------|-----------|
-| [QUICK_REFERENCE_FRONTEND.md](docs/QUICK_REFERENCE_FRONTEND.md) | Referência rápida para desenvolvimento frontend |
+| [ARQUITETURA_DIAGRAMA.md](ARQUITETURA_DIAGRAMA.md) | Diagramas de arquitetura |
 | [FLUXO_INFORMACAO_ESP32_FRONTEND.md](docs/FLUXO_INFORMACAO_ESP32_FRONTEND.md) | Fluxo completo ESP32 → Frontend |
-| [FRONTEND_MODERNO_VS_LEGADO.md](docs/FRONTEND_MODERNO_VS_LEGADO.md) | Comparação arquitetural |
+| [ARQUITETURA_ESP32_LEITO_PACIENTE.md](docs/ARQUITETURA_ESP32_LEITO_PACIENTE.md) | Vínculo ESP32 → leito → paciente |
+| [datetime_and_firmware.md](docs/datetime_and_firmware.md) | Convenção de timestamps (banco em UTC naive) |
 | [GUIA_BUILD_DEPLOYMENT.md](GUIA_BUILD_DEPLOYMENT.md) | Build e deployment |
 | [CHECKLIST_DEPLOY_PRODUCAO.md](CHECKLIST_DEPLOY_PRODUCAO.md) | Checklist de produção |
 
@@ -648,9 +649,9 @@ tcc2-agente-inteligente/
 │   ├── test_decisor.py
 │   └── ...
 │
-├── docs/                        # Documentação
+├── docs/                        # Documentação (ver docs/README.md)
 │   ├── FLUXO_INFORMACAO_ESP32_FRONTEND.md
-│   ├── QUICK_REFERENCE_FRONTEND.md
+│   ├── ARQUITETURA_ESP32_LEITO_PACIENTE.md
 │   └── ...
 │
 ├── requirements.txt             # Dependências Python
