@@ -5,9 +5,12 @@ Serviço de backup automático do banco de dados SQLite.
 import os
 import shutil
 import sqlite3
+from contextlib import closing
 from datetime import datetime
 from pathlib import Path
 import structlog
+
+from interface.db_core import BUSY_TIMEOUT_MS
 
 logger = structlog.get_logger(__name__)
 
@@ -30,17 +33,18 @@ class BackupService:
         backup_path = self.backup_dir / backup_filename
         
         try:
-            # Use SQLite's online backup API (mais seguro que simples cópia)
-            source_conn = sqlite3.connect(self.db_path)
-            backup_conn = sqlite3.connect(str(backup_path))
-            
-            # Perform the backup
-            with backup_conn:
-                source_conn.backup(backup_conn)
-            
-            source_conn.close()
-            backup_conn.close()
-            
+            # Use SQLite's online backup API (mais seguro que simples cópia).
+            # `closing` garante o fechamento tambem quando o backup falha no
+            # meio: antes os dois close() ficavam depois do backup e eram
+            # pulados em caso de excecao, vazando as duas conexoes.
+            # O timeout evita "database is locked" imediato quando o backup
+            # roda junto com a ingestao (ambos escrevem no mesmo arquivo).
+            with closing(sqlite3.connect(self.db_path, timeout=BUSY_TIMEOUT_MS / 1000)) as source_conn, \
+                 closing(sqlite3.connect(str(backup_path), timeout=BUSY_TIMEOUT_MS / 1000)) as backup_conn:
+                source_conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
+                with backup_conn:
+                    source_conn.backup(backup_conn)
+
             # Get file size
             size_mb = backup_path.stat().st_size / (1024 * 1024)
             

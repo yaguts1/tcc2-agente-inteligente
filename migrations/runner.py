@@ -17,6 +17,12 @@ import re
 import sqlite3
 from pathlib import Path
 
+# Mesmo valor de interface.db_core.BUSY_TIMEOUT_MS, repetido de proposito: este
+# modulo e deliberadamente independente do resto do app (ver docstring acima) e
+# importar interface.db_core criaria um ciclo — db_core.criar_esquema chama
+# este runner.
+BUSY_TIMEOUT_MS = 5000
+
 _MIGRATIONS_DIR = Path(__file__).resolve().parent
 _FILENAME_RE = re.compile(r"^(\d+)_.*\.sql$")
 
@@ -30,8 +36,12 @@ def _ensure_parent_dir(db_path: str) -> Path:
 
 def _connect(db_path: str) -> sqlite3.Connection:
     path = _ensure_parent_dir(db_path)
-    conn = sqlite3.connect(str(path))
+    # busy_timeout: migrations rodam no startup, quando o reconciler e o
+    # scheduler de backup ja podem estar tocando o banco. Sem isso a primeira
+    # colisao aborta a migration.
+    conn = sqlite3.connect(str(path), timeout=BUSY_TIMEOUT_MS / 1000)
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
     return conn
 
 
