@@ -17,15 +17,30 @@ router = APIRouter(tags=["auth"])
 user_repo = UserRepository(DB_PATH)
 
 
-def _definir_cookie_sessao(response: Response, token: str) -> None:
+def _requisicao_e_https(request: Request) -> bool:
+    """Detecta HTTPS considerando o proxy reverso.
+
+    O Caddy termina o TLS e fala HTTP com o app, entao request.url.scheme e
+    sempre "http" aqui (o uvicorn nao roda com --proxy-headers); quem carrega a
+    informacao e o X-Forwarded-Proto que o Caddy injeta.
+    """
+    encaminhado = request.headers.get("X-Forwarded-Proto", "")
+    if encaminhado:
+        return encaminhado.split(",")[0].strip().lower() == "https"
+    return request.url.scheme == "https"
+
+
+def _definir_cookie_sessao(response: Response, request: Request, token: str) -> None:
     """Grava o cookie de sessao com as flags de seguranca corretas.
 
     - samesite="lax": a API usa allow_credentials=True no CORS; sem SameSite o
       cookie seria enviado em requisicoes cross-site e todo endpoint que muda
       estado ficaria exposto a CSRF.
-    - secure fora de desenvolvimento: impede envio em texto claro por HTTP.
-    - max_age vem de ACCESS_TOKEN_EXPIRE_SECONDS para nao dessincronizar do
-      tempo de vida do proprio JWT.
+    - secure quando a requisicao veio por HTTPS: impede o cookie de trafegar em
+      texto claro. Nao pode ser amarrado a ENVIRONMENT: o container roda com
+      ENVIRONMENT=production e ainda publica a porta 8000 em HTTP para debug
+      local — marcar Secure ali faria o browser descartar o cookie e o login
+      simplesmente nao funcionaria.
 
     Nao grava mais o cookie `session_user`: era texto puro, nao assinado e
     forjavel (interface/dependencies.py ja o ignorava ha tempos), entao
@@ -37,8 +52,9 @@ def _definir_cookie_sessao(response: Response, token: str) -> None:
         max_age=ACCESS_TOKEN_EXPIRE_SECONDS,
         httponly=True,
         samesite="lax",
-        secure=em_producao(),
+        secure=_requisicao_e_https(request),
     )
+
 
 @router.post("/auth/login", status_code=status.HTTP_200_OK)
 async def api_login(request: Request, _: None = Depends(_check_auth_rate_limit)) -> dict:
@@ -94,7 +110,7 @@ async def api_login(request: Request, _: None = Depends(_check_auth_rate_limit))
     resp = {"username": username, "token": token, "display_name": user.get("display_name") if user else None, "role": user.get("role", "staff") if user else "staff"}
 
     response = Response(content=json.dumps(resp), media_type="application/json", status_code=status.HTTP_200_OK)
-    _definir_cookie_sessao(response, token)
+    _definir_cookie_sessao(response, request, token)
     return response
 
 
@@ -131,7 +147,7 @@ async def api_register(request: Request, req: RegisterRequest, _: None = Depends
 
     resp = {"username": username, "display_name": display, "token": token, "role": "staff"}
     response = Response(content=json.dumps(resp), media_type="application/json", status_code=status.HTTP_201_CREATED)
-    _definir_cookie_sessao(response, token)
+    _definir_cookie_sessao(response, request, token)
     return response
 
 
