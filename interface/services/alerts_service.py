@@ -19,6 +19,7 @@ from interface.dao import (
     selecionar_alertas_janela,
 )
 from interface.repositories.timeline import ultimo_evento_por_paciente
+from interface.tempo import para_iso_utc
 from interface.ws_manager_optimized import ws_manager_optimized
 from servicos import metricas
 
@@ -123,10 +124,30 @@ async def listar_alertas_frontend(
         janela_min = int(a.get("janela_min") or 0)
         patient_name, room_val, bed = _quarto_e_leito(paciente_id)
 
-        try:
-            next_dt = datetime.fromisoformat(inicio[:19]) + timedelta(minutes=janela_min)
-            next_iso = next_dt.strftime("%Y-%m-%dT%H:%M:%S")
-        except Exception:
+        # Quando o proximo reposicionamento vence.
+        #
+        # `alerta.inicio` NAO e o inicio da imobilidade: o motor grava nele o
+        # instante em que a janela ESTOUROU (ver nucleo/decisor.py:
+        # `detection_time = run_inicio + janela`). Ou seja, quando existe um
+        # alerta aberto o paciente JA esta atrasado desde `inicio`.
+        #
+        # Somar a janela de novo — como era feito aqui — jogava o vencimento
+        # para o futuro e a tela exibia um alerta ABERTO dizendo que o
+        # reposicionamento so venceria dali a uma janela inteira. Para o perfil
+        # alto isso e uma hora de falsa tranquilidade.
+        #
+        # Semantica correta por estado:
+        #   pendente/reconhecido -> vence em `inicio` (ja vencido);
+        #   concluido            -> paciente virado em `fim`, proximo em
+        #                           `fim + janela`.
+        fim = a.get("fim")
+        if status_val == "completed" and fim:
+            try:
+                base = datetime.fromisoformat(str(fim)[:19]) + timedelta(minutes=janela_min)
+                next_iso = base.strftime("%Y-%m-%dT%H:%M:%S")
+            except (ValueError, TypeError):
+                next_iso = fim
+        else:
             next_iso = inicio
 
         results.append(
@@ -135,8 +156,10 @@ async def listar_alertas_frontend(
                 "patientName": patient_name,
                 "room": room_val,
                 "bed": bed,
-                "lastRepositioning": ultimos.get(str(paciente_id)) or inicio,
-                "nextRepositioning": next_iso,
+                # ISO com offset explicito: sem ele o browser interpreta a
+                # string como hora LOCAL e exibe tudo 3h adiantado no Brasil.
+                "lastRepositioning": para_iso_utc(ultimos.get(str(paciente_id)) or inicio),
+                "nextRepositioning": para_iso_utc(next_iso),
                 "riskLevel": risk_level_val,
                 "status": status_val,
             }

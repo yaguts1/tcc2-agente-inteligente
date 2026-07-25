@@ -1,5 +1,17 @@
-"""Tests to ensure datetime fields in API contracts are ISO strings (naive) and
-that EventPayload normalizes timezone-aware timestamps to naive UTC.
+"""Contrato de datas nas duas fronteiras do sistema.
+
+Sao regras OPOSTAS, e de proposito:
+
+- ENTRADA (EventPayload, vindo do ESP32): normaliza para UTC naive, que e a
+  convencao interna de armazenamento (ver interface/tempo.py).
+- SAIDA (API para o browser): emite ISO-8601 COM offset explicito. Sem ele,
+  `new Date("2026-07-25T13:44:47")` interpreta a string como hora LOCAL, e para
+  um usuario no Brasil (UTC-3) todo horario aparecia 3h adiantado — inclusive o
+  do proximo reposicionamento, que e o numero que a equipe usa para decidir
+  quando virar o paciente.
+
+A versao anterior deste arquivo exigia naive TAMBEM na saida, ou seja,
+travava o defeito como se fosse o contrato correto.
 """
 from __future__ import annotations
 
@@ -17,7 +29,7 @@ from interface.schemas import EventPayload
 
 
 @pytest.mark.asyncio
-async def test_frontend_alerts_datetimes_are_iso_naive(tmp_path, monkeypatch):
+async def test_frontend_alerts_datetimes_tem_offset(tmp_path, monkeypatch):
     db_path = tmp_path / "dados.db"
     criar_esquema(db_path)
 
@@ -43,15 +55,17 @@ async def test_frontend_alerts_datetimes_are_iso_naive(tmp_path, monkeypatch):
     results = await api_mod.frontend_alerts(horas=24)
     assert results, "No alerts returned"
     for r in results:
-        lr = r.get("lastRepositioning")
-        nr = r.get("nextRepositioning")
-        # should be strings parseable by datetime.fromisoformat and produce naive datetimes
-        if lr is not None:
-            parsed = datetime.fromisoformat(lr)
-            assert parsed.tzinfo is None, f"lastRepositioning should be naive ISO string, got tzinfo: {lr}"
-        if nr is not None:
-            parsed2 = datetime.fromisoformat(nr)
-            assert parsed2.tzinfo is None, f"nextRepositioning should be naive ISO string, got tzinfo: {nr}"
+        for campo in ("lastRepositioning", "nextRepositioning"):
+            valor = r.get(campo)
+            if valor is None:
+                continue
+            parsed = datetime.fromisoformat(valor)
+            assert parsed.tzinfo is not None, (
+                f"{campo} precisa levar offset explicito, veio naive: {valor}. "
+                "Sem offset, `new Date(str)` no browser interpreta a string como "
+                "hora LOCAL — para um usuario no Brasil todo horario aparecia 3h "
+                "adiantado, incluindo o do proximo reposicionamento."
+            )
 
 
 def test_eventpayload_normalizes_tz_to_naive_utc():
