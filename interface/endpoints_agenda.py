@@ -149,7 +149,7 @@ def criar_agenda(paciente_id: str, payload: AgendaCreate) -> AgendaResponse:
         logger.error("agenda_criar_erro", error=str(e), paciente_id=paciente_id)
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"code": "agenda_error", "message": str(e)}
+            detail={"code": "agenda_error", "message": "Erro interno ao processar a requisicao."}
         ) from e
 
 
@@ -169,7 +169,7 @@ def listar_agendas(
         logger.error("agenda_listar_erro", error=str(e), paciente_id=paciente_id)
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"code": "agenda_error", "message": str(e)}
+            detail={"code": "agenda_error", "message": "Erro interno ao processar a requisicao."}
         ) from e
 
 
@@ -225,7 +225,7 @@ def verificar_supressao(
         logger.error("agenda_verificar_erro", error=str(e), paciente_id=paciente_id)
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"code": "agenda_error", "message": str(e)}
+            detail={"code": "agenda_error", "message": "Erro interno ao processar a requisicao."}
         ) from e
 
 
@@ -249,7 +249,7 @@ def obter_agenda(paciente_id: str, agenda_id: int) -> AgendaResponse:
         logger.error("agenda_obter_erro", error=str(e), paciente_id=paciente_id)
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"code": "agenda_error", "message": str(e)}
+            detail={"code": "agenda_error", "message": "Erro interno ao processar a requisicao."}
         ) from e
 
 
@@ -287,7 +287,7 @@ def atualizar_agenda(
         logger.error("agenda_atualizar_erro", error=str(e), paciente_id=paciente_id)
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"code": "agenda_error", "message": str(e)}
+            detail={"code": "agenda_error", "message": "Erro interno ao processar a requisicao."}
         ) from e
 
 
@@ -313,7 +313,7 @@ def deletar_agenda(paciente_id: str, agenda_id: int):
         logger.error("agenda_deletar_erro", error=str(e), paciente_id=paciente_id)
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"code": "agenda_error", "message": str(e)}
+            detail={"code": "agenda_error", "message": "Erro interno ao processar a requisicao."}
         ) from e
 
 

@@ -124,7 +124,7 @@ def get_stats() -> dict:
         logger.exception("stats_error", erro=str(exc))
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"code": "stats_error", "message": str(exc)}
+            detail={"code": "stats_error", "message": "Erro interno ao processar a requisicao."}
         ) from exc
 
 
@@ -220,7 +220,7 @@ def validate_repositioning_contract(paciente_id: str) -> dict:
         logger.exception("validate_repositioning_error", erro=str(exc), paciente_id=paciente_id)
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"code": "validate_error", "message": str(exc)}
+            detail={"code": "validate_error", "message": "Erro interno ao processar a requisicao."}
         ) from exc
 
 
@@ -271,5 +271,5 @@ def get_timeline(
         logger.exception("timeline_error", erro=str(exc))
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"code": "timeline_error", "message": str(exc)}
+            detail={"code": "timeline_error", "message": "Erro interno ao processar a requisicao."}
         ) from exc

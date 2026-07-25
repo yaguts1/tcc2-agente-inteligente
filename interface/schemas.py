@@ -51,6 +51,12 @@ class ApiResponse(BaseModel):
     ids: dict[str, Any]
 
 
+# Valores aceitos para o perfil de risco. O frontend fala em ingles
+# (high/medium/low) e o banco guarda em portugues (alto/medio/baixo); os dois
+# vocabularios sao aceitos na entrada.
+RISK_LEVELS_VALIDOS = frozenset({"high", "medium", "low", "alto", "medio", "baixo"})
+
+
 class FrontendCreatePatient(BaseModel):
     name: str
     room: str | None = None
@@ -58,6 +64,22 @@ class FrontendCreatePatient(BaseModel):
     riskLevel: str
     repositioningInterval: int | None = None
     notes: str | None = None
+
+    @field_validator("riskLevel")
+    @classmethod
+    def validar_risco(cls, v: str) -> str:
+        """Rejeita perfil de risco desconhecido.
+
+        O service fazia `risk_map.get(valor, "medio")`: qualquer coisa que nao
+        estivesse no mapa — um typo, "critical", "alta" — virava MEDIO em
+        silencio. E um parametro clinico: ele define a janela de
+        reposicionamento (2h para alto risco, 3h para medio), entao o efeito
+        pratico era rebaixar o paciente de categoria sem ninguem perceber.
+        """
+        if str(v).lower() not in RISK_LEVELS_VALIDOS:
+            aceitos = ", ".join(sorted(RISK_LEVELS_VALIDOS))
+            raise ValueError(f"riskLevel invalido: {v!r}. Valores aceitos: {aceitos}.")
+        return v
 
 
 class FrontendPatient(BaseModel):

@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 
 from interface.dependencies import get_current_user
 
-from interface.api_shared import DB_PATH
+from interface.api_shared import DB_PATH, erro_interno
 from interface.dao import (
     registrar_device,
     listar_devices,
@@ -24,7 +24,7 @@ def api_register_device(payload: DeviceRegisterRequest) -> dict:
     try:
         registrar_device(DB_PATH, payload.device_id, payload.meta)
     except Exception as exc:
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={"code": "device_error", "message": str(exc)}) from exc
+        raise erro_interno("device_error", exc) from exc
     return {"device_id": payload.device_id}
 
 
