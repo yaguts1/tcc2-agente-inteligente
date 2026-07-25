@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import secrets
 import os
 from typing import AsyncIterator
 
@@ -8,7 +9,7 @@ from fastapi import APIRouter, File, HTTPException, Request, UploadFile, status
 
 from interface.api_shared import DB_PATH, erro_interno
 from interface.dao import inserir_alertas, ensure_minimal_paciente_ficha
-from interface.dependencies import usuario_de_jwt
+from interface.dependencies import papel_do_jwt, usuario_de_jwt
 
 router = APIRouter(tags=["admin"])
 
@@ -52,19 +53,28 @@ async def api_admin_import_alerts(
     x_admin_token: str | None = None,
 ) -> dict:
     """Admin endpoint to import alerts in bulk."""
-    # Authorization
+    # Authorization: token administrativo dedicado OU sessão com papel admin.
+    #
+    # O fallback antes aceitava QUALQUER sessão válida — com o cadastro aberto
+    # de então, bastava criar uma conta para importar alertas em massa. Agora
+    # exige o papel `admin`, vindo do JWT assinado.
     admin_token_env = os.getenv("UPP_ADMIN_TOKEN")
     if admin_token_env:
-        # Prefer header-based token
         hdr = request.headers.get("X-Admin-Token") or x_admin_token
-        if hdr != admin_token_env:
+        # compare_digest: comparação de segredo em tempo constante.
+        if not hdr or not secrets.compare_digest(hdr, admin_token_env):
             raise HTTPException(status.HTTP_403_FORBIDDEN, detail={"code": "forbidden"})
     else:
-        # dev fallback: exige uma sessão JWT válida (não o cookie session_user
-        # forjável). Um `Cookie: session_user=admin` não pode mais autorizar
-        # este endpoint administrativo.
         if not usuario_de_jwt(request):
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail={"code": "not_authenticated"})
+        if papel_do_jwt(request) != "admin":
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                detail={
+                    "code": "papel_insuficiente",
+                    "message": "Esta operacao requer privilegios administrativos.",
+                },
+            )
 
     alerts: list[dict] = []
     # If multipart file provided, treat as JSONL

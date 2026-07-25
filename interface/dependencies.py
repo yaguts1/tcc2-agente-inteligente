@@ -3,7 +3,7 @@ import secrets
 from typing import Optional
 
 import structlog
-from fastapi import Request, HTTPException, status
+from fastapi import Depends, Request, HTTPException, status
 from interface.auth_utils import verify_token
 
 logger = structlog.get_logger(__name__)
@@ -75,3 +75,47 @@ async def get_current_user(request: Request) -> str:
             detail={"code": "not_authenticated", "message": "Authentication required"},
         )
     return user
+
+
+def papel_do_jwt(request: Request) -> Optional[str]:
+    """Papel declarado no JWT, ou None se nao houver token valido."""
+    auth_header = request.headers.get("Authorization", "")
+    token = auth_header[7:] if auth_header.startswith("Bearer ") else request.cookies.get("access_token")
+    if not token:
+        return None
+    payload = verify_token(token)
+    return payload.get("role") if payload else None
+
+
+def exigir_papel(*papeis: str):
+    """Dependency que exige um dos papeis informados.
+
+    O JWT ja carregava `role` e o /auth/me o devolvia, mas NADA no projeto
+    verificava: a autorizacao era binaria (autenticado ou nao). Na pratica,
+    qualquer conta recem-criada podia importar alertas em massa, apagar todos
+    os backups e injetar dados sinteticos no banco de producao.
+
+    O papel vem do token assinado — nao de um campo que o cliente possa enviar.
+    """
+    permitidos = set(papeis)
+
+    async def _verificar(request: Request, usuario: str = Depends(get_current_user)) -> str:
+        papel = papel_do_jwt(request)
+        if papel not in permitidos:
+            logger.warning(
+                "acesso_negado_por_papel",
+                usuario=usuario,
+                papel=papel,
+                exigido=sorted(permitidos),
+                rota=request.url.path,
+            )
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                detail={
+                    "code": "papel_insuficiente",
+                    "message": "Esta operacao requer privilegios administrativos.",
+                },
+            )
+        return usuario
+
+    return _verificar

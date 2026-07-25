@@ -178,7 +178,9 @@ def api_register(request: Request, req: RegisterRequest, _: None = Depends(_chec
 
     try:
         structlog.get_logger(__name__).info("register_attempt", username=username)
-        user_repo.create(username, password_hash, display)
+        # O papel vem do repositorio: o PRIMEIRO usuario da instalacao vira
+        # admin (alguem precisa poder administrar), os demais staff.
+        papel = user_repo.create(username, password_hash, display)
     except ValueError as exc:
         structlog.get_logger(__name__).warning("register_failed_user_exists", username=username, motivo=str(exc))
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={"code": "user_exists", "message": str(exc)})
@@ -189,10 +191,10 @@ def api_register(request: Request, req: RegisterRequest, _: None = Depends(_chec
     # auto-login after register: set cookie
     
     # Generate JWT token
-    token_data = {"sub": username, "role": "staff"}
+    token_data = {"sub": username, "role": papel}
     token = create_access_token(token_data)
 
-    resp = {"username": username, "display_name": display, "token": token, "role": "staff"}
+    resp = {"username": username, "display_name": display, "token": token, "role": papel}
     response = Response(content=json.dumps(resp), media_type="application/json", status_code=status.HTTP_201_CREATED)
     _definir_cookie_sessao(response, request, token)
     return response

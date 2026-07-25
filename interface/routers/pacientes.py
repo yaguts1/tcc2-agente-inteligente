@@ -6,7 +6,7 @@ from pydantic import BaseModel
 from datetime import timedelta
 
 from interface.api_shared import DB_PATH, DEFAULT_PERFIL
-from interface.dependencies import get_current_user, verificar_token_dispositivo
+from interface.dependencies import exigir_papel, get_current_user, verificar_token_dispositivo
 from interface.tempo import agora_utc_naive
 from interface.schemas import PacienteConfigResponse, RotinaConfig, FrontendCreatePatient
 from interface.repositories.pacientes import PatientRepository
@@ -130,9 +130,19 @@ class SimulationResult(BaseModel):
     duracao: float
     message: str
 
-@router.post("/pacientes/{paciente_id}/simular", response_model=SimulationResult, status_code=status.HTTP_200_OK)
+@router.post(
+    "/pacientes/{paciente_id}/simular",
+    response_model=SimulationResult,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(exigir_papel("admin"))],
+)
 def simular_paciente_endpoint(paciente_id: str, payload: SimulationRequest) -> SimulationResult:
-    """Simular dados históricos para um paciente."""
+    """Simular dados históricos para um paciente.
+
+    Restrito a admin: grava eventos, grade e ALERTAS sintéticos no mesmo banco
+    dos dados reais. Num ambiente de produção, dado simulado misturado ao
+    histórico clínico do paciente é indistinguível do que veio do sensor.
+    """
     
     # 1. Validate patient exists
     paciente = service.get_patient(paciente_id)
