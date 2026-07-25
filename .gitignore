@@ -215,8 +215,14 @@ dados.db
 dados.db.*
 frontend/build/
 frontend/dist/
-verify_production.py
-check_db.py
+
+# Relatorios exportados (CSV/PDF/JSONL) — a pasta e diretorio de SAIDA;
+# so o .gitkeep e versionado. Havia 10 artefatos de out/2025 commitados aqui.
+relatorios/*
+!relatorios/.gitkeep
+
+# Log de depuracao que chegou a ser commitado (o *.log acima nao pegava .txt)
+websocket_test_logs.txt
 
 # Node.js (frontend)
 frontend/node_modules/
@@ -225,10 +231,5 @@ node_modules/
 # Firmware: credenciais WiFi/servidor locais (ver config.example.h)
 firmware/esp32_replay/config.h
 
-# Cleanup and temporary files
-cleanup_backup/
-remove_legacy_code.py
-cleanup_project.py
-remove_template_functions.py
+# Arquivos temporarios
 tmp_*.py
-test_websocket_flow.py

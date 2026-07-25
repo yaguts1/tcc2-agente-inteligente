@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, Bell, Calendar } from 'lucide-react';
 import { statsApi, DashboardStats, patientsApi, ApiException } from '../../lib/api';
-import { useAlertFilters, AlertFilters } from '../../hooks/useAlertFilters';
+import { AlertFilters } from '../../hooks/useAlertFilters';
 import { useAlerts } from '../../contexts/AlertsContext';
 import { FilterBar } from '../alerts/FilterBar';
 import { Card } from '../ui/card';
