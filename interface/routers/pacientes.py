@@ -39,7 +39,7 @@ service = PatientService(repository)
 
 
 @router.post("/pacientes", response_model=dict, status_code=status.HTTP_201_CREATED)
-async def criar_paciente_endpoint(payload: FrontendCreatePatient) -> dict:
+def criar_paciente_endpoint(payload: FrontendCreatePatient) -> dict:
     """Criar um novo paciente."""
     try:
         return service.create_patient(payload)
@@ -48,7 +48,7 @@ async def criar_paciente_endpoint(payload: FrontendCreatePatient) -> dict:
 
 
 @router.get("/pacientes", response_model=List[dict], status_code=status.HTTP_200_OK)
-async def listar_pacientes_endpoint() -> List[dict]:
+def listar_pacientes_endpoint() -> List[dict]:
     """Listar todos os pacientes."""
     return service.list_patients()
 
@@ -100,7 +100,7 @@ async def obter_paciente_por_cama_endpoint(cama_id: str) -> PacienteConfigRespon
 
 
 @router.get("/pacientes/{paciente_id}", response_model=dict, status_code=status.HTTP_200_OK)
-async def obter_paciente_endpoint(paciente_id: str) -> dict:
+def obter_paciente_endpoint(paciente_id: str) -> dict:
     """Obter um paciente pelo ID."""
     paciente = service.get_patient(paciente_id)
     if not paciente:
@@ -108,7 +108,7 @@ async def obter_paciente_endpoint(paciente_id: str) -> dict:
     return paciente
 
 @router.patch("/pacientes/{paciente_id}", response_model=dict, status_code=status.HTTP_200_OK)
-async def atualizar_paciente_endpoint(paciente_id: str, payload: FrontendCreatePatient) -> dict:
+def atualizar_paciente_endpoint(paciente_id: str, payload: FrontendCreatePatient) -> dict:
     """Atualizar um paciente existente."""
     try:
         return service.update_patient(paciente_id, payload)
@@ -131,7 +131,7 @@ class SimulationResult(BaseModel):
     message: str
 
 @router.post("/pacientes/{paciente_id}/simular", response_model=SimulationResult, status_code=status.HTTP_200_OK)
-async def simular_paciente_endpoint(paciente_id: str, payload: SimulationRequest) -> SimulationResult:
+def simular_paciente_endpoint(paciente_id: str, payload: SimulationRequest) -> SimulationResult:
     """Simular dados históricos para um paciente."""
     
     # 1. Validate patient exists

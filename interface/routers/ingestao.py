@@ -57,7 +57,7 @@ async def _iterar_jsonl(arquivo: UploadFile) -> AsyncIterator[str]:
     response_model=ApiResponse,
     status_code=status.HTTP_200_OK,
 )
-async def receber_evento(
+def receber_evento(
     request: Request,
     payload: Dict[str, Any],
     _: None = Depends(_aplicar_rate_limit),

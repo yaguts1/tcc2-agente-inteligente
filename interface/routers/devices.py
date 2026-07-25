@@ -20,7 +20,7 @@ router = APIRouter(tags=["devices"], dependencies=[Depends(get_current_user)])
 
 
 @router.post("/devices/register", status_code=status.HTTP_201_CREATED)
-async def api_register_device(payload: DeviceRegisterRequest) -> dict:
+def api_register_device(payload: DeviceRegisterRequest) -> dict:
     try:
         registrar_device(DB_PATH, payload.device_id, payload.meta)
     except Exception as exc:
@@ -29,17 +29,17 @@ async def api_register_device(payload: DeviceRegisterRequest) -> dict:
 
 
 @router.get("/devices", status_code=status.HTTP_200_OK)
-async def api_list_devices() -> list[dict]:
+def api_list_devices() -> list[dict]:
     return listar_devices(DB_PATH)
 
 
 @router.get("/device_events", status_code=status.HTTP_200_OK)
-async def api_list_device_events(device_id: str | None = None, limit: int = 100) -> list[dict]:
+def api_list_device_events(device_id: str | None = None, limit: int = 100) -> list[dict]:
     return listar_device_events(DB_PATH, device_id=device_id, limit=limit)
 
 
 @router.get("/device_events/stats", status_code=status.HTTP_200_OK)
-async def api_device_events_stats() -> dict:
+def api_device_events_stats() -> dict:
     """Return statistics about orphan device events grouped by bed (cama_id).
     
     Returns:

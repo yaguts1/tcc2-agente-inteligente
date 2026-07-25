@@ -1,3 +1,23 @@
+"""Agregador dos routers da API.
+
+CONVENÇÃO — `def` vs `async def` nos handlers
+---------------------------------------------
+Este projeto acessa SQLite de forma síncrona e bloqueante. No FastAPI:
+
+- handler `def`        -> roda num threadpool, o event loop segue livre;
+- handler `async def`  -> roda NO event loop; qualquer chamada bloqueante ali
+                          trava todas as outras requisições e WebSockets.
+
+Portanto: **declare o handler como `def`** a menos que ele realmente precise de
+`await` (ex.: `await request.json()`, chamar um serviço assíncrono). Se precisar
+ser `async` e houver trabalho bloqueante ou pesado em CPU, mande para uma thread
+com `asyncio.to_thread(...)` — é o que `routers/auth.py` faz com o bcrypt e o
+`services/alerts_service.py` com as operações em lote.
+
+Havia ~25 handlers declarados `async def` sem um único `await` no corpo, todos
+fazendo I/O de banco no event loop; o caso extremo era o `/simular`, que rodava
+uma geração de dados inteira com pandas e travava o servidor durante a operação.
+"""
 from __future__ import annotations
 
 from fastapi import APIRouter
