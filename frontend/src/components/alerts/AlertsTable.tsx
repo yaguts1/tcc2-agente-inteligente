@@ -132,10 +132,23 @@ export function AlertsTable({
   //
   // Os handlers de lote logo abaixo já faziam isso corretamente; os
   // individuais é que ficaram para trás.
+  //
+  // O `catch` vazio não é erro engolido: o AlertsContext já mostrou o toast
+  // ANTES de re-lançar, e estes handlers são o fim da cadeia — o `onClick` não
+  // aguarda a promise, então um erro que sobe daqui vira `unhandled rejection`
+  // no console do navegador, sem nenhum destinatário. Absorver aqui, depois do
+  // `finally` ter destravado a interface, é o comportamento correto.
+  const semRelancar = (erro: unknown) => {
+    // Mantém o rastro para depuração sem quebrar a página do usuário.
+    console.error('[AlertsTable] acao falhou (usuario ja foi notificado):', erro);
+  };
+
   const handleAcknowledgeClick = async (alertId: string) => {
     setProcessingId(alertId);
     try {
       await onAcknowledge(alertId);
+    } catch (err) {
+      semRelancar(err);
     } finally {
       setProcessingId(null);
     }
@@ -145,6 +158,8 @@ export function AlertsTable({
     setProcessingId(alertId);
     try {
       await onComplete(alertId);
+    } catch (err) {
+      semRelancar(err);
     } finally {
       setProcessingId(null);
       setConfirmingComplete(null);
@@ -157,6 +172,8 @@ export function AlertsTable({
     try {
       await Promise.all(selectedIds.map((id) => onAcknowledge(id)));
       clearSelection();
+    } catch (err) {
+      semRelancar(err);
     } finally {
       setProcessingId(null);
     }
@@ -167,6 +184,8 @@ export function AlertsTable({
     try {
       await Promise.all(selectedIds.map((id) => onComplete(id)));
       clearSelection();
+    } catch (err) {
+      semRelancar(err);
     } finally {
       setProcessingId(null);
     }
