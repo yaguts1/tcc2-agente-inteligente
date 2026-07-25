@@ -72,30 +72,39 @@ def inserir_alertas(db_path: str, alertas: List[dict]) -> int:
         )
         # number of DB changes caused by alert inserts only
         delta_alerts = conn.total_changes - before
-        # For each alerta we persisted, add a timeline event so historical navigation
-        # can reflect when alerts were generated. We insert an event with tipo 'alert_open'
-        # using the inicio timestamp from the alerta payload and an epoch ms for easier queries.
+        # For each alerta we persisted, add timeline event(s) so historical/simulated
+        # navigation reflects when alerts were triggered and (if already resolved)
+        # when they were closed. `alert_open` is always logged at `inicio`; batch
+        # simulations produce alerts that are already 'fechado' (start+end both in
+        # the past), so we also log `alert_close` at `fim` for those instead of
+        # relying on a live status transition through alterar_status_alerta.
         try:
             for idx, alerta in enumerate(alertas):
                 paciente_id = str(alerta["paciente_id"]) if isinstance(alerta, dict) else registros[idx][0]
                 inicio_val = inicio_series.iat[idx]
+                fim_val = fim_series.iat[idx]
                 status_val = str(alerta.get("status", "")) if isinstance(alerta, dict) else registros[idx][6]
                 if inicio_val is None:
                     continue
-                # only log opening events for alerts that are 'aberto' or were inserted now
-                if status_val.lower() != "aberto":
-                    continue
-                ts_iso = inicio_val
                 try:
-                    ts_ms = int(pd.to_datetime(ts_iso).timestamp() * 1000)
+                    ts_ms_inicio = int(pd.to_datetime(inicio_val).timestamp() * 1000)
                 except Exception:
-                    ts_ms = None
-                if ts_ms is None:
-                    continue
-                conn.execute(
-                    "INSERT INTO timeline_events (paciente_id, ts, ts_ms, tipo, descricao, meta) VALUES (?, ?, ?, ?, ?, ?)",
-                    (paciente_id, ts_iso, ts_ms, "alert_open", None, None),
-                )
+                    ts_ms_inicio = None
+                if ts_ms_inicio is not None:
+                    conn.execute(
+                        "INSERT INTO timeline_events (paciente_id, ts, ts_ms, tipo, descricao, meta) VALUES (?, ?, ?, ?, ?, ?)",
+                        (paciente_id, inicio_val, ts_ms_inicio, "alert_open", None, None),
+                    )
+                if status_val.lower() == "fechado" and fim_val is not None:
+                    try:
+                        ts_ms_fim = int(pd.to_datetime(fim_val).timestamp() * 1000)
+                    except Exception:
+                        ts_ms_fim = None
+                    if ts_ms_fim is not None:
+                        conn.execute(
+                            "INSERT INTO timeline_events (paciente_id, ts, ts_ms, tipo, descricao, meta) VALUES (?, ?, ?, ?, ?, ?)",
+                            (paciente_id, fim_val, ts_ms_fim, "alert_close", None, None),
+                        )
         except Exception:
             # Do not fail alert insertion for timeline logging errors
             pass
