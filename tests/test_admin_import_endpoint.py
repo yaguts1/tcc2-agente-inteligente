@@ -11,18 +11,42 @@ def test_admin_import_endpoint_creates_ficha_and_alert(tmp_path):
     os.environ["UPP_DB_PATH"] = str(db_path)
     # ensure no UPP_ADMIN_TOKEN so endpoint falls back to session cookie
     os.environ.pop("UPP_ADMIN_TOKEN", None)
-    # UPP_ADMIN_PASS has no default anymore (a hardcoded default would be a
-    # login bypass) - set it explicitly for this test's fallback-login path.
-    os.environ["UPP_ADMIN_PASS"] = "admin"
 
-    # import app after env is set
+    # Recarrega os modulos depois de fixar UPP_DB_PATH. Sem isto o teste herda
+    # os modulos que outro arquivo (ex. tests/test_auth.py) ja recarregou
+    # apontando para o banco temporario DELE, e a verificacao da ficha falha
+    # por estar lendo de outro banco. A correcao estrutural (conftest com
+    # fixture compartilhada) vale para toda a suite.
+    import importlib
+
+    import interface.api_shared as api_shared
+    import interface.api as api
+    import interface.routers.auth as auth_router
+    import interface.routers.admin as admin_router
+    import interface.web as web
+
+    for modulo in (api_shared, auth_router, admin_router, api, web):
+        importlib.reload(modulo)
+    api._reset_auth_rate_limits()
+
     from fastapi.testclient import TestClient
-    from interface.web import app
+
+    app = web.app
 
     with TestClient(app) as client:
-        # perform login using fallback admin password (set above via UPP_ADMIN_PASS)
-        resp = client.post("/api/auth/login", json={"username": "tester", "password": "admin"})
-        assert resp.status_code == 200
+        # Registra um usuario real e autentica com ele. Antes este teste logava
+        # como "tester" com UPP_ADMIN_PASS, apoiando-se no bypass em que
+        # qualquer username servia — caminho que foi fechado. Usar um usuario
+        # de verdade exercita a autenticacao real e independe do ENVIRONMENT.
+        resp = client.post(
+            "/api/auth/register", json={"username": "admin_tester", "password": "senha-de-teste"}
+        )
+        assert resp.status_code == 201, resp.text
+
+        resp = client.post(
+            "/api/auth/login", json={"username": "admin_tester", "password": "senha-de-teste"}
+        )
+        assert resp.status_code == 200, resp.text
 
         # prepare alerts payload in DAO format expected by import (not frontend-shaped)
         rec = {

@@ -115,3 +115,30 @@ def test_cookie_de_sessao_tem_samesite(tmp_path: Path):
         assert "httponly" in set_cookie.lower()
         # cookie forjavel legado nao deve mais ser emitido
         assert "session_user=" not in set_cookie, f"session_user voltou a ser emitido: {set_cookie}"
+
+
+def test_cookie_secure_segue_o_protocolo_da_requisicao(tmp_path: Path):
+    """Secure precisa vir do protocolo, nao de ENVIRONMENT.
+
+    O container roda com ENVIRONMENT=production e ainda publica a porta 8000 em
+    HTTP para debug. Se Secure fosse ligado por ambiente, o browser descartaria
+    o cookie nesse acesso e o login simplesmente nao funcionaria.
+    """
+    app = _make_app_with_db(tmp_path)
+    with TestClient(app) as client:
+        r = client.post("/api/auth/register", json={"username": "erin", "password": "pw"})
+        assert r.status_code == 201
+        assert "secure" not in r.headers.get("set-cookie", "").lower(), (
+            "cookie marcado como Secure numa requisicao HTTP — o browser o descartaria"
+        )
+
+        # Atras do Caddy (TLS terminado no proxy) o header indica HTTPS.
+        r2 = client.post(
+            "/api/auth/login",
+            json={"username": "erin", "password": "pw"},
+            headers={"X-Forwarded-Proto": "https"},
+        )
+        assert r2.status_code == 200
+        assert "secure" in r2.headers.get("set-cookie", "").lower(), (
+            "cookie sem Secure mesmo com X-Forwarded-Proto: https"
+        )
