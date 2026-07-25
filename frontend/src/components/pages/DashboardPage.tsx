@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, Bell, Calendar } from 'lucide-react';
-import { statsApi, DashboardStats, patientsApi, ApiException } from '../../lib/api';
+import { statsApi, DashboardStats, patientsApi, ApiException, Alert } from '../../lib/api';
 import { AlertFilters } from '../../hooks/useAlertFilters';
 import { useAlerts } from '../../contexts/AlertsContext';
 import { FilterBar } from '../alerts/FilterBar';
@@ -135,28 +135,54 @@ export function DashboardPage() {
     fetchDashboardData();
   };
 
+  // As ações mudam o array `alerts`, e o efeito acima já refaz o fetch de
+  // stats por causa disso — não é preciso chamar getStats() aqui de novo.
   const handleAcknowledge = async (alertId: string) => {
     await acknowledgeAlert(alertId);
-    // Refresh stats after action
-    statsApi.getStats().then(setStats).catch(console.error);
   };
 
   const handleComplete = async (alertId: string) => {
     await completeAlert(alertId);
-    // Refresh stats after action
-    statsApi.getStats().then(setStats).catch(console.error);
   };
 
-  // Calculate metrics from filtered alerts
-  const filteredStats = {
-    activeAlerts: filteredAlerts.filter(a => a.status === 'pending').length,
-    acknowledgedAlerts: filteredAlerts.filter(a => a.status === 'acknowledged').length,
-    completedToday: filteredAlerts.filter(a => a.status === 'completed').length,
-    totalAlerts: filteredAlerts.length,
-    completionRate: filteredAlerts.length > 0 
-      ? Math.round((filteredAlerts.filter(a => a.status === 'completed').length / filteredAlerts.length) * 100)
-      : 0
-  };
+  // Métricas exibidas nos cards.
+  //
+  // Antes, `stats` (a resposta de /api/stats) era escrito quatro vezes e lido
+  // ZERO: os cards mostravam este recálculo client-side, que usa uma fórmula
+  // DIFERENTE da do backend — `completados / total` da visão atual, contra
+  // `fechados / (abertos + reconhecidos + fechados)` nas últimas 24h. Ou seja,
+  // o rótulo "Taxa de Conclusão" exibia outra métrica que não a calculada (e
+  // corrigida) no servidor, e a requisição era feita à toa.
+  //
+  // Agora: sem filtro ativo, mostra o número do backend, que é a fonte
+  // autoritativa e usa uma janela de 24h consistente. Com filtro, recalcula
+  // sobre a visão filtrada — mas com a MESMA fórmula do backend, para os
+  // rótulos continuarem significando a mesma coisa.
+  const temFiltroAtivo = activeFilterCount > 0;
+
+  const contarPorStatus = (status: Alert['status']) =>
+    filteredAlerts.filter((a) => a.status === status).length;
+
+  const displayStats = (() => {
+    if (!temFiltroAtivo) {
+      return {
+        activeAlerts: stats?.activeAlerts ?? 0,
+        acknowledgedAlerts: stats?.acknowledgedAlerts ?? 0,
+        completedToday: stats?.completedToday ?? 0,
+        completionRate: stats?.completionRate ?? 0,
+      };
+    }
+    const pendentes = contarPorStatus('pending');
+    const reconhecidos = contarPorStatus('acknowledged');
+    const concluidos = contarPorStatus('completed');
+    const total = pendentes + reconhecidos + concluidos;
+    return {
+      activeAlerts: pendentes,
+      acknowledgedAlerts: reconhecidos,
+      completedToday: concluidos,
+      completionRate: total > 0 ? Math.round((concluidos / total) * 100) : 0,
+    };
+  })();
 
   const isLoading = alertsLoading || isLoadingStats;
   const error = alertsError || statsError;
@@ -217,7 +243,7 @@ export function DashboardPage() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Alertas Ativos</p>
-                <p className="text-2xl font-bold text-foreground">{filteredStats.activeAlerts}</p>
+                <p className="text-2xl font-bold text-foreground">{displayStats.activeAlerts}</p>
               </div>
             </div>
           </Card>
@@ -229,7 +255,7 @@ export function DashboardPage() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Reconhecidos</p>
-                <p className="text-2xl font-bold text-warning">{filteredStats.acknowledgedAlerts}</p>
+                <p className="text-2xl font-bold text-warning">{displayStats.acknowledgedAlerts}</p>
               </div>
             </div>
           </Card>
@@ -241,7 +267,7 @@ export function DashboardPage() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Completados Hoje</p>
-                <p className="text-2xl font-bold text-success">{filteredStats.completedToday}</p>
+                <p className="text-2xl font-bold text-success">{displayStats.completedToday}</p>
               </div>
             </div>
           </Card>
@@ -253,7 +279,7 @@ export function DashboardPage() {
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Taxa de Conclusão</p>
-                <p className="text-2xl font-bold text-foreground">{filteredStats.completionRate}%</p>
+                <p className="text-2xl font-bold text-foreground">{displayStats.completionRate}%</p>
               </div>
             </div>
           </Card>
