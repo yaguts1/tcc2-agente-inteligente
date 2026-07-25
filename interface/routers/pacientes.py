@@ -3,9 +3,10 @@ from __future__ import annotations
 from typing import List
 from fastapi import APIRouter, HTTPException, status
 from pydantic import BaseModel
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 from interface.api_shared import DB_PATH, DEFAULT_PERFIL
+from interface.tempo import agora_utc_naive
 from interface.schemas import PacienteConfigResponse, RotinaConfig, FrontendCreatePatient
 from interface.repositories.pacientes import PatientRepository
 from interface.services.paciente_service import PatientService
@@ -138,8 +139,10 @@ async def simular_paciente_endpoint(paciente_id: str, payload: SimulationRequest
     perfil_obj = PerfilPaciente(**perfil_params)
     
     # 3. Generate Data
-    # Start time: now - duration
-    agora = datetime.now().replace(second=0, microsecond=0)
+    # Start time: now - duration. `inicio` no banco é UTC naive (ver interface/tempo.py),
+    # entao "agora" precisa ser UTC — datetime.now() local deslocaria os timestamps
+    # gerados pelo offset do fuso do servidor.
+    agora = agora_utc_naive().replace(microsecond=0)
     inicio = agora - timedelta(hours=duracao)
     
     # Generate Grade (for engine)
