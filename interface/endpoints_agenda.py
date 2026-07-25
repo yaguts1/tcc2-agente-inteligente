@@ -169,6 +169,62 @@ async def listar_agendas(
         ) from e
 
 
+# IMPORTANTE: esta rota precisa vir ANTES de /agenda/{agenda_id}. O FastAPI
+# casa na ordem de declaracao; se a rota com {agenda_id:int} vier primeiro,
+# "check" e interpretado como agenda_id e a requisicao morre com 422.
+@router.get(
+    "/pacientes/{paciente_id}/agenda/check",
+    response_model=SuppressionCheckResponse
+)
+async def verificar_supressao(
+    paciente_id: str,
+    timestamp: str = Query(..., description="ISO format timestamp YYYY-MM-DDTHH:MM:SS")
+) -> SuppressionCheckResponse:
+    """
+    Verifica se um timestamp está em período suprimido.
+
+    Query Params:
+        timestamp: ISO format (ex: 2025-10-27T12:30:00)
+    """
+    try:
+        ts = datetime.fromisoformat(timestamp[:19])
+
+        is_suppressed, modo = is_timestamp_in_suppressed_period(DB_PATH, paciente_id, ts)
+
+        # Buscar agendas ativas nesse timestamp para detalhe
+        agendas = dao_listar_agendas(DB_PATH, paciente_id, ativo_only=True)
+        agendas_ativas = []
+
+        for agenda in agendas:
+            from interface.dao_agenda import _timestamp_matches_agenda
+            if _timestamp_matches_agenda(ts, agenda):
+                agendas_ativas.append({
+                    "id": agenda["id"],
+                    "tipo": agenda["tipo"],
+                    "descricao": agenda["descricao"],
+                    "hora_inicio": agenda["hora_inicio"],
+                    "hora_fim": agenda["hora_fim"],
+                    "modo": agenda["modo"],
+                })
+
+        return SuppressionCheckResponse(
+            em_periodo_suprimido=is_suppressed,
+            modo_resultado=modo,
+            agendas_ativas=agendas_ativas
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail={"code": "invalid_timestamp", "message": f"Timestamp inválido: {str(e)}"}
+        ) from e
+    except Exception as e:
+        logger.error("agenda_verificar_erro", error=str(e), paciente_id=paciente_id)
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"code": "agenda_error", "message": str(e)}
+        ) from e
+
+
 @router.get(
     "/pacientes/{paciente_id}/agenda/{agenda_id}",
     response_model=AgendaResponse
@@ -183,6 +239,8 @@ async def obter_agenda(paciente_id: str, agenda_id: int) -> AgendaResponse:
             status.HTTP_404_NOT_FOUND,
             detail={"code": "agenda_nao_encontrada", "message": f"Agenda {agenda_id} não encontrada"}
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("agenda_obter_erro", error=str(e), paciente_id=paciente_id)
         raise HTTPException(
@@ -243,6 +301,10 @@ async def deletar_agenda(paciente_id: str, agenda_id: int):
                 detail={"code": "agenda_nao_encontrada", "message": f"Agenda {agenda_id} não encontrada"}
             )
         logger.info("agenda_deletada", paciente_id=paciente_id, agenda_id=agenda_id)
+    except HTTPException:
+        # O 404 acima e lancado DENTRO do try; sem isto o except generico
+        # abaixo o recapturava e devolvia 500 para uma agenda inexistente.
+        raise
     except Exception as e:
         logger.error("agenda_deletar_erro", error=str(e), paciente_id=paciente_id)
         raise HTTPException(
@@ -251,54 +313,3 @@ async def deletar_agenda(paciente_id: str, agenda_id: int):
         ) from e
 
 
-@router.get(
-    "/pacientes/{paciente_id}/agenda/check",
-    response_model=SuppressionCheckResponse
-)
-async def verificar_supressao(
-    paciente_id: str,
-    timestamp: str = Query(..., description="ISO format timestamp YYYY-MM-DDTHH:MM:SS")
-) -> SuppressionCheckResponse:
-    """
-    Verifica se um timestamp está em período suprimido.
-    
-    Query Params:
-        timestamp: ISO format (ex: 2025-10-27T12:30:00)
-    """
-    try:
-        ts = datetime.fromisoformat(timestamp[:19])
-        
-        is_suppressed, modo = is_timestamp_in_suppressed_period(DB_PATH, paciente_id, ts)
-        
-        # Buscar agendas ativas nesse timestamp para detalhe
-        agendas = dao_listar_agendas(DB_PATH, paciente_id, ativo_only=True)
-        agendas_ativas = []
-        
-        for agenda in agendas:
-            from interface.dao_agenda import _timestamp_matches_agenda
-            if _timestamp_matches_agenda(ts, agenda):
-                agendas_ativas.append({
-                    "id": agenda["id"],
-                    "tipo": agenda["tipo"],
-                    "descricao": agenda["descricao"],
-                    "hora_inicio": agenda["hora_inicio"],
-                    "hora_fim": agenda["hora_fim"],
-                    "modo": agenda["modo"],
-                })
-        
-        return SuppressionCheckResponse(
-            em_periodo_suprimido=is_suppressed,
-            modo_resultado=modo,
-            agendas_ativas=agendas_ativas
-        )
-    except ValueError as e:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            detail={"code": "invalid_timestamp", "message": f"Timestamp inválido: {str(e)}"}
-        ) from e
-    except Exception as e:
-        logger.error("agenda_verificar_erro", error=str(e), paciente_id=paciente_id)
-        raise HTTPException(
-            status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"code": "agenda_error", "message": str(e)}
-        ) from e
