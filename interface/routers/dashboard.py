@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import time
-import sqlite3
 from datetime import datetime, timezone
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -13,6 +12,7 @@ from interface.dao import (
     obter_ficha_paciente,
     selecionar_timeline,
 )
+from interface.db_core import connect
 from interface.dependencies import get_current_user
 from interface.tempo import agora_utc_naive
 from interface.ws_manager_optimized import ws_manager_optimized
@@ -37,11 +37,13 @@ async def health_check() -> dict:
     db_status = "unknown"
     db_error = None
     try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM alertas")
-        alert_count = cursor.fetchone()[0]
-        conn.close()
+        # Usa o connect() do db_core em vez de sqlite3.connect cru: assim herda
+        # WAL, busy_timeout e o fechamento garantido. Antes, o conn.close()
+        # ficava depois do fetchone() e era pulado quando a query falhava — ou
+        # seja, o proprio endpoint de saude vazava conexao justamente quando o
+        # banco estava com problema.
+        with connect(DB_PATH) as conn:
+            alert_count = conn.execute("SELECT COUNT(*) FROM alertas").fetchone()[0]
         db_status = "healthy"
     except Exception as e:
         db_status = "unhealthy"
