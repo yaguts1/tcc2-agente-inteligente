@@ -1,13 +1,10 @@
 """Tests for WebSocket functionality."""
 
-import asyncio
-import json
 import pytest
 from fastapi.testclient import TestClient
-from unittest.mock import patch, AsyncMock
+from unittest.mock import AsyncMock
 
 from interface.web import app
-from interface.ws_manager_optimized import ws_manager_optimized as ws_manager
 
 
 @pytest.fixture

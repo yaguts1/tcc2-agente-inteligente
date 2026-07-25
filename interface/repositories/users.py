@@ -79,8 +79,8 @@ class UserRepository:
                 " FROM users ORDER BY created_at"
             ).fetchall()
         return [
-            {**dict(l), "ativo": bool(l["ativo"])}
-            for l in linhas
+            {**dict(linha), "ativo": bool(linha["ativo"])}
+            for linha in linhas
         ]
 
     def contar_admins_ativos(self, exceto: str | None = None) -> int:

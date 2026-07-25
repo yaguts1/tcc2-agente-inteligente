@@ -5,7 +5,6 @@ import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
 from pathlib import Path
-import sqlite3
 from datetime import datetime
 
 from interface.dao import criar_paciente, inserir_timeline_event

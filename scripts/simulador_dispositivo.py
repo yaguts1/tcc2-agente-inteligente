@@ -2,7 +2,7 @@ import sys
 import time
 import requests
 import argparse
-from datetime import datetime, timedelta
+from datetime import datetime
 from pathlib import Path
 import pandas as pd
 

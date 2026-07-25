@@ -20,7 +20,6 @@ import sqlite3
 import sys
 from datetime import datetime
 from pathlib import Path
-import json
 
 # Adicionar pasta raiz ao path
 sys.path.insert(0, str(Path(__file__).parent.parent))
@@ -108,11 +107,11 @@ def popular_timeline_para_alertas(db_path: Path, dry_run: bool = False, paciente
         evento_open_existe = verificar_evento_existe(conn, paciente_id, inicio, "alert_open")
         
         if evento_open_existe:
-            print(f"  ⏭️  Evento alert_open já existe - pulando")
+            print("  ⏭️  Evento alert_open já existe - pulando")
             stats['eventos_pulados'] += 1
         else:
             if dry_run:
-                print(f"  🔍 [DRY RUN] Criaria evento alert_open")
+                print("  🔍 [DRY RUN] Criaria evento alert_open")
             else:
                 try:
                     # Converter timestamp ISO para milliseconds
@@ -133,7 +132,7 @@ def popular_timeline_para_alertas(db_path: Path, dry_run: bool = False, paciente
                             "migrado_em": datetime.now().isoformat()
                         }
                     )
-                    print(f"  ✅ Evento alert_open criado")
+                    print("  ✅ Evento alert_open criado")
                     stats['eventos_criados'] += 1
                 except Exception as e:
                     print(f"  ❌ Erro ao criar alert_open: {e}")
@@ -148,11 +147,11 @@ def popular_timeline_para_alertas(db_path: Path, dry_run: bool = False, paciente
             evento_ack_existe = verificar_evento_existe(conn, paciente_id, ts_ack, "alert_ack")
             
             if evento_ack_existe:
-                print(f"  ⏭️  Evento alert_ack já existe - pulando")
+                print("  ⏭️  Evento alert_ack já existe - pulando")
                 stats['eventos_pulados'] += 1
             else:
                 if dry_run:
-                    print(f"  🔍 [DRY RUN] Criaria evento alert_ack")
+                    print("  🔍 [DRY RUN] Criaria evento alert_ack")
                 else:
                     try:
                         # Converter timestamp ISO para milliseconds
@@ -165,7 +164,7 @@ def popular_timeline_para_alertas(db_path: Path, dry_run: bool = False, paciente
                             ts=ts_ack,
                             ts_ms=ts_ms,
                             tipo="alert_ack",
-                            descricao=f"Alerta reconhecido pela equipe",
+                            descricao="Alerta reconhecido pela equipe",
                             meta={
                                 "tipo": tipo,
                                 "retroativo": True,
@@ -173,7 +172,7 @@ def popular_timeline_para_alertas(db_path: Path, dry_run: bool = False, paciente
                                 "nota": "Timestamp aproximado (mesmo que abertura)"
                             }
                         )
-                        print(f"  ✅ Evento alert_ack criado")
+                        print("  ✅ Evento alert_ack criado")
                         stats['eventos_criados'] += 1
                     except Exception as e:
                         print(f"  ❌ Erro ao criar alert_ack: {e}")
@@ -184,11 +183,11 @@ def popular_timeline_para_alertas(db_path: Path, dry_run: bool = False, paciente
             evento_close_existe = verificar_evento_existe(conn, paciente_id, fim, "alert_close")
             
             if evento_close_existe:
-                print(f"  ⏭️  Evento alert_close já existe - pulando")
+                print("  ⏭️  Evento alert_close já existe - pulando")
                 stats['eventos_pulados'] += 1
             else:
                 if dry_run:
-                    print(f"  🔍 [DRY RUN] Criaria evento alert_close")
+                    print("  🔍 [DRY RUN] Criaria evento alert_close")
                 else:
                     try:
                         # Converter timestamp ISO para milliseconds
@@ -201,20 +200,20 @@ def popular_timeline_para_alertas(db_path: Path, dry_run: bool = False, paciente
                             ts=fim,
                             ts_ms=ts_ms,
                             tipo="alert_close",
-                            descricao=f"Alerta fechado/completado pela equipe",
+                            descricao="Alerta fechado/completado pela equipe",
                             meta={
                                 "tipo": tipo,
                                 "retroativo": True,
                                 "migrado_em": datetime.now().isoformat()
                             }
                         )
-                        print(f"  ✅ Evento alert_close criado")
+                        print("  ✅ Evento alert_close criado")
                         stats['eventos_criados'] += 1
                     except Exception as e:
                         print(f"  ❌ Erro ao criar alert_close: {e}")
                         stats['erros'] += 1
         elif status == "fechado" and not fim:
-            print(f"  ⚠️  Alerta fechado mas sem data de fim - pulando alert_close")
+            print("  ⚠️  Alerta fechado mas sem data de fim - pulando alert_close")
         
         print()
     
@@ -283,7 +282,7 @@ Exemplos de uso:
     # Verificar se banco existe
     if not args.db.exists():
         print(f"❌ ERRO: Banco de dados não encontrado: {args.db}")
-        print(f"   Verifique se o caminho está correto")
+        print("   Verifique se o caminho está correto")
         sys.exit(1)
     
     # Executar migração

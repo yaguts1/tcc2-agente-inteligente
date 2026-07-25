@@ -39,7 +39,7 @@ def import_alerts_list(alerts: list[dict], db_path: str | None = None) -> int:
     # Delegate to DAO which performs validation and timeline logging
     try:
         inserted = inserir_alertas(db_path, alerts)
-    except ValueError as exc:
+    except ValueError:
         # normalize to HTTP-like error when used by endpoints; caller can catch
         raise
     return int(inserted)

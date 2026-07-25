@@ -1,6 +1,6 @@
 """WebSocket connection manager com suporte a filtros."""
 
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional
 from fastapi import WebSocket
 import structlog
 from datetime import datetime

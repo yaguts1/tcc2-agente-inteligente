@@ -1,8 +1,7 @@
 """Serviço de exportação de alertas em CSV e PDF."""
 
 import io
-import logging
-from datetime import datetime, timedelta
+from datetime import datetime
 from typing import Optional, List, Dict, Any
 from zoneinfo import ZoneInfo
 
@@ -11,13 +10,12 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter, landscape
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
 import structlog
 from interface.dao import (
     selecionar_alertas_janela,
-    obter_usuario_por_nome,
 )
 
 logger = structlog.get_logger(__name__)
@@ -444,7 +442,7 @@ class ExportService:
                 # Converter para horário local
                 dt_local = dt.astimezone(TZ_BR)
                 return dt_local.strftime("%d/%m/%Y %H:%M")
-            except:
+            except (ValueError, TypeError):
                 return ts[:16]
         elif isinstance(ts, datetime):
             # Se não tiver timezone, assumir UTC

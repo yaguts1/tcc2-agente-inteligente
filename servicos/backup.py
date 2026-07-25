@@ -2,7 +2,6 @@
 Serviço de backup automático do banco de dados SQLite.
 """
 
-import os
 import shutil
 import sqlite3
 from contextlib import closing
@@ -66,7 +65,6 @@ class BackupService:
         Remove backups mais antigos que keep_days dias.
         Retorna o número de arquivos removidos.
         """
-        from datetime import timedelta
         
         cutoff_time = datetime.now().timestamp() - (keep_days * 86400)
         removed_count = 0

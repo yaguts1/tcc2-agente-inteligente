@@ -4,7 +4,6 @@ Teste COMPLETO e ADEQUADO da página de Admin com payload no formato ESP32 corre
 Testa a reconciliação end-to-end com dados realistas
 """
 
-import asyncio
 import json
 import os
 import sys
@@ -15,7 +14,10 @@ sys.path.insert(0, str(Path(__file__).parent))
 
 DB_PATH = os.getenv("UPP_DB_PATH", "dados.db")
 
-from interface.dao import (
+# E402 aqui é intencional: o import só resolve depois do sys.path.insert acima,
+# porque este script é executado de dentro de scripts_demo/ e precisa alcançar
+# os módulos da raiz do projeto.
+from interface.dao import (  # noqa: E402
     listar_device_events,
     inserir_device_event,
     registrar_device,
@@ -79,7 +81,7 @@ def teste_completo_reconciliacao():
     try:
         registrar_device(DB_PATH, test_device_id, meta={"tipo": "esp32", "teste": True})
         print_ok(f"Dispositivo registrado: {test_device_id}")
-    except Exception as e:
+    except Exception:
         print_info(f"Dispositivo já existe: {test_device_id}")
     
     # PASSO 2: Criar evento órfão (ANTES do assignment)
@@ -87,7 +89,7 @@ def teste_completo_reconciliacao():
     event_timestamp = datetime.now(timezone.utc)
     payload = criar_payload_esp32_valido(test_device_id, event_timestamp)
     
-    print_info(f"Payload ESP32:")
+    print_info("Payload ESP32:")
     print(json.dumps(payload, indent=2))
     
     try:
@@ -142,9 +144,9 @@ def teste_completo_reconciliacao():
         test_patient_id = paciente.get('paciente_id')
         cama_id = paciente.get('cama_id', 'TESTE_RECONCILE_A1')
         print_ok(f"Paciente criado: {test_patient_id} na cama {cama_id}")
-    except Exception as e:
+    except Exception:
         # Se falhar, usar paciente existente
-        print_info(f"Usando paciente existente...")
+        print_info("Usando paciente existente...")
         import sqlite3
         conn = sqlite3.connect(DB_PATH)
         conn.row_factory = sqlite3.Row
@@ -256,7 +258,7 @@ def teste_completo_reconciliacao():
     
     # Mostrar detalhes do evento processado
     proc_ev = processed_events[0]
-    print(f"\nDetalhes do evento processado:")
+    print("\nDetalhes do evento processado:")
     print(f"  ID: {proc_ev['id']}")
     print(f"  Device: {proc_ev['device_id']}")
     print(f"  Timestamp: {proc_ev['ts']}")

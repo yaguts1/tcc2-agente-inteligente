@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, List, Optional
+from typing import Any, List
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 class EventPayload(BaseModel):

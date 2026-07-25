@@ -92,7 +92,7 @@ def map_record_to_alert(rec: Dict[str, Any]) -> Dict[str, Any]:
     perfil = perfil_map.get(risk, 'medio')
 
     # status mapping
-    status_map = {'pending': 'aberto', 'acknowledged': 'reconhecido', 'completed': 'fechado', 'pending': 'aberto'}
+    status_map = {'pending': 'aberto', 'acknowledged': 'reconhecido', 'completed': 'fechado'}
     status = status_map.get(str(rec.get('status') or '').lower(), 'aberto')
 
     alerta = {

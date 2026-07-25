@@ -5,7 +5,6 @@ import sqlite3
 import tempfile
 import types
 from datetime import datetime, timedelta
-import json
 
 import pytest
 import pandas as pd
@@ -15,7 +14,7 @@ from interface.dao_agenda import (
     is_timestamp_in_suppressed_period,
     ensure_agendas_table,
 )
-from interface.dao import criar_paciente, _connect
+from interface.dao import _connect
 from modulo_alerta.engine import processar_alertas
 
 
@@ -51,11 +50,10 @@ def db_temp():
     yield path
     
     # Cleanup - force close any remaining connections
-    import sqlite3
     # Close any open connections
     try:
         sqlite3.connect(path).close()
-    except:
+    except Exception:
         pass
     
     # Try to remove file, with retry for Windows

@@ -66,8 +66,10 @@ jobs:
         run: npm run build
 
   lint:
-    # Lint advisory: NÃO bloqueia o merge (continue-on-error). Dá visibilidade
-    # às violações de ruff enquanto a limpeza é feita aos poucos (plano P3).
+    # Lint BLOQUEANTE. Era advisory (continue-on-error) desde o início, com a
+    # justificativa de "limpar aos poucos" — o que na prática significa nunca:
+    # o número de violações só cresce e o job vira ruído que ninguém lê.
+    # A base foi zerada (161 -> 0), então o gate agora só impede regressão.
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -79,8 +81,7 @@ jobs:
       - name: Install ruff
         run: pip install ruff==0.6.9
 
-      - name: Ruff check (não-bloqueante)
-        continue-on-error: true
+      - name: Ruff check
         run: ruff check --output-format=concise .
 
   audit:

@@ -97,11 +97,11 @@ def gerar_eventos_esp32(
         for evento in eventos:
             f.write(json.dumps(evento, ensure_ascii=False) + '\n')
     
-    print(f"✅ Arquivo gerado com sucesso!")
+    print("✅ Arquivo gerado com sucesso!")
     print(f"📄 Caminho: {output_path.absolute()}")
     print(f"📊 Total de eventos: {len(eventos)}")
     print(f"⏰ Período: {inicio.strftime('%Y-%m-%d %H:%M')} até {eventos[-1]['ts_utc']}")
-    print(f"📈 Distribuição de posturas:")
+    print("📈 Distribuição de posturas:")
     
     # Estatísticas
     from collections import Counter

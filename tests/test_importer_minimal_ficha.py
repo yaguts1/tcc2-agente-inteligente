@@ -1,7 +1,5 @@
 import json
-from pathlib import Path
 
-import pytest
 
 
 def test_importer_creates_minimal_ficha_and_alert(tmp_path):

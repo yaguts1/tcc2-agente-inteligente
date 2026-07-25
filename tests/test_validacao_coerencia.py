@@ -2,7 +2,7 @@
 
 import pytest
 import pandas as pd
-from datetime import datetime, timedelta
+from datetime import datetime
 from dados_simulados.validador import (
     validar_timestamps_ordenados,
     validar_duracoes_positivas,

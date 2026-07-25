@@ -19,7 +19,6 @@ from interface.dependencies import (
 from interface.repositories.devices import inserir_device_event, registrar_device, resolver_paciente_por_device_em
 from interface.schemas import ApiResponse
 from interface.services.ingestao_service import (
-    PROCESSADOR,
     _do_reconcile_bed,
     _reconcile_lock,
     normalizar_payload,
