@@ -13,6 +13,7 @@ from interface.dao import (
     obter_ficha_paciente,
     selecionar_timeline,
 )
+from interface.tempo import agora_utc_naive
 from interface.ws_manager_optimized import ws_manager_optimized
 
 logger = structlog.get_logger(__name__)
@@ -148,7 +149,8 @@ async def validate_repositioning_contract(paciente_id: str) -> dict:
                 detail={"code": "paciente_nao_encontrado", "message": f"Paciente {paciente_id} nao encontrado."}
             )
         
-        agora = datetime.now()
+        # Comparado contra `inicio`/`fim` dos alertas, que são UTC naive.
+        agora = agora_utc_naive()
         errors = []
         
         # Buscar alertas (não filtra por paciente_id na DAO, então filtramos aqui)

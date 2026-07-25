@@ -3,8 +3,9 @@ from __future__ import annotations
 
 import sqlite3
 from pathlib import Path
-from datetime import datetime
 import pandas as pd
+
+from interface.tempo import agora_utc_naive
 
 ISO_FORMAT = "%Y-%m-%dT%H:%M:%S"
 
@@ -27,7 +28,15 @@ def connect(db_path: str) -> sqlite3.Connection:
     return conn
 
 def utc_now_iso() -> str:
-    return datetime.now().replace(microsecond=0).strftime(ISO_FORMAT)
+    """`agora` em UTC naive, no mesmo referencial dos timestamps do banco.
+
+    Usava datetime.now() (hora LOCAL) apesar do nome: com TZ=America/Sao_Paulo
+    isso gravava created_at/updated_at, as janelas de device_assignments e
+    paciente_cama_history 3h deslocados dos ts_ms com que são comparados em
+    resolver_paciente_por_device_em() — a query que decide de qual paciente é
+    uma leitura de sensor.
+    """
+    return agora_utc_naive().strftime(ISO_FORMAT)
 
 def norm_iso(series: pd.Series) -> pd.Series:
     s = pd.to_datetime(series, errors="coerce", utc=False)
