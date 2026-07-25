@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import secrets
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status, Response
 from passlib.hash import bcrypt
@@ -9,11 +10,35 @@ from passlib.hash import bcrypt
 from interface.repositories.users import UserRepository
 from interface.api_shared import _check_auth_rate_limit, DB_PATH
 from interface.schemas import RegisterRequest
-from interface.auth_utils import create_access_token
+from interface.auth_utils import ACCESS_TOKEN_EXPIRE_SECONDS, create_access_token, em_producao
 from interface.dependencies import get_current_user
 
 router = APIRouter(tags=["auth"])
 user_repo = UserRepository(DB_PATH)
+
+
+def _definir_cookie_sessao(response: Response, token: str) -> None:
+    """Grava o cookie de sessao com as flags de seguranca corretas.
+
+    - samesite="lax": a API usa allow_credentials=True no CORS; sem SameSite o
+      cookie seria enviado em requisicoes cross-site e todo endpoint que muda
+      estado ficaria exposto a CSRF.
+    - secure fora de desenvolvimento: impede envio em texto claro por HTTP.
+    - max_age vem de ACCESS_TOKEN_EXPIRE_SECONDS para nao dessincronizar do
+      tempo de vida do proprio JWT.
+
+    Nao grava mais o cookie `session_user`: era texto puro, nao assinado e
+    forjavel (interface/dependencies.py ja o ignorava ha tempos), entao
+    continuar emitindo-o so convidava a voltar a confiar nele.
+    """
+    response.set_cookie(
+        "access_token",
+        token,
+        max_age=ACCESS_TOKEN_EXPIRE_SECONDS,
+        httponly=True,
+        samesite="lax",
+        secure=em_producao(),
+    )
 
 @router.post("/auth/login", status_code=status.HTTP_200_OK)
 async def api_login(request: Request, _: None = Depends(_check_auth_rate_limit)) -> dict:
@@ -40,11 +65,25 @@ async def api_login(request: Request, _: None = Depends(_check_auth_rate_limit))
         if not ok:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail={"code": "invalid_credentials", "message": "Usuario ou senha invalidos"})
     else:
-        # fallback to legacy env var password for quick dev (keeps backward compatibility).
-        # No default: if UPP_ADMIN_PASS isn't set, this login path is simply unavailable
-        # (a hardcoded default here would be a login bypass with a known password).
+        # Fallback legado por variavel de ambiente, para bancada/dev.
+        #
+        # Antes bastava a senha bater: como este ramo so roda quando o usuario
+        # NAO existe no banco, qualquer nome inventado + UPP_ADMIN_PASS emitia
+        # um JWT valido com aquele `sub` arbitrario. Agora exige tambem que o
+        # username seja o admin configurado, e o caminho fica indisponivel em
+        # producao (la a autenticacao tem que passar pelo banco).
+        if em_producao():
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED,
+                detail={"code": "invalid_credentials", "message": "Usuario ou senha invalidos"},
+            )
         admin_pass = os.getenv("UPP_ADMIN_PASS")
-        if not admin_pass or password != admin_pass:
+        admin_user = os.getenv("UPP_ADMIN_USER", "admin")
+        credenciais_ok = bool(admin_pass) and (
+            secrets.compare_digest(username, admin_user)
+            and secrets.compare_digest(password, admin_pass)
+        )
+        if not credenciais_ok:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail={"code": "invalid_credentials", "message": "Usuario ou senha invalidos"})
 
     # Generate JWT token
@@ -55,9 +94,7 @@ async def api_login(request: Request, _: None = Depends(_check_auth_rate_limit))
     resp = {"username": username, "token": token, "display_name": user.get("display_name") if user else None, "role": user.get("role", "staff") if user else "staff"}
 
     response = Response(content=json.dumps(resp), media_type="application/json", status_code=status.HTTP_200_OK)
-    # cookie lasts for 8 hours
-    response.set_cookie("session_user", username, max_age=8 * 3600, httponly=True)
-    response.set_cookie("access_token", token, max_age=8 * 3600, httponly=True)
+    _definir_cookie_sessao(response, token)
     return response
 
 
@@ -94,8 +131,7 @@ async def api_register(request: Request, req: RegisterRequest, _: None = Depends
 
     resp = {"username": username, "display_name": display, "token": token, "role": "staff"}
     response = Response(content=json.dumps(resp), media_type="application/json", status_code=status.HTTP_201_CREATED)
-    response.set_cookie("session_user", username, max_age=8 * 3600, httponly=True)
-    response.set_cookie("access_token", token, max_age=8 * 3600, httponly=True)
+    _definir_cookie_sessao(response, token)
     return response
 
 
