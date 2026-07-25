@@ -16,6 +16,32 @@ logger = structlog.get_logger(__name__)
 _VALID_TABLES = {"grade", "eventos", "alertas"}
 
 
+# Espelham os CHECK da tabela `alertas` (ver db_core.criar_esquema).
+TIPOS_VALIDOS = frozenset({"imobilidade"})
+STATUS_VALIDOS = frozenset({"aberto", "reconhecido", "fechado"})
+
+
+def _registrar_timeline(conn, paciente_id: str, ts: str, ts_ms: int, tipo: str) -> None:
+    """Grava um evento de timeline, sem repetir um que ja esta la.
+
+    O mesmo alerta e persistido mais de uma vez no caminho do sensor (abertura e
+    depois fechamento), e cada chamada registrava outro `alert_open` no mesmo
+    instante. A timeline do paciente — que a equipe usa para reconstruir o que
+    aconteceu — mostrava dois disparos onde houve um.
+    """
+    conn.execute(
+        """
+        INSERT INTO timeline_events (paciente_id, ts, ts_ms, tipo, descricao, meta)
+        SELECT ?, ?, ?, ?, NULL, NULL
+        WHERE NOT EXISTS (
+            SELECT 1 FROM timeline_events
+            WHERE paciente_id = ? AND ts = ? AND tipo = ?
+        )
+        """,
+        (paciente_id, ts, ts_ms, tipo, paciente_id, ts, tipo),
+    )
+
+
 def inserir_alertas(db_path: str, alertas: List[dict]) -> int:
     """Insere ou atualiza alertas calculados pelo motor."""
     if not alertas:
@@ -26,6 +52,20 @@ def inserir_alertas(db_path: str, alertas: List[dict]) -> int:
         if not required.issubset(alerta):
             raise ValueError(
                 "Alertas devem conter pelo menos paciente_id, inicio, tipo, perfil, janela_min e status."
+            )
+        # `tipo` e `status` tem CHECK no esquema. Enquanto o INSERT era
+        # `OR IGNORE`, a violacao era engolida junto com os conflitos de chave:
+        # a importacao respondia ok com a contagem de inseridos menor que a de
+        # recebidos, e o alerta simplesmente nao existia. Validar aqui devolve
+        # 400 com o motivo (ver routers/admin.py) em vez de descartar em
+        # silencio ou estourar 500 la no SQLite.
+        if str(alerta["tipo"]) not in TIPOS_VALIDOS:
+            raise ValueError(
+                f"tipo invalido: {alerta['tipo']!r} (aceitos: {sorted(TIPOS_VALIDOS)})"
+            )
+        if str(alerta["status"]) not in STATUS_VALIDOS:
+            raise ValueError(
+                f"status invalido: {alerta['status']!r} (aceitos: {sorted(STATUS_VALIDOS)})"
             )
 
     inicio_series = norm_iso(pd.Series([alerta.get("inicio") for alerta in alertas], dtype="object"))
@@ -62,11 +102,31 @@ def inserir_alertas(db_path: str, alertas: List[dict]) -> int:
         for paciente in pacientes:
             ensure_paciente(conn, paciente)
         before = conn.total_changes
+        # O motor incremental (caminho do sensor real, `processar_amostra`) emite
+        # o alerta DUAS vezes: 'aberto' quando a janela estoura e 'fechado'
+        # quando detecta o reposicionamento — duas chamadas, mesma chave
+        # (paciente_id, inicio). Com `INSERT OR IGNORE` o fechamento era
+        # descartado em silencio: o alerta ficava 'aberto' com fim=NULL para
+        # sempre, e como `nextRepositioning` de um alerta aberto ja esta vencido,
+        # a tela mostrava o paciente em atraso permanente DEPOIS de ele ter sido
+        # virado. So a simulacao em lote parecia certa, porque ela emite o alerta
+        # uma unica vez, ja fechado.
+        #
+        # O UPDATE e condicional de proposito:
+        #   - `excluded.fim IS NOT NULL` — so um fechamento atualiza; uma
+        #     reemissao de 'aberto' nunca rebaixa o status de uma linha que a
+        #     enfermagem ja reconheceu ou concluiu pela tela;
+        #   - `alertas.fim IS NULL` — nao sobrescreve um fechamento ja gravado.
         conn.executemany(
             """
-            INSERT OR IGNORE INTO alertas
+            INSERT INTO alertas
             (paciente_id, inicio, fim, tipo, perfil, janela_min, status, duracao_min)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(paciente_id, inicio) DO UPDATE SET
+                fim = excluded.fim,
+                status = excluded.status,
+                duracao_min = excluded.duracao_min
+            WHERE excluded.fim IS NOT NULL AND alertas.fim IS NULL
             """,
             registros,
         )
@@ -91,20 +151,14 @@ def inserir_alertas(db_path: str, alertas: List[dict]) -> int:
                 except Exception:
                     ts_ms_inicio = None
                 if ts_ms_inicio is not None:
-                    conn.execute(
-                        "INSERT INTO timeline_events (paciente_id, ts, ts_ms, tipo, descricao, meta) VALUES (?, ?, ?, ?, ?, ?)",
-                        (paciente_id, inicio_val, ts_ms_inicio, "alert_open", None, None),
-                    )
+                    _registrar_timeline(conn, paciente_id, inicio_val, ts_ms_inicio, "alert_open")
                 if status_val.lower() == "fechado" and fim_val is not None:
                     try:
                         ts_ms_fim = int(pd.to_datetime(fim_val).timestamp() * 1000)
                     except Exception:
                         ts_ms_fim = None
                     if ts_ms_fim is not None:
-                        conn.execute(
-                            "INSERT INTO timeline_events (paciente_id, ts, ts_ms, tipo, descricao, meta) VALUES (?, ?, ?, ?, ?, ?)",
-                            (paciente_id, fim_val, ts_ms_fim, "alert_close", None, None),
-                        )
+                        _registrar_timeline(conn, paciente_id, fim_val, ts_ms_fim, "alert_close")
         except Exception:
             # Do not fail alert insertion for timeline logging errors
             pass
