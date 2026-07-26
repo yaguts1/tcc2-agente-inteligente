@@ -14,6 +14,15 @@ on:
     branches:
       - main
 
+# Uma execucao por referencia. Sem isto, cada push numa branch com PR aberto
+# disparava DOIS runs completos (o gatilho de push e o de pull_request), e uma
+# sequencia de pushes deixava runs obsoletos ocupando a fila ate terminarem —
+# gastando minutos para responder sobre um commit que ninguem mais vai olhar.
+# `cancel-in-progress` mantem so o mais recente de cada referencia.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     runs-on: ubuntu-latest
