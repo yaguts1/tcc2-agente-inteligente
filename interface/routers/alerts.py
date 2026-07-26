@@ -17,6 +17,7 @@ from interface.services.alerts_service import (
     processar_lote,
     parsear_data_export,
 )
+from interface.repositories.alertas import TransicaoInvalida
 from ferramentas.exportador import ExportFilters, ExportService, generate_csv_filename, generate_pdf_filename
 
 logger = structlog.get_logger(__name__)
@@ -84,6 +85,15 @@ async def frontend_acknowledge(alert_id: str, user: str = Depends(get_current_us
         await reconhecer_alerta(alert_id, user)
     except LookupError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"code": "not_found", "message": "Alert not found"})
+    except TransicaoInvalida as exc:
+        # 409, e nao 400: o pedido e valido, o estado atual do alerta e que o
+        # recusa. Acontece quando duas pessoas agem no mesmo alerta em telas
+        # diferentes — a segunda precisa saber que nao foi ela quem registrou,
+        # em vez de receber um "ok" que a faria acreditar no contrario.
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail={"code": "transicao_invalida", "message": str(exc)},
+        ) from exc
     return {"ok": True}
 
 
@@ -98,6 +108,15 @@ async def frontend_complete(alert_id: str, user: str = Depends(get_current_user)
         await completar_alerta(alert_id, user)
     except LookupError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"code": "not_found", "message": "Alert not found"})
+    except TransicaoInvalida as exc:
+        # 409, e nao 400: o pedido e valido, o estado atual do alerta e que o
+        # recusa. Acontece quando duas pessoas agem no mesmo alerta em telas
+        # diferentes — a segunda precisa saber que nao foi ela quem registrou,
+        # em vez de receber um "ok" que a faria acreditar no contrario.
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail={"code": "transicao_invalida", "message": str(exc)},
+        ) from exc
     return {"ok": True}
 
 

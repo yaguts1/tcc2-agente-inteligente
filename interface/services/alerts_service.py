@@ -19,7 +19,7 @@ from interface.dao import (
     selecionar_alertas_janela,
 )
 from interface.repositories.timeline import ultimo_evento_por_paciente
-from interface.tempo import para_iso_utc
+from interface.tempo import agora_utc_naive, para_iso_utc
 from interface.ws_manager_optimized import ws_manager_optimized
 from servicos import metricas
 
@@ -211,9 +211,10 @@ async def _aplicar_operacao(alert_id: str, user: str, operacao: Literal["acknowl
     alterar_status_alerta(DB_PATH, paciente_id, inicio, config["novo_status"], config["definir_fim"])
 
     try:
-        now = datetime.now(timezone.utc)
-        ts_iso = now.isoformat()
-        ts_ms = int(now.timestamp() * 1000)
+        # Idem: UTC naive, o formato do resto do banco.
+        agora = agora_utc_naive().replace(microsecond=0)
+        ts_iso = agora.strftime("%Y-%m-%dT%H:%M:%S")
+        ts_ms = int(agora.replace(tzinfo=timezone.utc).timestamp() * 1000)
         inserir_timeline_event(
             db_path=DB_PATH,
             paciente_id=paciente_id,
@@ -269,9 +270,15 @@ async def processar_lote(alert_ids: List[str], user: str, operacao: Literal["ack
                 alterar_status_alerta, DB_PATH, paciente_id, inicio, config["novo_status"], config["definir_fim"]
             )
             try:
-                now = datetime.now(timezone.utc)
-                ts_iso = now.isoformat()
-                ts_ms = int(now.timestamp() * 1000)
+                # UTC naive no formato do resto do banco. Estes dois pontos
+                # gravavam `2026-07-25T03:42:24.229283+00:00` enquanto todos os
+                # outros eventos usam `2026-07-25T03:42:24`, deixando a coluna
+                # `ts` com dois formatos. Nao quebra nada hoje (a ordenacao usa
+                # `ts_ms` e o endpoint normaliza com `para_iso_utc`), mas e uma
+                # armadilha para o proximo consumidor de `ts`.
+                agora = agora_utc_naive().replace(microsecond=0)
+                ts_iso = agora.strftime("%Y-%m-%dT%H:%M:%S")
+                ts_ms = int(agora.replace(tzinfo=timezone.utc).timestamp() * 1000)
                 await asyncio.to_thread(
                     inserir_timeline_event,
                     DB_PATH,
