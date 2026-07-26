@@ -89,6 +89,40 @@ async def test_get_timeline_filter_tipo(api_client):
     assert events[0]["tipo"] == "type_a"
 
 @pytest.mark.asyncio
+async def test_evento_com_meta_ilegivel_continua_na_linha_do_tempo(api_client):
+    """`meta` corrompido nao pode fazer o evento inteiro sumir da timeline.
+
+    O `except` que trata o JSON do `meta` devolve None e segue — o evento fica.
+    O que faltava era o rastro: nada distinguia "nao havia meta" de "nao deu
+    para ler o meta", entao um detalhe clinico gravado no evento desaparecia
+    sem deixar sinal.
+    """
+    import sqlite3
+
+    client = api_client["client"]
+    db_path = api_client["db_path"]
+
+    ficha = criar_paciente(str(db_path), "Ana", "alto")
+    pid = ficha["paciente_id"]
+    ts_now = datetime.now().isoformat()
+    ts_ms = int(datetime.now().timestamp() * 1000)
+
+    evento_id = inserir_timeline_event(
+        str(db_path), pid, ts_now, ts_ms, "repositioning", "Reposicionado", {"lado": "direito"}
+    )
+    with sqlite3.connect(str(db_path)) as conn:
+        conn.execute("UPDATE timeline_events SET meta = ? WHERE id = ?", ("{nao e json", evento_id))
+
+    resp = await client.get("/api/timeline")
+    assert resp.status_code == 200
+    eventos = resp.json()
+
+    assert len(eventos) == 1
+    assert eventos[0]["tipo"] == "repositioning"
+    assert eventos[0]["meta"] is None
+
+
+@pytest.mark.asyncio
 async def test_get_timeline_filter_paciente(api_client):
     client = api_client["client"]
     db_path = api_client["db_path"]

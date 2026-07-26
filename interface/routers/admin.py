@@ -3,33 +3,14 @@ from __future__ import annotations
 import json
 import secrets
 import os
-from typing import AsyncIterator
 
 from fastapi import APIRouter, File, HTTPException, Request, UploadFile, status
 
-from interface.api_shared import DB_PATH, erro_interno
+from interface.api_shared import DB_PATH, erro_interno, iterar_linhas_jsonl
 from interface.dao import inserir_alertas, ensure_minimal_paciente_ficha
 from interface.dependencies import papel_do_jwt, usuario_de_jwt
 
 router = APIRouter(tags=["admin"])
-
-
-async def _iterar_jsonl(arquivo: UploadFile) -> AsyncIterator[str]:
-    buffer = ""
-    chunk_size = 64 * 1024
-    while True:
-        chunk = await arquivo.read(chunk_size)
-        if not chunk:
-            break
-        buffer += chunk.decode("utf-8")
-        while "\n" in buffer:
-            linha, buffer = buffer.split("\n", 1)
-            linha = linha.strip()
-            if linha:
-                yield linha
-    restante = buffer.strip()
-    if restante:
-        yield restante
 
 
 def import_alerts_list(alerts: list[dict], db_path: str | None = None) -> int:
@@ -79,9 +60,24 @@ async def api_admin_import_alerts(
     alerts: list[dict] = []
     # If multipart file provided, treat as JSONL
     if arquivo is not None:
+        numero = 0
         try:
-            async for linha in _iterar_jsonl(arquivo):
-                alerts.append(json.loads(linha))
+            async for linha in iterar_linhas_jsonl(arquivo):
+                numero += 1
+                # Aqui nada foi gravado ainda (a insercao acontece no fim, em
+                # bloco), entao abortar e correto — mas o cliente precisa saber
+                # QUAL linha esta ruim. Sem isto o JSONDecodeError escapava e
+                # virava um 500 generico.
+                try:
+                    alerts.append(json.loads(linha))
+                except json.JSONDecodeError as exc:
+                    raise HTTPException(
+                        status.HTTP_400_BAD_REQUEST,
+                        detail={
+                            "code": "invalid_jsonl",
+                            "message": f"Linha JSON invalida na posicao {numero}.",
+                        },
+                    ) from exc
         finally:
             await arquivo.close()
     elif body is not None:

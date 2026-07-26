@@ -2,14 +2,15 @@
 from __future__ import annotations
 
 import asyncio
+import codecs
 import ipaddress
 import os
 import time
 from collections import defaultdict
-from typing import Any, Dict, List
+from typing import Any, AsyncIterator, Dict, List
 
 import structlog
-from fastapi import HTTPException, Request, status
+from fastapi import HTTPException, Request, UploadFile, status
 from configuracao import carregar_configuracao
 
 logger = structlog.get_logger(__name__)
@@ -20,6 +21,104 @@ DB_PATH = config.db_path
 DEFAULT_PERFIL = "medio"
 APP_VERSION = "1.0.0"
 APP_START_TIME = time.time()
+
+# Tamanho maximo de uma linha JSONL. Existe porque o leitor acumula bytes ate
+# achar um "\n": um arquivo sem quebra de linha alguma seria carregado inteiro
+# na memoria do processo.
+LIMITE_LINHA_JSONL = 1 * 1024 * 1024
+
+# Tipos aceitos num upload JSONL, comparados sem os parametros do header.
+#
+# A checagem antes era `content_type not in {...}` sobre o valor cru, o que
+# recusava `text/plain; charset=utf-8` (o que um `curl -F` manda) e
+# `application/x-ndjson` (o media type registrado para JSONL) — arquivos
+# perfeitamente validos respondidos com "Envie arquivo JSONL valido".
+TIPOS_JSONL_ACEITOS = frozenset(
+    {
+        "application/jsonl",
+        "application/x-jsonlines",
+        "application/x-ndjson",
+        "application/ndjson",
+        "application/json",
+        "application/octet-stream",
+        "text/plain",
+        "text/csv",
+    }
+)
+
+
+def tipo_de_conteudo_aceito(content_type: str | None) -> bool:
+    """O `Content-Type` da parte multipart serve para um upload JSONL?
+
+    `None` passa: cliente embarcado costuma omitir o header da parte, e o
+    conteudo e validado linha a linha depois — o header nunca foi a garantia.
+    """
+    if not content_type:
+        return True
+    base = content_type.split(";", 1)[0].strip().lower()
+    return base in TIPOS_JSONL_ACEITOS
+
+
+async def iterar_linhas_jsonl(arquivo: UploadFile) -> AsyncIterator[str]:
+    """Linhas nao vazias de um upload JSONL, decodificando UTF-8 em fluxo.
+
+    Cada roteador tinha sua propria copia desta funcao, e as duas decodificavam
+    cada bloco de 64 KiB isoladamente (`chunk.decode("utf-8")`). Um caractere
+    multibyte que caia na fronteira do bloco tem seus bytes divididos entre dois
+    blocos, e nenhuma das metades e UTF-8 valido: o upload morria com
+    UnicodeDecodeError -> 500, mesmo sendo um arquivo correto. Em portugues
+    quase todo texto tem acento, entao a partir de 64 KiB isso deixa de ser
+    hipotetico — e falha de forma intermitente, porque depende de onde o
+    acento cai.
+
+    O decoder incremental guarda os bytes pendentes entre blocos. Encoding de
+    fato invalido vira 400 (o cliente mandou errado), nao 500.
+    """
+    decoder = codecs.getincrementaldecoder("utf-8")()
+    buffer = ""
+    chunk_size = 64 * 1024
+
+    def _erro_encoding(exc: Exception) -> HTTPException:
+        return HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "invalid_encoding",
+                "message": "O arquivo precisa estar codificado em UTF-8.",
+            },
+        )
+
+    while True:
+        chunk = await arquivo.read(chunk_size)
+        if not chunk:
+            break
+        try:
+            buffer += decoder.decode(chunk)
+        except UnicodeDecodeError as exc:
+            raise _erro_encoding(exc) from exc
+        while "\n" in buffer:
+            linha, buffer = buffer.split("\n", 1)
+            linha = linha.strip()
+            if linha:
+                yield linha
+        if len(buffer) > LIMITE_LINHA_JSONL:
+            raise HTTPException(
+                status.HTTP_413_REQUEST_ENTITY_TOO_LARGE,
+                detail={
+                    "code": "linha_muito_longa",
+                    "message": "Linha JSONL excede o tamanho maximo permitido.",
+                },
+            )
+
+    # `final=True` acusa bytes truncados no fim do arquivo em vez de engoli-los.
+    try:
+        buffer += decoder.decode(b"", final=True)
+    except UnicodeDecodeError as exc:
+        raise _erro_encoding(exc) from exc
+
+    restante = buffer.strip()
+    if restante:
+        yield restante
+
 
 def erro_interno(code: str, exc: Exception, **contexto: Any) -> HTTPException:
     """Erro 500 sem vazar o detalhe da exceção para o cliente.
