@@ -20,7 +20,7 @@ ReplayConfig g_config{
     .endpoint             = "/api/eventos",
     .delayEntrePacotesMs  = 500,
     .respeitarTimestamp   = false,
-    .tentativasMax        = 5,
+    .tentativasMax        = 0,  // 0 = infinito; ver comentario no .h
     .backoffBaseMs        = 500,
     .backoffMaxMs         = 60000,
     .backoffWithJitter    = true,
@@ -47,6 +47,15 @@ uint8_t       g_tentativaAtual   = 0;
 
 unsigned long g_proximoEnvioMs = 0;
 String        g_ultimaTsIso;
+
+// Offset do arquivo ate onde a entrega esta CONFIRMADA pelo servidor.
+//
+// O checkpoint gravava `g_arquivoEventos.position()`, que aponta para depois da
+// linha que acabou de ser LIDA — nao da que foi entregue. Ao desistir de um
+// evento, o estado FINALIZADO salvava esse mesmo offset e o replay seguinte
+// retomava DEPOIS do evento que nunca chegou: justamente a amostra que falhou
+// era a que se perdia, em silencio.
+unsigned long g_offsetConfirmado = 0;
 
 void registrarLog(const String &mensagem) { Serial.println(mensagem); }
 
@@ -87,7 +96,10 @@ bool abrirArquivoEventos() {
       String s = f.readString(); f.close(); s.trim();
       if (s.length() > 0) {
         unsigned long pos = (unsigned long)s.toInt();
-        if (pos > 0 && g_arquivoEventos.seek(pos, SeekSet)) registrarLog("[INFO] Retomando offset " + String(pos));
+        if (pos > 0 && g_arquivoEventos.seek(pos, SeekSet)) {
+          g_offsetConfirmado = pos;
+          registrarLog("[INFO] Retomando offset " + String(pos));
+        }
       }
     }
   }
@@ -176,11 +188,24 @@ String urlEncode(const String &valor) {
   return saida;
 }
 
+// Autentica este dispositivo na ingestão. Precisa ser chamado depois de
+// g_http.begin() e antes do GET/POST. O X-Device-Id que já era enviado é
+// escolhido pelo próprio firmware: identifica, mas não prova nada.
+// Sem DEVICE_TOKEN definido, não envia nada — o backend só exige o header se
+// UPP_DEVICE_TOKEN estiver configurado do lado dele.
+void adicionarTokenDispositivo() {
+#ifdef DEVICE_TOKEN
+  if (strlen(DEVICE_TOKEN) > 0) {
+    g_http.addHeader("X-Device-Token", DEVICE_TOKEN);
+  }
+#endif
+}
+
 bool atualizarPacienteDaCama() {
   if (g_config.camaId.isEmpty()) { registrarLog("[ERRO] Cama ID nao configurado"); return false; }
   if (WiFi.status()!=WL_CONNECTED) { conectarWiFi(); if (WiFi.status()!=WL_CONNECTED) { registrarLog("[ERRO] Sem Wi-Fi para consultar paciente"); return false; } }
   String rota = "/api/pacientes/cama/" + urlEncode(g_config.camaId); String url = montarUrl(rota); registrarLog("[PACIENTE] Consultando " + url);
-  g_http.begin(g_client, url); g_http.addHeader("Accept","application/json"); int status = g_http.GET(); if (status != 200) { registrarLog("[ERRO] Falha ao obter paciente da cama. HTTP=" + String(status)); g_http.end(); return false; }
+  g_http.begin(g_client, url); g_http.addHeader("Accept","application/json"); adicionarTokenDispositivo(); int status = g_http.GET(); if (status != 200) { registrarLog("[ERRO] Falha ao obter paciente da cama. HTTP=" + String(status)); g_http.end(); return false; }
   String corpo = g_http.getString(); g_http.end(); DynamicJsonDocument doc(2048); DeserializationError err = deserializeJson(doc, corpo); if (err) { registrarLog("[ERRO] Resposta paciente invalida: " + String(err.c_str())); return false; }
   const char *pac = doc["paciente_id"] | ""; const char *perfil = doc["perfil"] | ""; if (strlen(pac)==0) { registrarLog("[ERRO] Resposta nao contem paciente_id"); return false; }
   g_config.pacienteId = String(pac); g_config.perfilPaciente = String(perfil); String p = g_config.perfilPaciente; if (p.isEmpty()) p = "-"; registrarLog("[PACIENTE] Vinculado a " + g_config.pacienteId + " (perfil=" + p + ")"); return true;
@@ -188,20 +213,54 @@ bool atualizarPacienteDaCama() {
 
 bool garantirPacienteConfigurado() { if (g_pacienteSincronizado) return true; if (atualizarPacienteDaCama()) { g_pacienteSincronizado = true; return true; } return false; }
 
-bool enviarEvento(const EventoReplay &evento) {
-  if (WiFi.status()!=WL_CONNECTED) { conectarWiFi(); if (WiFi.status()!=WL_CONNECTED) { registrarLog("[ERRO] Sem Wi-Fi"); return false; } }
-  String url = montarUrlEventos(); g_http.begin(g_client, url); g_http.addHeader("Content-Type","application/json"); g_http.addHeader("X-Seq", String(evento.seq)); g_http.addHeader("X-Device-Id", g_config.deviceId);
-  int status = g_http.POST(evento.payload); g_http.end(); if (status>=200 && status<300) { g_status.totalEnviados++; g_status.ultimaRespostaMs = millis(); registrarLog("[ACK] seq=" + String(evento.seq) + " status=" + String(status)); return true; }
-  g_status.totalFalhas++; registrarLog("[FALHA] seq=" + String(evento.seq) + " status=" + String(status)); return false;
+// Classifica a resposta do servidor. 401/403 contam como TRANSIENTE de
+// proposito: token errado e erro de configuracao, e o dispositivo deve
+// continuar tentando para se recuperar sozinho quando alguem corrigir — pular
+// as amostras nesse caso seria perda silenciosa de dado clinico.
+ResultadoEnvio classificarResposta(int status) {
+  if (status >= 200 && status < 300) return ResultadoEnvio::ACK;
+  if (status < 0) return ResultadoEnvio::TRANSIENTE;            // erro de rede do HTTPClient
+  if (status >= 500) return ResultadoEnvio::TRANSIENTE;
+  if (status == 408 || status == 429) return ResultadoEnvio::TRANSIENTE;
+  if (status == 401 || status == 403) return ResultadoEnvio::TRANSIENTE;
+  if (status >= 400) return ResultadoEnvio::PERMANENTE;
+  return ResultadoEnvio::TRANSIENTE;
 }
 
-void salvarCheckpoint() { if (!g_arquivoEventos) return; const char *ckpt = "/eventos.offset"; unsigned long pos = (unsigned long)g_arquivoEventos.position(); File f = SPIFFS.open(ckpt, "w"); if (f) { f.print(String(pos)); f.close(); } }
+ResultadoEnvio enviarEvento(const EventoReplay &evento) {
+  if (WiFi.status()!=WL_CONNECTED) { conectarWiFi(); if (WiFi.status()!=WL_CONNECTED) { registrarLog("[ERRO] Sem Wi-Fi"); return ResultadoEnvio::TRANSIENTE; } }
+  String url = montarUrlEventos(); g_http.begin(g_client, url); g_http.addHeader("Content-Type","application/json"); g_http.addHeader("X-Seq", String(evento.seq)); g_http.addHeader("X-Device-Id", g_config.deviceId); adicionarTokenDispositivo();
+  int status = g_http.POST(evento.payload); g_http.end();
+  const ResultadoEnvio resultado = classificarResposta(status);
+  if (resultado == ResultadoEnvio::ACK) {
+    g_status.totalEnviados++; g_status.ultimaRespostaMs = millis();
+    registrarLog("[ACK] seq=" + String(evento.seq) + " status=" + String(status));
+    return resultado;
+  }
+  g_status.totalFalhas++;
+  registrarLog("[FALHA] seq=" + String(evento.seq) + " status=" + String(status) +
+               (resultado == ResultadoEnvio::PERMANENTE ? " (recusado em definitivo)" : " (temporario)"));
+  return resultado;
+}
+
+// Grava o offset CONFIRMADO, nunca a posicao corrente de leitura: um evento
+// lido mas nao entregue precisa ser reenviado depois de um reboot.
+void salvarCheckpoint() { if (!g_arquivoEventos) return; const char *ckpt = "/eventos.offset"; File f = SPIFFS.open(ckpt, "w"); if (f) { f.print(String(g_offsetConfirmado)); f.close(); } }
+
+// Marca o evento corrente como resolvido (entregue ou recusado em definitivo) e
+// move o ponto de retomada para depois dele.
+void confirmarEventoAtual() {
+  if (g_arquivoEventos) g_offsetConfirmado = (unsigned long)g_arquivoEventos.position();
+  g_eventoDisponivel = false;
+  g_tentativaAtual = 0;
+  salvarCheckpoint();
+}
 
 uint32_t calcularBackoff(uint8_t tentativa) { unsigned long res = g_config.backoffBaseMs * (1UL << tentativa); if (g_config.backoffMaxMs>0 && res > g_config.backoffMaxMs) res = g_config.backoffMaxMs; if (g_config.backoffWithJitter) { uint32_t jitter = (uint32_t)(res/4); uint32_t add = (uint32_t)(esp_random() % (jitter+1)); res += add; } return (uint32_t)res; }
 
 void atualizarEstado(ReplayState novo) { g_status.estadoAtual = novo; registrarLog("[ESTADO] -> " + String(static_cast<int>(novo))); }
 
-void resetarReplay() { if (g_arquivoEventos) g_arquivoEventos.close(); g_status = ReplayStatus{}; g_eventoAtual = EventoReplay{}; g_eventoDisponivel = false; g_pacienteSincronizado = false; g_tentativaAtual = 0; g_proximoEnvioMs = 0; g_ultimaTsIso = ""; }
+void resetarReplay() { if (g_arquivoEventos) g_arquivoEventos.close(); g_status = ReplayStatus{}; g_eventoAtual = EventoReplay{}; g_eventoDisponivel = false; g_pacienteSincronizado = false; g_tentativaAtual = 0; g_proximoEnvioMs = 0; g_ultimaTsIso = ""; g_offsetConfirmado = 0; }
 
 } // namespace
 
@@ -236,16 +295,54 @@ void processarReplay() {
         String head = "--" + boundary + crlf; head += "Content-Disposition: form-data; name=\"arquivo\"; filename=\"eventos.jsonl\"" + crlf; head += "Content-Type: application/jsonl" + crlf + crlf;
         String tail = crlf + "--" + boundary + "--" + crlf;
         g_arquivoEventos.seek(0, SeekSet); String content=""; while (g_arquivoEventos.available()) { String part = g_arquivoEventos.readStringUntil('\n'); content += part + "\n"; }
-        String body = head + content + tail; String url = montarUrl("/api/grade"); g_http.begin(g_client, url); g_http.addHeader("Content-Type","multipart/form-data; boundary=" + boundary); g_http.addHeader("X-Device-Id", g_config.deviceId);
+        String body = head + content + tail; String url = montarUrl("/api/grade"); g_http.begin(g_client, url); g_http.addHeader("Content-Type","multipart/form-data; boundary=" + boundary); g_http.addHeader("X-Device-Id", g_config.deviceId); adicionarTokenDispositivo();
         int status = g_http.POST(body); g_http.end(); if (status>=200 && status<300) { registrarLog("[ACK] upload status=" + String(status)); atualizarEstado(ReplayState::FINALIZADO); return; } else { registrarLog("[FALHA] upload status=" + String(status)); }
       }
       atualizarEstado(ReplayState::ESPERANDO_ACK);
-      if (enviarEvento(g_eventoAtual)) { g_eventoDisponivel = false; g_tentativaAtual = 0; salvarCheckpoint(); atualizarEstado(ReplayState::ENVIANDO); }
-      else { atualizarEstado(ReplayState::REENVIAR); }
+      switch (enviarEvento(g_eventoAtual)) {
+        case ResultadoEnvio::ACK:
+          confirmarEventoAtual();
+          atualizarEstado(ReplayState::ENVIANDO);
+          break;
+        case ResultadoEnvio::PERMANENTE:
+          // O servidor nunca vai aceitar este conteudo (ex.: linha malformada
+          // -> 422). Insistir travaria toda a fila atras dele, entao pula — mas
+          // contabiliza, para o descarte nao passar despercebido.
+          g_status.totalDescartados++;
+          registrarLog("[DESCARTE] seq=" + String(g_eventoAtual.seq) + " recusado em definitivo; seguindo");
+          confirmarEventoAtual();
+          atualizarEstado(ReplayState::ENVIANDO);
+          break;
+        case ResultadoEnvio::TRANSIENTE:
+          atualizarEstado(ReplayState::REENVIAR);
+          break;
+      }
       break;
     }
     case ReplayState::ESPERANDO_ACK: { if (g_eventoDisponivel) atualizarEstado(ReplayState::REENVIAR); else atualizarEstado(ReplayState::ENVIANDO); break; }
-    case ReplayState::REENVIAR: { if (g_tentativaAtual >= g_config.tentativasMax) { registrarLog("[ERRO] Limite retries atingido"); atualizarEstado(ReplayState::FINALIZADO); break; } const uint32_t aguardar = calcularBackoff(g_tentativaAtual); registrarLog("[INFO] Reenviando em " + String(aguardar) + " ms"); g_proximoEnvioMs = millis() + aguardar; g_tentativaAtual++; return; break; }
+    case ReplayState::REENVIAR: {
+      // `tentativasMax == 0` = tentar indefinidamente, que e o padrao. O backoff
+      // ja tem teto (backoffMaxMs), entao o dispositivo passa a bater no
+      // servidor uma vez por minuto ate ele voltar, em vez de desistir.
+      //
+      // Antes, cinco tentativas somavam ~16 s: qualquer reinicio do servidor
+      // mais longo que isso parava o replay DE VEZ, e so um CMD_START manual o
+      // religava. Numa ala, ninguem esta olhando o serial do ESP32 para
+      // perceber.
+      // g_tentativaAtual conta as tentativas ja feitas menos a primeira, entao
+      // +1 e o total — mesma semantica de scripts/envio_resiliente.py.
+      if (g_config.tentativasMax > 0 && (g_tentativaAtual + 1) >= g_config.tentativasMax) {
+        registrarLog("[ERRO] Limite de tentativas atingido; evento preservado para a proxima execucao");
+        atualizarEstado(ReplayState::FINALIZADO);
+        break;
+      }
+      const uint32_t aguardar = calcularBackoff(g_tentativaAtual);
+      registrarLog("[INFO] Reenviando em " + String(aguardar) + " ms (tentativa " + String(g_tentativaAtual + 1) + ")");
+      g_proximoEnvioMs = millis() + aguardar;
+      g_tentativaAtual++;
+      atualizarEstado(ReplayState::ENVIANDO);
+      return;
+    }
     case ReplayState::FINALIZADO: { salvarCheckpoint(); registrarLog("[INFO] Replay finalizado"); g_status.replayAtivo = false; resetarReplay(); break; }
   }
 }

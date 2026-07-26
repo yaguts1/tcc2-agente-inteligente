@@ -1,19 +1,44 @@
 """Repository for alert (alertas) operations."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from typing import Dict, List
 
 import pandas as pd
 import structlog
 
 from interface.db_core import connect, ensure_paciente, norm_iso
-from interface.repositories.timeline import inserir_timeline_event
 from interface.tempo import agora_utc_naive
 
 logger = structlog.get_logger(__name__)
 
 _VALID_TABLES = {"grade", "eventos", "alertas"}
+
+
+# Espelham os CHECK da tabela `alertas` (ver db_core.criar_esquema).
+TIPOS_VALIDOS = frozenset({"imobilidade"})
+STATUS_VALIDOS = frozenset({"aberto", "reconhecido", "fechado"})
+
+
+def _registrar_timeline(conn, paciente_id: str, ts: str, ts_ms: int, tipo: str) -> None:
+    """Grava um evento de timeline, sem repetir um que ja esta la.
+
+    O mesmo alerta e persistido mais de uma vez no caminho do sensor (abertura e
+    depois fechamento), e cada chamada registrava outro `alert_open` no mesmo
+    instante. A timeline do paciente — que a equipe usa para reconstruir o que
+    aconteceu — mostrava dois disparos onde houve um.
+    """
+    conn.execute(
+        """
+        INSERT INTO timeline_events (paciente_id, ts, ts_ms, tipo, descricao, meta)
+        SELECT ?, ?, ?, ?, NULL, NULL
+        WHERE NOT EXISTS (
+            SELECT 1 FROM timeline_events
+            WHERE paciente_id = ? AND ts = ? AND tipo = ?
+        )
+        """,
+        (paciente_id, ts, ts_ms, tipo, paciente_id, ts, tipo),
+    )
 
 
 def inserir_alertas(db_path: str, alertas: List[dict]) -> int:
@@ -26,6 +51,20 @@ def inserir_alertas(db_path: str, alertas: List[dict]) -> int:
         if not required.issubset(alerta):
             raise ValueError(
                 "Alertas devem conter pelo menos paciente_id, inicio, tipo, perfil, janela_min e status."
+            )
+        # `tipo` e `status` tem CHECK no esquema. Enquanto o INSERT era
+        # `OR IGNORE`, a violacao era engolida junto com os conflitos de chave:
+        # a importacao respondia ok com a contagem de inseridos menor que a de
+        # recebidos, e o alerta simplesmente nao existia. Validar aqui devolve
+        # 400 com o motivo (ver routers/admin.py) em vez de descartar em
+        # silencio ou estourar 500 la no SQLite.
+        if str(alerta["tipo"]) not in TIPOS_VALIDOS:
+            raise ValueError(
+                f"tipo invalido: {alerta['tipo']!r} (aceitos: {sorted(TIPOS_VALIDOS)})"
+            )
+        if str(alerta["status"]) not in STATUS_VALIDOS:
+            raise ValueError(
+                f"status invalido: {alerta['status']!r} (aceitos: {sorted(STATUS_VALIDOS)})"
             )
 
     inicio_series = norm_iso(pd.Series([alerta.get("inicio") for alerta in alertas], dtype="object"))
@@ -62,40 +101,63 @@ def inserir_alertas(db_path: str, alertas: List[dict]) -> int:
         for paciente in pacientes:
             ensure_paciente(conn, paciente)
         before = conn.total_changes
+        # O motor incremental (caminho do sensor real, `processar_amostra`) emite
+        # o alerta DUAS vezes: 'aberto' quando a janela estoura e 'fechado'
+        # quando detecta o reposicionamento — duas chamadas, mesma chave
+        # (paciente_id, inicio). Com `INSERT OR IGNORE` o fechamento era
+        # descartado em silencio: o alerta ficava 'aberto' com fim=NULL para
+        # sempre, e como `nextRepositioning` de um alerta aberto ja esta vencido,
+        # a tela mostrava o paciente em atraso permanente DEPOIS de ele ter sido
+        # virado. So a simulacao em lote parecia certa, porque ela emite o alerta
+        # uma unica vez, ja fechado.
+        #
+        # O UPDATE e condicional de proposito:
+        #   - `excluded.fim IS NOT NULL` — so um fechamento atualiza; uma
+        #     reemissao de 'aberto' nunca rebaixa o status de uma linha que a
+        #     enfermagem ja reconheceu ou concluiu pela tela;
+        #   - `alertas.fim IS NULL` — nao sobrescreve um fechamento ja gravado.
         conn.executemany(
             """
-            INSERT OR IGNORE INTO alertas
+            INSERT INTO alertas
             (paciente_id, inicio, fim, tipo, perfil, janela_min, status, duracao_min)
             VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(paciente_id, inicio) DO UPDATE SET
+                fim = excluded.fim,
+                status = excluded.status,
+                duracao_min = excluded.duracao_min
+            WHERE excluded.fim IS NOT NULL AND alertas.fim IS NULL
             """,
             registros,
         )
         # number of DB changes caused by alert inserts only
         delta_alerts = conn.total_changes - before
-        # For each alerta we persisted, add a timeline event so historical navigation
-        # can reflect when alerts were generated. We insert an event with tipo 'alert_open'
-        # using the inicio timestamp from the alerta payload and an epoch ms for easier queries.
+        # For each alerta we persisted, add timeline event(s) so historical/simulated
+        # navigation reflects when alerts were triggered and (if already resolved)
+        # when they were closed. `alert_open` is always logged at `inicio`; batch
+        # simulations produce alerts that are already 'fechado' (start+end both in
+        # the past), so we also log `alert_close` at `fim` for those instead of
+        # relying on a live status transition through alterar_status_alerta.
         try:
             for idx, alerta in enumerate(alertas):
                 paciente_id = str(alerta["paciente_id"]) if isinstance(alerta, dict) else registros[idx][0]
                 inicio_val = inicio_series.iat[idx]
+                fim_val = fim_series.iat[idx]
                 status_val = str(alerta.get("status", "")) if isinstance(alerta, dict) else registros[idx][6]
                 if inicio_val is None:
                     continue
-                # only log opening events for alerts that are 'aberto' or were inserted now
-                if status_val.lower() != "aberto":
-                    continue
-                ts_iso = inicio_val
                 try:
-                    ts_ms = int(pd.to_datetime(ts_iso).timestamp() * 1000)
+                    ts_ms_inicio = int(pd.to_datetime(inicio_val).timestamp() * 1000)
                 except Exception:
-                    ts_ms = None
-                if ts_ms is None:
-                    continue
-                conn.execute(
-                    "INSERT INTO timeline_events (paciente_id, ts, ts_ms, tipo, descricao, meta) VALUES (?, ?, ?, ?, ?, ?)",
-                    (paciente_id, ts_iso, ts_ms, "alert_open", None, None),
-                )
+                    ts_ms_inicio = None
+                if ts_ms_inicio is not None:
+                    _registrar_timeline(conn, paciente_id, inicio_val, ts_ms_inicio, "alert_open")
+                if status_val.lower() == "fechado" and fim_val is not None:
+                    try:
+                        ts_ms_fim = int(pd.to_datetime(fim_val).timestamp() * 1000)
+                    except Exception:
+                        ts_ms_fim = None
+                    if ts_ms_fim is not None:
+                        _registrar_timeline(conn, paciente_id, fim_val, ts_ms_fim, "alert_close")
         except Exception:
             # Do not fail alert insertion for timeline logging errors
             pass
@@ -155,10 +217,25 @@ def selecionar_alertas_janela(db_path: str, horas: int | None = 24) -> list[dict
     limite_inferior = (agora - timedelta(hours=horas)).strftime("%Y-%m-%dT%H:%M:%S")
     limite_superior = (agora + timedelta(hours=horas)).strftime("%Y-%m-%dT%H:%M:%S")
 
+    # Alerta NAO RESOLVIDO ignora a janela, sempre.
+    #
+    # O filtro era só por `inicio`, independentemente do status: um alerta
+    # aberto ha 25 horas e nunca atendido saia da lista. E some justamente o
+    # paciente com o reposicionamento MAIS atrasado — o de maior risco de lesao
+    # — sem contador, aviso ou qualquer indicacao de que existe algo fora da
+    # janela. GET /api/stats usava a mesma consulta, entao ele tambem nao
+    # entrava em `activeAlerts`: um paciente 30h sem virar nao aparecia em
+    # lugar nenhum do sistema.
+    #
+    # A janela faz sentido para o HISTORICO (alertas ja fechados). Para um
+    # alerta pendente, tempo decorrido nao e motivo para deixar de mostrar — e
+    # motivo para priorizar.
     with connect(db_path) as conn:
         cursor = conn.execute(
             "SELECT paciente_id, inicio, fim, tipo, perfil, janela_min, status, duracao_min "
-            "FROM alertas WHERE inicio >= ? AND inicio <= ? ORDER BY inicio ASC",
+            "FROM alertas "
+            "WHERE (inicio >= ? AND inicio <= ?) OR status IN ('aberto', 'reconhecido') "
+            "ORDER BY inicio ASC",
             (limite_inferior, limite_superior),
         )
         rows = cursor.fetchall()
@@ -182,6 +259,16 @@ def listar_pacientes(db_path: str, horas: int | None = 24) -> list[str]:
     return [str(row[0]) for row in rows]
 
 
+# O ciclo de vida de um alerta so anda para a frente. Um reposicionamento
+# concluido nao volta a pendente porque alguem clicou no botao errado, e o
+# instante em que o paciente foi virado nao muda depois de registrado.
+ORDEM_STATUS = {"aberto": 0, "reconhecido": 1, "fechado": 2}
+
+
+class TransicaoInvalida(ValueError):
+    """Tentativa de retroceder o status de um alerta."""
+
+
 def alterar_status_alerta(
     db_path: str,
     paciente_id: str,
@@ -190,20 +277,63 @@ def alterar_status_alerta(
     definir_fim: bool = False,
     now_dt: datetime | None = None,
 ) -> None:
-    """Atualiza o status de um alerta e registra evento de timeline quando aplicavel.
+    """Avanca o status de um alerta: aberto -> reconhecido -> fechado.
+
+    Antes nao havia validacao nenhuma, e a consequencia aparecia justamente no
+    dado que este sistema existe para registrar:
+
+    - concluir duas vezes SOBRESCREVIA `fim` e `duracao_min`, trocando o
+      instante em que o paciente foi realmente reposicionado pelo do segundo
+      clique;
+    - clicar "Reconhecer" depois de concluido devolvia o alerta para
+      'reconhecido' com `fim` preenchido — na tela, um paciente ja virado
+      voltava a aparecer como pendente de acao;
+    - dava para voltar a 'aberto' com `fim` preenchido.
+
+    Duas pessoas agindo no mesmo alerta em telas diferentes — rotina numa ala —
+    produziam qualquer um desses estados.
+
+    Agora:
+
+    - repetir o status atual e no-op (idempotente): o segundo clique, ou o
+      retry de uma requisicao, nao altera nada;
+    - retroceder levanta `TransicaoInvalida`, que a API traduz em 409;
+    - `fim` e `duracao_min` sao gravados UMA vez e nunca reescritos.
 
     - status_destino: 'aberto'|'reconhecido'|'fechado'
     - if definir_fim is True, sets fim and duracao_min based on now_dt or current time.
     """
     if not paciente_id or not inicio:
         raise ValueError("paciente_id e inicio precisam ser informados")
+
+    destino = str(status_destino).lower()
+    if destino not in ORDEM_STATUS:
+        raise ValueError(f"status invalido: {status_destino!r}")
+
     with connect(db_path) as conn:
         cur = conn.execute(
-            "SELECT paciente_id FROM alertas WHERE paciente_id = ? AND inicio = ?",
+            "SELECT status, fim FROM alertas WHERE paciente_id = ? AND inicio = ?",
             (paciente_id, inicio),
         )
-        if cur.fetchone() is None:
+        atual = cur.fetchone()
+        if atual is None:
             raise LookupError("Alerta nao encontrado.")
+
+        status_atual = str(atual["status"] or "aberto").lower()
+        rank_atual = ORDEM_STATUS.get(status_atual, 0)
+        rank_destino = ORDEM_STATUS[destino]
+
+        if rank_destino < rank_atual:
+            raise TransicaoInvalida(
+                f"nao e possivel voltar de '{status_atual}' para '{destino}'"
+            )
+        if rank_destino == rank_atual:
+            # Idempotente: nada muda, e em especial `fim` NAO e reescrito.
+            return
+
+        # `fim` ja gravado nunca e substituido — e o registro de quando o
+        # paciente foi virado.
+        definir_fim = definir_fim and atual["fim"] is None
 
         params = {"paciente_id": paciente_id, "inicio": inicio}
         if definir_fim:
@@ -228,23 +358,6 @@ def alterar_status_alerta(
                     "duracao_min": duracao_min,
                 },
             )
-            # timeline log for alert close
-            try:
-                ts_iso = fim_iso
-                # ts_ms: base_now é UTC naive → tratar como UTC no epoch (idem
-                # aos demais ts_ms, calculados via pandas que assume UTC).
-                ts_ms = int(base_now.replace(tzinfo=timezone.utc).timestamp() * 1000)
-                inserir_timeline_event(db_path, paciente_id, ts_iso, ts_ms, "alert_close", descricao=None, meta={"inicio": inicio})
-            except Exception:
-                # A timeline é trilha de auditoria: falha aqui não deve abortar
-                # o fechamento do alerta, mas precisa ser logada (perder o
-                # evento em silêncio deixa buracos no histórico do paciente).
-                logger.warning(
-                    "timeline_alert_close_falhou",
-                    paciente_id=paciente_id,
-                    inicio=inicio,
-                    exc_info=True,
-                )
         else:
             conn.execute(
                 """
@@ -254,18 +367,4 @@ def alterar_status_alerta(
                 """,
                 {"status": status_destino, **params},
             )
-            # timeline log for acknowledgement
-            try:
-                if str(status_destino).lower() == "reconhecido":
-                    base_now = agora_utc_naive()
-                    ts_iso = base_now.strftime("%Y-%m-%dT%H:%M:%S")
-                    ts_ms = int(base_now.replace(tzinfo=timezone.utc).timestamp() * 1000)
-                    inserir_timeline_event(db_path, paciente_id, ts_iso, ts_ms, "alert_ack", descricao=None, meta={"inicio": inicio})
-            except Exception:
-                logger.warning(
-                    "timeline_alert_ack_falhou",
-                    paciente_id=paciente_id,
-                    inicio=inicio,
-                    exc_info=True,
-                )
         conn.commit()

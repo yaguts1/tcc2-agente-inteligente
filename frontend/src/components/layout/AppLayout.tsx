@@ -5,6 +5,7 @@ import {
   LayoutDashboard,
   History,
   Settings,
+  KeyRound,
   LogOut,
   Menu,
   X,
@@ -12,14 +13,15 @@ import {
 import { Button } from '../ui/button';
 import { CriticalAlertBadge } from '../alerts/CriticalAlertBadge';
 import { CriticalAlert } from '../../hooks/useCriticalAlerts';
+import { NavLink } from 'react-router-dom';
 import { cn } from '../ui/utils';
+import { getStoredUser } from '../../lib/storage';
+import { TrocarSenhaDialog } from '../common/TrocarSenhaDialog';
 
 interface AppLayoutProps {
   children: ReactNode;
   currentUser: string;
   onLogout: () => void;
-  currentPage: 'dashboard' | 'timeline' | 'patients' | 'admin';
-  onNavigate: (page: 'dashboard' | 'timeline' | 'patients' | 'admin') => void;
   criticalAlerts?: {
     total: number;
     highRisk: number;
@@ -30,23 +32,34 @@ interface AppLayoutProps {
   onCriticalAlertClick?: (alert: CriticalAlert) => void;
 }
 
+// `to` é o caminho real na URL. A navegação usa <Link>, e não botões com
+// onClick: assim o item vira um link de verdade — abre em nova aba, responde
+// ao botão do meio, aparece no histórico e pode ser copiado e enviado a um
+// colega. O estado "ativo" passa a vir da URL, e não de um useState paralelo
+// que podia divergir do que está na tela.
 const navigation = [
-  { id: 'dashboard', name: 'Dashboard', icon: LayoutDashboard },
-  { id: 'timeline', name: 'Histórico', icon: History },
-  { id: 'patients', name: 'Pacientes', icon: Users },
-  { id: 'admin', name: 'Admin', icon: Settings },
+  { to: '/', name: 'Dashboard', icon: LayoutDashboard },
+  { to: '/historico', name: 'Histórico', icon: History },
+  { to: '/pacientes', name: 'Pacientes', icon: Users },
+  // `somenteAdmin`: a página de Admin passou a ser quase toda de operações
+  // restritas (contas e backup exigem o papel `admin` no backend). Oferecê-la
+  // a todos significaria um item de menu que abre uma tela de erros 403.
+  // É afordância, não autorização — quem decide é o backend, pelo JWT.
+  { to: '/admin', name: 'Admin', icon: Settings, somenteAdmin: true },
 ] as const;
 
 export function AppLayout({
   children,
   currentUser,
   onLogout,
-  currentPage,
-  onNavigate,
   criticalAlerts,
   onCriticalAlertClick,
 }: AppLayoutProps) {
   const [isMobileMenuOpen, setIsMobileMenuOpen] = useState(false);
+  const [trocandoSenha, setTrocandoSenha] = useState(false);
+
+  const ehAdmin = getStoredUser()?.role === 'admin';
+  const itensVisiveis = navigation.filter((item) => !('somenteAdmin' in item) || ehAdmin);
 
   return (
     <div className="min-h-screen bg-bg">
@@ -78,26 +91,29 @@ export function AppLayout({
         {isMobileMenuOpen && (
           <div className="border-t border-border bg-surface">
             <nav className="p-4 space-y-2">
-              {navigation.map((item) => {
+              {itensVisiveis.map((item) => {
                 const Icon = item.icon;
-                const isActive = currentPage === item.id;
                 return (
-                  <button
-                    key={item.id}
-                    onClick={() => {
-                      onNavigate(item.id as any);
-                      setIsMobileMenuOpen(false);
-                    }}
-                    className={cn(
-                      'w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors',
-                      isActive
-                        ? 'bg-primary text-primary-foreground'
-                        : 'hover:bg-muted text-foreground'
-                    )}
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    end={item.to === '/'}
+                    onClick={() => setIsMobileMenuOpen(false)}
+                    className={({ isActive }) =>
+                      cn(
+                        'w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors',
+                        isActive
+                          ? 'bg-primary text-primary-foreground'
+                          : 'hover:bg-muted text-foreground'
+                      )
+                    }
                   >
-                    <Icon className="w-5 h-5" />
+                    {/* NavLink já aplica aria-current="page" no item ativo,
+                        então leitores de tela anunciam a página atual — antes
+                        a única indicação era a cor, inacessível por si só. */}
+                    <Icon className="w-5 h-5" aria-hidden="true" />
                     <span>{item.name}</span>
-                  </button>
+                  </NavLink>
                 );
               })}
             </nav>
@@ -130,23 +146,25 @@ export function AppLayout({
           </div>
 
           <nav className="flex-1 px-4 py-4 space-y-1">
-            {navigation.map((item) => {
+            {itensVisiveis.map((item) => {
               const Icon = item.icon;
-              const isActive = currentPage === item.id;
               return (
-                <button
-                  key={item.id}
-                  onClick={() => onNavigate(item.id as any)}
-                  className={cn(
-                    'w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors',
-                    isActive
-                      ? 'bg-primary text-primary-foreground'
-                      : 'hover:bg-muted text-foreground'
-                  )}
+                <NavLink
+                  key={item.to}
+                  to={item.to}
+                  end={item.to === '/'}
+                  className={({ isActive }) =>
+                    cn(
+                      'w-full flex items-center gap-3 px-4 py-3 rounded-lg transition-colors',
+                      isActive
+                        ? 'bg-primary text-primary-foreground'
+                        : 'hover:bg-muted text-foreground'
+                    )
+                  }
                 >
-                  <Icon className="w-5 h-5" />
+                  <Icon className="w-5 h-5" aria-hidden="true" />
                   <span>{item.name}</span>
-                </button>
+                </NavLink>
               );
             })}
           </nav>
@@ -171,6 +189,14 @@ export function AppLayout({
             <Button
               variant="outline"
               className="w-full justify-start"
+              onClick={() => setTrocandoSenha(true)}
+            >
+              <KeyRound className="w-4 h-4 mr-2" />
+              Trocar senha
+            </Button>
+            <Button
+              variant="outline"
+              className="w-full justify-start"
               onClick={onLogout}
             >
               <LogOut className="w-4 h-4 mr-2" />
@@ -184,6 +210,15 @@ export function AppLayout({
       <main className="lg:pl-64">
         <div className="px-4 py-6 lg:px-8">{children}</div>
       </main>
+
+      {/* Trocar a própria senha encerra a sessão no servidor, então o diálogo
+          desconecta ao concluir — senão o usuário seguiria clicando e
+          recebendo 401 sem entender o motivo. */}
+      <TrocarSenhaDialog
+        aberto={trocandoSenha}
+        onOpenChange={setTrocandoSenha}
+        onSessaoEncerrada={onLogout}
+      />
     </div>
   );
 }

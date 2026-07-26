@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, List, Optional
+from typing import Any, List
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 class EventPayload(BaseModel):
@@ -51,13 +51,41 @@ class ApiResponse(BaseModel):
     ids: dict[str, Any]
 
 
+# Valores aceitos para o perfil de risco. O frontend fala em ingles
+# (high/medium/low) e o banco guarda em portugues (alto/medio/baixo); os dois
+# vocabularios sao aceitos na entrada.
+RISK_LEVELS_VALIDOS = frozenset({"high", "medium", "low", "alto", "medio", "baixo"})
+
+
 class FrontendCreatePatient(BaseModel):
     name: str
     room: str | None = None
     bed: str | None = None
     riskLevel: str
-    repositioningInterval: int | None = None
+    # Aceito por compatibilidade com clientes antigos, mas IGNORADO: o intervalo
+    # e derivado do perfil de risco (ver paciente_service.intervalo_horas), que
+    # e a mesma fonte usada pelo motor de alertas. Antes o formulario deixava
+    # editar este numero, mandava para o backend e o valor era descartado sem
+    # aviso — a pessoa achava ter mudado o protocolo do paciente e nao mudara
+    # nada.
+    repositioningInterval: float | None = None
     notes: str | None = None
+
+    @field_validator("riskLevel")
+    @classmethod
+    def validar_risco(cls, v: str) -> str:
+        """Rejeita perfil de risco desconhecido.
+
+        O service fazia `risk_map.get(valor, "medio")`: qualquer coisa que nao
+        estivesse no mapa — um typo, "critical", "alta" — virava MEDIO em
+        silencio. E um parametro clinico: ele define a janela de
+        reposicionamento (2h para alto risco, 3h para medio), entao o efeito
+        pratico era rebaixar o paciente de categoria sem ninguem perceber.
+        """
+        if str(v).lower() not in RISK_LEVELS_VALIDOS:
+            aceitos = ", ".join(sorted(RISK_LEVELS_VALIDOS))
+            raise ValueError(f"riskLevel invalido: {v!r}. Valores aceitos: {aceitos}.")
+        return v
 
 
 class FrontendPatient(BaseModel):
@@ -66,7 +94,9 @@ class FrontendPatient(BaseModel):
     room: str | None = None
     bed: str | None = None
     riskLevel: str
-    repositioningInterval: int | None = None
+    # float: com a janela do motor, o perfil medio da 1.5h — um int truncaria
+    # para 1h e a tela voltaria a divergir do comportamento real.
+    repositioningInterval: float | None = None
     createdAt: str | None = None
     updatedAt: str | None = None
 

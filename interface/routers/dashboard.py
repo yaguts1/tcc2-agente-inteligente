@@ -1,26 +1,42 @@
 from __future__ import annotations
 
 import time
-import sqlite3
 from datetime import datetime, timezone
 import structlog
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
-from interface.api_shared import DB_PATH, APP_VERSION, APP_START_TIME, DEFAULT_PERFIL
+from interface.api_shared import (
+    DB_PATH,
+    APP_VERSION,
+    APP_START_TIME,
+    DEFAULT_PERFIL,
+    _check_api_rate_limit,
+    erro_interno,
+)
 from interface.dao import (
     selecionar_alertas_janela,
     listar_fichas_pacientes,
     obter_ficha_paciente,
     selecionar_timeline,
 )
+from interface.db_core import connect
+from interface.dependencies import get_current_user
+from interface.repositories.monitoramento import (
+    resumo as resumo_monitoramento,
+    status_por_paciente,
+)
+from interface.tempo import agora_utc_naive, para_iso_utc
 from interface.ws_manager_optimized import ws_manager_optimized
 
 logger = structlog.get_logger(__name__)
-router = APIRouter(tags=["dashboard"])
+# Exige sessao: /stats e /timeline expoem dados clinicos e /health detalha
+# DB_PATH e contagem de alertas. O healthcheck do container usa /healthz
+# (interface/web.py), que segue publico de proposito.
+router = APIRouter(tags=["dashboard"], dependencies=[Depends(get_current_user)])
 
 
 @router.get("/health", status_code=status.HTTP_200_OK)
-async def health_check() -> dict:
+def health_check() -> dict:
     """
     Comprehensive health check endpoint.
     Returns service status, database connectivity, WebSocket connections, version, and uptime.
@@ -32,11 +48,13 @@ async def health_check() -> dict:
     db_status = "unknown"
     db_error = None
     try:
-        conn = sqlite3.connect(DB_PATH)
-        cursor = conn.cursor()
-        cursor.execute("SELECT COUNT(*) FROM alertas")
-        alert_count = cursor.fetchone()[0]
-        conn.close()
+        # Usa o connect() do db_core em vez de sqlite3.connect cru: assim herda
+        # WAL, busy_timeout e o fechamento garantido. Antes, o conn.close()
+        # ficava depois do fetchone() e era pulado quando a query falhava — ou
+        # seja, o proprio endpoint de saude vazava conexao justamente quando o
+        # banco estava com problema.
+        with connect(DB_PATH) as conn:
+            alert_count = conn.execute("SELECT COUNT(*) FROM alertas").fetchone()[0]
         db_status = "healthy"
     except Exception as e:
         db_status = "unhealthy"
@@ -64,8 +82,10 @@ async def health_check() -> dict:
     }
 
 
+# `/health` fica FORA do rate limit de proposito (ver `_check_api_rate_limit`):
+# healthcheck limitado faz o monitoramento derrubar o servico que ele vigia.
 @router.get("/stats", status_code=status.HTTP_200_OK)
-async def get_stats() -> dict:
+def get_stats(_: None = Depends(_check_api_rate_limit)) -> dict:
     """Retorna estatísticas do dashboard para o frontend.
     
     ✅ CORRIGIDO: Usa janela temporal CONSISTENTE de 24h para todas as métricas
@@ -106,23 +126,54 @@ async def get_stats() -> dict:
             if total_relevant > 0 else 0
         )
         
+        # Saúde do monitoramento entra no MESMO payload das estatísticas de
+        # propósito. O dashboard afirmava "Todos os pacientes estão com
+        # reposicionamento em dia" sempre que não havia alertas — mas ausência
+        # de alerta também é o que acontece quando o sensor morre, o WiFi cai
+        # ou a ingestão quebra. Sem este número ao lado, a tela não tem como
+        # distinguir "está tudo bem" de "parei de receber dados".
+        saude = resumo_monitoramento(DB_PATH)
+
         return {
             "activeAlerts": active_alerts,
             "acknowledgedAlerts": acked_alerts,
             "completedToday": completed_today,
             "totalPatients": total_patients,
-            "completionRate": round(completion_rate, 1)
+            "completionRate": round(completion_rate, 1),
+            "unmonitoredPatients": saude["sem_monitoramento"],
+            "monitoringLimitMin": saude["limite_min"],
         }
     except Exception as exc:
         logger.exception("stats_error", erro=str(exc))
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"code": "stats_error", "message": str(exc)}
+            detail={"code": "stats_error", "message": "Erro interno ao processar a requisicao."}
         ) from exc
 
 
+@router.get("/monitoramento", status_code=status.HTTP_200_OK)
+def status_monitoramento(_: None = Depends(_check_api_rate_limit)) -> dict:
+    """Quais pacientes estão (ou não) com dados chegando.
+
+    Responde à pergunta que o dashboard não conseguia responder: "não há
+    alertas porque está tudo bem, ou porque parei de receber dados?".
+
+    `nunca_recebeu_dados` separa "o sensor parou" de "nunca chegou leitura
+    nenhuma" — a segunda costuma ser erro de instalação ou de vínculo
+    device↔leito, e a ação corretiva é diferente.
+    """
+    try:
+        detalhe = status_por_paciente(DB_PATH)
+        agregado = resumo_monitoramento(DB_PATH)
+        return {**agregado, "pacientes": detalhe}
+    except Exception as exc:
+        raise erro_interno("monitoramento_error", exc) from exc
+
+
 @router.get("/validate-repositioning/{paciente_id}", status_code=status.HTTP_200_OK)
-async def validate_repositioning_contract(paciente_id: str) -> dict:
+def validate_repositioning_contract(
+    paciente_id: str, _: None = Depends(_check_api_rate_limit)
+) -> dict:
     """Valida o contrato Backend/Frontend para repouso.
     
     Valida:
@@ -148,7 +199,8 @@ async def validate_repositioning_contract(paciente_id: str) -> dict:
                 detail={"code": "paciente_nao_encontrado", "message": f"Paciente {paciente_id} nao encontrado."}
             )
         
-        agora = datetime.now()
+        # Comparado contra `inicio`/`fim` dos alertas, que são UTC naive.
+        agora = agora_utc_naive()
         errors = []
         
         # Buscar alertas (não filtra por paciente_id na DAO, então filtramos aqui)
@@ -212,17 +264,18 @@ async def validate_repositioning_contract(paciente_id: str) -> dict:
         logger.exception("validate_repositioning_error", erro=str(exc), paciente_id=paciente_id)
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"code": "validate_error", "message": str(exc)}
+            detail={"code": "validate_error", "message": "Erro interno ao processar a requisicao."}
         ) from exc
 
 
 @router.get("/timeline", status_code=status.HTTP_200_OK)
-async def get_timeline(
+def get_timeline(
     paciente_id: str | None = None,
     tipo: str | None = None,
     start_ms: int | None = None,
     end_ms: int | None = None,
-    limit: int = 100
+    limit: int = 100,
+    _: None = Depends(_check_api_rate_limit),
 ) -> list[dict]:
     """
     Retorna eventos da timeline com filtros opcionais.
@@ -256,12 +309,16 @@ async def get_timeline(
         for ev in eventos:
             pid = ev.get("paciente_id")
             ev["paciente_name"] = paciente_map.get(pid, "Desconhecido") if pid else None
+            # `ts` sai do banco em UTC naive. Sem offset explícito o browser o
+            # lê como hora LOCAL e a linha do tempo do paciente aparece 3h
+            # adiantada para quem está no Brasil.
+            ev["ts"] = para_iso_utc(ev.get("ts"))
             result.append(ev)
-            
+
         return result
     except Exception as exc:
         logger.exception("timeline_error", erro=str(exc))
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"code": "timeline_error", "message": str(exc)}
+            detail={"code": "timeline_error", "message": "Erro interno ao processar a requisicao."}
         ) from exc

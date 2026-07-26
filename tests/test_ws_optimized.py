@@ -1,11 +1,7 @@
 """Testes para WebSocket otimizado com filtros e rate limiting."""
 
 import pytest
-import json
-import asyncio
-from fastapi.testclient import TestClient
-from unittest.mock import patch, AsyncMock, MagicMock
-from datetime import datetime
+from unittest.mock import AsyncMock
 
 from interface.ws_manager_optimized import (
     WebSocketFilter,

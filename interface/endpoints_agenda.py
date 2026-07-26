@@ -8,7 +8,9 @@ from datetime import datetime
 from typing import Optional
 from pydantic import BaseModel, Field, field_validator
 
-from fastapi import APIRouter, HTTPException, status, Query
+from fastapi import APIRouter, Depends, HTTPException, status, Query
+
+from interface.dependencies import get_current_user
 
 from interface.dao_agenda import (
     ensure_agendas_table,
@@ -29,12 +31,46 @@ DB_PATH = os.getenv("UPP_DB_PATH", "dados.db")
 # Garantir que tabela existe
 ensure_agendas_table(DB_PATH)
 
-router = APIRouter(tags=["agenda"])
+# Agendas sao vinculadas a um paciente e definem quando alertas ficam
+# suprimidos — quem altera isso muda o cuidado prestado. Exige sessao.
+router = APIRouter(tags=["agenda"], dependencies=[Depends(get_current_user)])
 
 
 # ============================================================================
 # Models Pydantic
 # ============================================================================
+
+_TIPOS = ("refeicao", "cirurgia", "procedimento", "atendimento", "outro")
+_MODOS = ("suprimir", "reduzir", "monitorar")
+
+
+def _validar_hora(v: Optional[str]) -> Optional[str]:
+    """Exige HH:MM.
+
+    O casamento da agenda faz `strptime(hora, "%H:%M")`. Um valor fora desse
+    formato virava exceção lá no fundo do motor, onde o `except` de fail-safe
+    apenas registra um warning e mantém o alerta: a agenda ficava cadastrada,
+    visível na tela e sem efeito nenhum. Falhar aqui, no cadastro, é a única
+    forma de quem digitou ficar sabendo.
+    """
+    if v is None:
+        return v
+    try:
+        datetime.strptime(v.strip(), "%H:%M")
+    except (ValueError, AttributeError):
+        raise ValueError(f"hora deve estar no formato HH:MM (recebido: {v!r})")
+    return v.strip()
+
+
+def _validar_dias(v: Optional[list[int]]) -> Optional[list[int]]:
+    """0=segunda .. 6=domingo, como `date.weekday()`."""
+    if v is None:
+        return v
+    fora = [d for d in v if not 0 <= d <= 6]
+    if fora:
+        raise ValueError(f"dias_semana aceita 0-6 (Seg-Dom); invalidos: {fora}")
+    return v
+
 
 class AgendaCreate(BaseModel):
     """Criação de agenda."""
@@ -51,22 +87,29 @@ class AgendaCreate(BaseModel):
     @field_validator("tipo")
     @classmethod
     def validate_tipo(cls, v):
-        allowed = ("refeicao", "cirurgia", "procedimento", "atendimento", "outro")
-        if v not in allowed:
-            raise ValueError(f"tipo deve ser um de: {allowed}")
+        if v not in _TIPOS:
+            raise ValueError(f"tipo deve ser um de: {_TIPOS}")
         return v
-    
+
     @field_validator("modo")
     @classmethod
     def validate_modo(cls, v):
-        allowed = ("suprimir", "reduzir", "monitorar")
-        if v not in allowed:
-            raise ValueError(f"modo deve ser um de: {allowed}")
+        if v not in _MODOS:
+            raise ValueError(f"modo deve ser um de: {_MODOS}")
         return v
+
+    _horas = field_validator("hora_inicio", "hora_fim")(_validar_hora)
+    _dias = field_validator("dias_semana")(_validar_dias)
 
 
 class AgendaUpdate(BaseModel):
-    """Atualização de agenda (campos opcionais)."""
+    """Atualização de agenda (campos opcionais).
+
+    Os mesmos validadores do cadastro: sem eles dava para criar uma agenda
+    valida e depois deixa-la inerte por um PATCH — `modo="supprimir"` (com o
+    erro de digitacao) e aceito, nao casa com nenhum modo conhecido e a
+    supressao simplesmente para de acontecer, sem erro em lugar nenhum.
+    """
     tipo: Optional[str] = None
     descricao: Optional[str] = None
     dias_semana: Optional[list[int]] = None
@@ -77,6 +120,23 @@ class AgendaUpdate(BaseModel):
     modo: Optional[str] = None
     reducao_janela_min: Optional[int] = None
     ativo: Optional[bool] = None
+
+    @field_validator("tipo")
+    @classmethod
+    def validate_tipo(cls, v):
+        if v is not None and v not in _TIPOS:
+            raise ValueError(f"tipo deve ser um de: {_TIPOS}")
+        return v
+
+    @field_validator("modo")
+    @classmethod
+    def validate_modo(cls, v):
+        if v is not None and v not in _MODOS:
+            raise ValueError(f"modo deve ser um de: {_MODOS}")
+        return v
+
+    _horas = field_validator("hora_inicio", "hora_fim")(_validar_hora)
+    _dias = field_validator("dias_semana")(_validar_dias)
 
 
 class AgendaResponse(BaseModel):
@@ -113,7 +173,7 @@ class SuppressionCheckResponse(BaseModel):
     status_code=status.HTTP_201_CREATED,
     response_model=AgendaResponse
 )
-async def criar_agenda(paciente_id: str, payload: AgendaCreate) -> AgendaResponse:
+def criar_agenda(paciente_id: str, payload: AgendaCreate) -> AgendaResponse:
     """Cria uma nova agenda de supressão."""
     try:
         agenda = dao_criar_agenda(
@@ -145,7 +205,7 @@ async def criar_agenda(paciente_id: str, payload: AgendaCreate) -> AgendaRespons
         logger.error("agenda_criar_erro", error=str(e), paciente_id=paciente_id)
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"code": "agenda_error", "message": str(e)}
+            detail={"code": "agenda_error", "message": "Erro interno ao processar a requisicao."}
         ) from e
 
 
@@ -153,7 +213,7 @@ async def criar_agenda(paciente_id: str, payload: AgendaCreate) -> AgendaRespons
     "/pacientes/{paciente_id}/agenda",
     response_model=list[AgendaResponse]
 )
-async def listar_agendas(
+def listar_agendas(
     paciente_id: str,
     ativo: bool = Query(True, description="Apenas agendas ativas")
 ) -> list[AgendaResponse]:
@@ -165,7 +225,63 @@ async def listar_agendas(
         logger.error("agenda_listar_erro", error=str(e), paciente_id=paciente_id)
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"code": "agenda_error", "message": str(e)}
+            detail={"code": "agenda_error", "message": "Erro interno ao processar a requisicao."}
+        ) from e
+
+
+# IMPORTANTE: esta rota precisa vir ANTES de /agenda/{agenda_id}. O FastAPI
+# casa na ordem de declaracao; se a rota com {agenda_id:int} vier primeiro,
+# "check" e interpretado como agenda_id e a requisicao morre com 422.
+@router.get(
+    "/pacientes/{paciente_id}/agenda/check",
+    response_model=SuppressionCheckResponse
+)
+def verificar_supressao(
+    paciente_id: str,
+    timestamp: str = Query(..., description="ISO format timestamp YYYY-MM-DDTHH:MM:SS")
+) -> SuppressionCheckResponse:
+    """
+    Verifica se um timestamp está em período suprimido.
+
+    Query Params:
+        timestamp: ISO format (ex: 2025-10-27T12:30:00)
+    """
+    try:
+        ts = datetime.fromisoformat(timestamp[:19])
+
+        is_suppressed, modo = is_timestamp_in_suppressed_period(DB_PATH, paciente_id, ts)
+
+        # Buscar agendas ativas nesse timestamp para detalhe
+        agendas = dao_listar_agendas(DB_PATH, paciente_id, ativo_only=True)
+        agendas_ativas = []
+
+        for agenda in agendas:
+            from interface.dao_agenda import _timestamp_matches_agenda
+            if _timestamp_matches_agenda(ts, agenda):
+                agendas_ativas.append({
+                    "id": agenda["id"],
+                    "tipo": agenda["tipo"],
+                    "descricao": agenda["descricao"],
+                    "hora_inicio": agenda["hora_inicio"],
+                    "hora_fim": agenda["hora_fim"],
+                    "modo": agenda["modo"],
+                })
+
+        return SuppressionCheckResponse(
+            em_periodo_suprimido=is_suppressed,
+            modo_resultado=modo,
+            agendas_ativas=agendas_ativas
+        )
+    except ValueError as e:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail={"code": "invalid_timestamp", "message": f"Timestamp inválido: {str(e)}"}
+        ) from e
+    except Exception as e:
+        logger.error("agenda_verificar_erro", error=str(e), paciente_id=paciente_id)
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"code": "agenda_error", "message": "Erro interno ao processar a requisicao."}
         ) from e
 
 
@@ -173,7 +289,7 @@ async def listar_agendas(
     "/pacientes/{paciente_id}/agenda/{agenda_id}",
     response_model=AgendaResponse
 )
-async def obter_agenda(paciente_id: str, agenda_id: int) -> AgendaResponse:
+def obter_agenda(paciente_id: str, agenda_id: int) -> AgendaResponse:
     """Obtém uma agenda específica."""
     try:
         agenda = dao_obter_agenda(DB_PATH, paciente_id, agenda_id)
@@ -183,11 +299,13 @@ async def obter_agenda(paciente_id: str, agenda_id: int) -> AgendaResponse:
             status.HTTP_404_NOT_FOUND,
             detail={"code": "agenda_nao_encontrada", "message": f"Agenda {agenda_id} não encontrada"}
         )
+    except HTTPException:
+        raise
     except Exception as e:
         logger.error("agenda_obter_erro", error=str(e), paciente_id=paciente_id)
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"code": "agenda_error", "message": str(e)}
+            detail={"code": "agenda_error", "message": "Erro interno ao processar a requisicao."}
         ) from e
 
 
@@ -195,7 +313,7 @@ async def obter_agenda(paciente_id: str, agenda_id: int) -> AgendaResponse:
     "/pacientes/{paciente_id}/agenda/{agenda_id}",
     response_model=AgendaResponse
 )
-async def atualizar_agenda(
+def atualizar_agenda(
     paciente_id: str,
     agenda_id: int,
     payload: AgendaUpdate
@@ -225,7 +343,7 @@ async def atualizar_agenda(
         logger.error("agenda_atualizar_erro", error=str(e), paciente_id=paciente_id)
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"code": "agenda_error", "message": str(e)}
+            detail={"code": "agenda_error", "message": "Erro interno ao processar a requisicao."}
         ) from e
 
 
@@ -233,7 +351,7 @@ async def atualizar_agenda(
     "/pacientes/{paciente_id}/agenda/{agenda_id}",
     status_code=status.HTTP_204_NO_CONTENT
 )
-async def deletar_agenda(paciente_id: str, agenda_id: int):
+def deletar_agenda(paciente_id: str, agenda_id: int):
     """Deleta uma agenda."""
     try:
         deleted = dao_deletar_agenda(DB_PATH, paciente_id, agenda_id)
@@ -243,62 +361,15 @@ async def deletar_agenda(paciente_id: str, agenda_id: int):
                 detail={"code": "agenda_nao_encontrada", "message": f"Agenda {agenda_id} não encontrada"}
             )
         logger.info("agenda_deletada", paciente_id=paciente_id, agenda_id=agenda_id)
+    except HTTPException:
+        # O 404 acima e lancado DENTRO do try; sem isto o except generico
+        # abaixo o recapturava e devolvia 500 para uma agenda inexistente.
+        raise
     except Exception as e:
         logger.error("agenda_deletar_erro", error=str(e), paciente_id=paciente_id)
         raise HTTPException(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"code": "agenda_error", "message": str(e)}
+            detail={"code": "agenda_error", "message": "Erro interno ao processar a requisicao."}
         ) from e
 
 
-@router.get(
-    "/pacientes/{paciente_id}/agenda/check",
-    response_model=SuppressionCheckResponse
-)
-async def verificar_supressao(
-    paciente_id: str,
-    timestamp: str = Query(..., description="ISO format timestamp YYYY-MM-DDTHH:MM:SS")
-) -> SuppressionCheckResponse:
-    """
-    Verifica se um timestamp está em período suprimido.
-    
-    Query Params:
-        timestamp: ISO format (ex: 2025-10-27T12:30:00)
-    """
-    try:
-        ts = datetime.fromisoformat(timestamp[:19])
-        
-        is_suppressed, modo = is_timestamp_in_suppressed_period(DB_PATH, paciente_id, ts)
-        
-        # Buscar agendas ativas nesse timestamp para detalhe
-        agendas = dao_listar_agendas(DB_PATH, paciente_id, ativo_only=True)
-        agendas_ativas = []
-        
-        for agenda in agendas:
-            from interface.dao_agenda import _timestamp_matches_agenda
-            if _timestamp_matches_agenda(ts, agenda):
-                agendas_ativas.append({
-                    "id": agenda["id"],
-                    "tipo": agenda["tipo"],
-                    "descricao": agenda["descricao"],
-                    "hora_inicio": agenda["hora_inicio"],
-                    "hora_fim": agenda["hora_fim"],
-                    "modo": agenda["modo"],
-                })
-        
-        return SuppressionCheckResponse(
-            em_periodo_suprimido=is_suppressed,
-            modo_resultado=modo,
-            agendas_ativas=agendas_ativas
-        )
-    except ValueError as e:
-        raise HTTPException(
-            status.HTTP_400_BAD_REQUEST,
-            detail={"code": "invalid_timestamp", "message": f"Timestamp inválido: {str(e)}"}
-        ) from e
-    except Exception as e:
-        logger.error("agenda_verificar_erro", error=str(e), paciente_id=paciente_id)
-        raise HTTPException(
-            status.HTTP_500_INTERNAL_SERVER_ERROR,
-            detail={"code": "agenda_error", "message": str(e)}
-        ) from e

@@ -1,3 +1,13 @@
+/* Fonte do CSS da aplicação. O Tailwind é gerado em build pelo plugin
+   @tailwindcss/vite (ver vite.config.ts).
+
+   Antes, o que era importado pelo main.tsx era src/index.css: 2300 linhas de
+   OUTPUT já compilado do Tailwind v4.1.3, commitadas como se fossem fonte,
+   enquanto o tailwindcss nem constava no package.json. Como o CSS era
+   estático, qualquer classe utilitária nova escrita num componente
+   simplesmente não existia — e falhava em silêncio, sem erro de build. */
+@import "tailwindcss";
+
 @custom-variant dark (&:is(.dark *));
 
 :root {

@@ -2,14 +2,17 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass
+from pathlib import Path
+from typing import Dict
 
 from logging_setup import configure_logging
 
+# Configura o logging no import deste modulo, que e carregado cedo por todo o
+# app. Os imports acima sao da stdlib e nao emitem log, entao nao precisam vir
+# depois desta chamada — estavam abaixo dela sem motivo.
 configure_logging()
-import os
-from pathlib import Path
-from typing import Dict
 
 _ENV_ROOT = Path(__file__).resolve().parent
 

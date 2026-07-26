@@ -135,7 +135,7 @@ docker run --rm -v "$(pwd):/app" -w /app python:3.11-slim bash -c \
 Este sistema é projetado para **uma única instância**, não múltiplas réplicas atrás de um load balancer:
 
 - **SQLite**: um arquivo único; múltiplos processos escrevendo simultaneamente de VMs diferentes não é suportado (WAL mode ajuda com concorrência dentro do mesmo processo/host, não entre hosts).
-- **Rate limiter** (`interface/rate_limiter.py`) e o motor de alertas incremental (`servicos/processamento_incremental.py`) mantêm estado em memória por processo — 2+ réplicas processariam eventos duplicados e teriam limites de taxa inconsistentes.
+- **Rate limiter** (`interface/api_shared.py`) e o motor de alertas incremental (`servicos/processamento_incremental.py`) mantêm estado em memória por processo — 2+ réplicas processariam eventos duplicados e teriam limites de taxa inconsistentes.
 - **Reconciler de devices e backup automático** (`interface/lifespan_tasks.py`) rodam como tasks in-process sem lock distribuído — 2+ réplicas duplicariam o trabalho.
 - **Uploads de documentos** ficam em disco local (dentro do volume Docker) — não há storage de objeto compartilhado.
 

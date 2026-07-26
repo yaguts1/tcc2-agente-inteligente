@@ -2,9 +2,13 @@
 from __future__ import annotations
 
 import sqlite3
+from contextlib import contextmanager
 from pathlib import Path
-from datetime import datetime
+from typing import Iterator
+
 import pandas as pd
+
+from interface.tempo import agora_utc_naive
 
 ISO_FORMAT = "%Y-%m-%dT%H:%M:%S"
 
@@ -16,18 +20,53 @@ def ensure_db_path(db_path: str) -> Path:
         path.parent.mkdir(parents=True, exist_ok=True)
     return path
 
-def connect(db_path: str) -> sqlite3.Connection:
+# Quanto tempo o SQLite espera por um lock antes de desistir. Sem isto o
+# default e ZERO: a primeira colisao levanta "database is locked" na hora, num
+# app que por design tem WebSocket de ingestao, reconciler, backup periodico e
+# requests HTTP escrevendo ao mesmo tempo.
+BUSY_TIMEOUT_MS = 5000
+
+
+@contextmanager
+def connect(db_path: str) -> Iterator[sqlite3.Connection]:
+    """Conexao com o banco, para uso em `with connect(...) as conn:`.
+
+    Commita ao sair sem erro, faz rollback se houver excecao e **fecha** em
+    qualquer caso.
+
+    O motivo de ser um contextmanager proprio: antes esta funcao devolvia a
+    Connection crua e todo o codigo fazia `with connect(...) as conn:`, o que
+    parece certo mas nao e — o context manager nativo do sqlite3 commita ou faz
+    rollback e NAO fecha a conexao. Cada chamada de repositorio deixava uma
+    conexao para o coletor de lixo.
+    """
     path = ensure_db_path(db_path)
-    conn = sqlite3.connect(str(path))
+    conn = sqlite3.connect(str(path), timeout=BUSY_TIMEOUT_MS / 1000)
     conn.row_factory = sqlite3.Row
-    # WAL reduz contencao entre leituras e escritas concorrentes (mesmo numa
-    # unica instancia, o app tem WebSocket + reconciler + requests HTTP
-    # escrevendo/lendo ao mesmo tempo).
-    conn.execute("PRAGMA journal_mode=WAL")
-    return conn
+    try:
+        # WAL reduz contencao entre leituras e escritas concorrentes (mesmo numa
+        # unica instancia, o app tem WebSocket + reconciler + requests HTTP
+        # escrevendo/lendo ao mesmo tempo).
+        conn.execute("PRAGMA journal_mode=WAL")
+        conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
+        yield conn
+        conn.commit()
+    except Exception:
+        conn.rollback()
+        raise
+    finally:
+        conn.close()
 
 def utc_now_iso() -> str:
-    return datetime.now().replace(microsecond=0).strftime(ISO_FORMAT)
+    """`agora` em UTC naive, no mesmo referencial dos timestamps do banco.
+
+    Usava datetime.now() (hora LOCAL) apesar do nome: com TZ=America/Sao_Paulo
+    isso gravava created_at/updated_at, as janelas de device_assignments e
+    paciente_cama_history 3h deslocados dos ts_ms com que são comparados em
+    resolver_paciente_por_device_em() — a query que decide de qual paciente é
+    uma leitura de sensor.
+    """
+    return agora_utc_naive().strftime(ISO_FORMAT)
 
 def norm_iso(series: pd.Series) -> pd.Series:
     s = pd.to_datetime(series, errors="coerce", utc=False)

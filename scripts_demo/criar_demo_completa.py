@@ -6,7 +6,7 @@ Demonstra a capacidade do sistema em escala real.
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict, List
+from typing import Dict
 import requests
 from time import sleep
 
@@ -53,7 +53,7 @@ def verificar_backend() -> bool:
     try:
         response = requests.get(f"{BACKEND_URL}/api/stats", timeout=2)
         return response.status_code == 200
-    except:
+    except Exception:
         return False
 
 
@@ -142,7 +142,7 @@ def main():
             })
             sleep(0.2)  # Pequeno delay para evitar sobrecarga
         else:
-            print(f"         FALHA ao criar paciente")
+            print("         FALHA ao criar paciente")
     
     if not pacientes_criados:
         print("\n   ERRO: Nenhum paciente foi criado!")

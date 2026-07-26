@@ -29,6 +29,33 @@ import {
   SelectValue,
 } from '../ui/select';
 
+const PAGE_SIZE = 100;
+
+/**
+ * Converte o "YYYY-MM-DD" de um <input type="date"> no instante inicial ou
+ * final daquele dia NO FUSO DO USUARIO.
+ *
+ * O caminho anterior era `new Date(valor)` seguido de `setHours(...)`, e o
+ * primeiro passo ja estava errado: a forma so-data do ISO 8601 e interpretada
+ * como meia-noite UTC, nao local. No Brasil (UTC-3), `new Date('2026-07-26')`
+ * e 25/07 as 21:00 locais, e o `setHours(0,0,0,0)` zerava o dia 25. Filtrar
+ * "26/07 a 26/07" pedia ao backend a janela do dia 25: o enfermeiro via o
+ * historico do dia errado e nenhum evento do dia que pediu.
+ *
+ * O backend compara com `ts_ms`, epoch absoluto — o limite certo e a
+ * meia-noite local do usuario, que e o que o construtor por componentes da.
+ */
+export function limiteDoDiaLocal(valor: string, limite: 'inicio' | 'fim'): number | undefined {
+  const partes = valor.split('-').map((p) => Number.parseInt(p, 10));
+  if (partes.length !== 3 || partes.some((n) => !Number.isFinite(n))) {
+    return undefined;
+  }
+  const [ano, mes, dia] = partes;
+  return limite === 'inicio'
+    ? new Date(ano, mes - 1, dia, 0, 0, 0, 0).getTime()
+    : new Date(ano, mes - 1, dia, 23, 59, 59, 999).getTime();
+}
+
 const EVENT_TYPES = [
   { value: 'all', label: 'Todos os tipos' },
   { value: 'alert_open', label: 'Alerta criado' },
@@ -48,7 +75,7 @@ export function TimelinePage() {
   
   // Filters
   const [filters, setFilters] = useState<TimelineFilters>({
-    limit: 100,
+    limit: PAGE_SIZE,
   });
   const [tempFilters, setTempFilters] = useState<{
     paciente_id: string;
@@ -109,7 +136,7 @@ export function TimelinePage() {
 
   const handleApplyFilters = () => {
     const newFilters: TimelineFilters = {
-      limit: 100,
+      limit: PAGE_SIZE,
     };
 
     if (tempFilters.paciente_id && tempFilters.paciente_id !== 'all') {
@@ -121,15 +148,11 @@ export function TimelinePage() {
     }
 
     if (tempFilters.dateFrom) {
-      const date = new Date(tempFilters.dateFrom);
-      date.setHours(0, 0, 0, 0);
-      newFilters.start_ms = date.getTime();
+      newFilters.start_ms = limiteDoDiaLocal(tempFilters.dateFrom, 'inicio');
     }
 
     if (tempFilters.dateTo) {
-      const date = new Date(tempFilters.dateTo);
-      date.setHours(23, 59, 59, 999);
-      newFilters.end_ms = date.getTime();
+      newFilters.end_ms = limiteDoDiaLocal(tempFilters.dateTo, 'fim');
     }
 
     setFilters(newFilters);
@@ -143,7 +166,7 @@ export function TimelinePage() {
       dateFrom: '',
       dateTo: '',
     });
-    setFilters({ limit: 100 });
+    setFilters({ limit: PAGE_SIZE });
   };
 
   const hasActiveFilters = 
@@ -512,12 +535,19 @@ export function TimelinePage() {
         </div>
       )}
 
-      {/* Load More Button */}
-      {events.length >= 100 && (
+      {/* Load More Button
+          O corte era comparado com 100 fixo, nao com o limite em vigor: depois
+          de um "carregar mais" (limite 200) uma lista de 150 eventos — que ja e
+          o historico completo — continuava exibindo o botao, e clicar nao
+          mudava nada. Comparar com o limite pedido faz o botao aparecer so
+          quando a resposta bateu no teto, ou seja, quando pode haver mais. */}
+      {events.length >= (filters.limit ?? PAGE_SIZE) && (
         <div className="flex justify-center">
           <Button
             variant="outline"
-            onClick={() => setFilters((prev) => ({ ...prev, limit: (prev.limit || 100) + 100 }))}
+            onClick={() =>
+              setFilters((prev) => ({ ...prev, limit: (prev.limit || PAGE_SIZE) + PAGE_SIZE }))
+            }
             disabled={isRefreshing}
           >
             Carregar mais eventos

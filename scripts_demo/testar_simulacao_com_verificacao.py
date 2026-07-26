@@ -109,13 +109,13 @@ def main():
     print(f"   Periodo: {df_grade['timestamp'].min()} ate {df_grade['timestamp'].max()}\n")
     
     # 3. Salvar grade
-    print(f"[3] Salvando grade no banco...")
+    print("[3] Salvando grade no banco...")
     df_grade.insert(0, "paciente_id", paciente_id)
     count = inserir_grade(db_path, df_grade, paciente_id=paciente_id)
     print(f"   OK {count} eventos salvos na tabela grade\n")
     
     # 4. Processar alertas
-    print(f"[4] Processando alertas...")
+    print("[4] Processando alertas...")
     
     try:
         _, alertas = processar_alertas(
@@ -128,7 +128,7 @@ def main():
         
         if alertas:
             # Mostrar alguns alertas
-            print(f"\n   Primeiros 3 alertas:")
+            print("\n   Primeiros 3 alertas:")
             for i, alerta in enumerate(alertas[:3], 1):
                 # Alertas podem ser dicts ou objetos
                 if isinstance(alerta, dict):
@@ -150,24 +150,24 @@ def main():
         sys.exit(1)
     
     # 5. Salvar alertas
-    print(f"[5] Salvando alertas no banco...")
+    print("[5] Salvando alertas no banco...")
     
     if alertas:
         count = inserir_alertas(db_path, alertas)
         print(f"   OK {count} alertas salvos na tabela alertas\n")
     else:
-        print(f"   AVISO: Nenhum alerta para salvar\n")
+        print("   AVISO: Nenhum alerta para salvar\n")
     
     # 6. Verificar banco de dados
-    print(f"[6] Verificando dados no banco...")
+    print("[6] Verificando dados no banco...")
     dados = verificar_dados(db_path, paciente_id)
     
-    print(f"\n   RESULTADOS:")
+    print("\n   RESULTADOS:")
     print(f"   {'-'*60}")
-    print(f"   Grade:")
+    print("   Grade:")
     print(f"     - Total de eventos: {dados['grade_count']}")
     print(f"     - Periodo: {dados['grade_inicio']} ate {dados['grade_fim']}")
-    print(f"\n   Alertas:")
+    print("\n   Alertas:")
     print(f"     - Total geral: {dados['alertas_count']}")
     
     if dados['alertas_count'] > 0:
@@ -183,14 +183,14 @@ def main():
         print(f"   -> Va para Dashboard e filtre por paciente {paciente_id}")
         print(f"   -> Va para Timeline e selecione paciente {paciente_id}")
     elif dados['alertas_count'] > 0:
-        print(f"ATENCAO! Alertas foram gerados, mas estao fora da janela de 24h")
+        print("ATENCAO! Alertas foram gerados, mas estao fora da janela de 24h")
         print(f"   -> Total de alertas: {dados['alertas_count']}")
-        print(f"   -> Nao aparecerao no Dashboard (mostra apenas ultimas 24h)")
-        print(f"   -> Aparecerao na Timeline (mostra historico completo)")
+        print("   -> Nao aparecerao no Dashboard (mostra apenas ultimas 24h)")
+        print("   -> Aparecerao na Timeline (mostra historico completo)")
     else:
-        print(f"PROBLEMA! Nenhum alerta foi gerado")
+        print("PROBLEMA! Nenhum alerta foi gerado")
         print(f"   -> Verifique o perfil {perfil_key}")
-        print(f"   -> Ajuste parametros de duracao ou perfil")
+        print("   -> Ajuste parametros de duracao ou perfil")
     print(f"{'='*70}\n")
 
 

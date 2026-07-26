@@ -40,6 +40,18 @@ export function useAlertSelection(alertIds: string[]) {
     setSelectedIds(new Set());
   }, []);
 
+  /**
+   * Substitui a seleção pelos ids informados.
+   *
+   * Existe para a ação em lote parcial: quando 18 de 20 alertas são
+   * reconhecidos e 2 falham, limpar tudo esconderia quais precisam de nova
+   * tentativa. Deixar só os que falharam selecionados transforma o próximo
+   * clique na repetição exata do que faltou.
+   */
+  const selecionarApenas = useCallback((ids: string[]) => {
+    setSelectedIds(new Set(ids));
+  }, []);
+
   const isSelected = useCallback(
     (id: string) => selectedIds.has(id),
     [selectedIds]
@@ -60,6 +72,7 @@ export function useAlertSelection(alertIds: string[]) {
     toggleAlert,
     toggleAll,
     clearSelection,
+    selecionarApenas,
     isSelected,
   };
 }

@@ -45,8 +45,18 @@ export function useWebSocket({
         .then(() => {
           const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
           const baseUrl = import.meta.env.BASE_URL;
+          // SEM query string, de propósito.
+          //
+          // `/api/ws/alerts` aceita ?severity=, ?patient_id= e ?alert_types=,
+          // e o filtro é POR CONEXÃO. Esta conexão é ÚNICA e compartilhada
+          // (WebSocketContext): o dashboard precisa de todos os alertas e a
+          // tela de Histórico recarrega a timeline a cada mensagem. Qualquer
+          // filtro aqui silenciaria os outros consumidores.
+          //
+          // Se um dia uma tela precisar de um recorte (ex.: painel de um leito
+          // só), abra uma SEGUNDA conexão para ela — não filtre esta.
           const url = `${protocol}//${window.location.host}${baseUrl}api/ws/alerts`;
-          
+
           const ws = new WebSocket(url);
 
           ws.onopen = () => {

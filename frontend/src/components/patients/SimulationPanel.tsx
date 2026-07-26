@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { useSimulation } from '../../hooks/useSimulation';
 import { SimulationRequest } from '../../lib/api';
+import { getStoredUser } from '../../lib/storage';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -24,12 +25,23 @@ export function SimulationPanel({ patientId, onSuccess }: SimulationPanelProps) 
     perfil: 'medio',
   });
 
+  // A simulação grava eventos, grade e alertas SINTÉTICOS no mesmo banco dos
+  // dados reais, então o backend a restringe ao papel `admin`. Sem esta
+  // checagem o painel apareceria para todo mundo e só falharia com 403 depois
+  // que o usuário preenchesse o formulário e clicasse.
+  const usuario = getStoredUser();
+  if (usuario?.role !== 'admin') {
+    return null;
+  }
+
   const handleSimulate = async (e: React.FormEvent) => {
     e.preventDefault();
 
     try {
       const result = await simulate(formData);
-      toast.success(`✅ Simulação concluída! ${result.eventos} eventos e ${result.alertas} alertas gerados`);
+      toast.success(
+        `✅ Simulação concluída! ${result.amostras} amostras, ${result.eventos} eventos e ${result.alertas} alertas gerados`,
+      );
       onSuccess?.(result);
     } catch (err) {
       // Erro já é tratado pelo hook
@@ -68,6 +80,10 @@ export function SimulationPanel({ patientId, onSuccess }: SimulationPanelProps) 
               <div>
                 <p className="text-sm text-muted-foreground">Duração</p>
                 <p className="text-lg font-semibold">{result.duracao}h</p>
+              </div>
+              <div>
+                <p className="text-sm text-muted-foreground">Amostras geradas</p>
+                <p className="text-lg font-semibold text-blue-600">{result.amostras}</p>
               </div>
               <div>
                 <p className="text-sm text-muted-foreground">Eventos gerados</p>

@@ -5,10 +5,9 @@ import re
 import sqlite3
 import pandas as pd
 import structlog
-from typing import List, Sequence, Optional, Dict
+from typing import List, Sequence, Optional
 
 from interface.db_core import connect, utc_now_iso
-from interface.api_shared import DEFAULT_PERFIL
 
 logger = structlog.get_logger(__name__)
 
@@ -387,22 +386,51 @@ class PatientRepository:
             
         return self.get_by_id(paciente_id, include_routines=True) # type: ignore
 
-    def delete(self, paciente_id: str) -> int:
+    # Tabelas apagadas junto com o paciente, na ordem em que sao apagadas.
+    # A coluna que aponta para o paciente muda de nome em `pacientes` (`id`).
+    _TABELAS_DO_PACIENTE = (
+        ("paciente_rotinas", "paciente_id"),
+        ("paciente_documentos", "paciente_id"),
+        ("paciente_cama_history", "paciente_id"),
+        ("device_assignments", "paciente_id"),
+        ("timeline_events", "paciente_id"),
+        # As tres abaixo faltavam, e a ausencia era visivel na tela: `alertas`
+        # sobrevivia ao paciente e `listar_alertas_frontend` continuava
+        # listando, so que sem ficha para resolver nome e leito — o alerta
+        # voltava rotulado com o ID cru ("PAC-0007") e sem quarto, de um
+        # paciente que nao existe mais e que ninguem consegue abrir. `grade` e
+        # `eventos` alimentam o motor e a exportacao, entao ficavam
+        # contabilizados em relatorio de alguem ja removido.
+        ("alertas", "paciente_id"),
+        ("grade", "paciente_id"),
+        ("eventos", "paciente_id"),
+        ("paciente_fichas", "paciente_id"),
+        ("pacientes", "id"),
+    )
+
+    def delete(self, paciente_id: str) -> dict[str, int] | None:
+        """Remove o paciente e TODO o rastro clinico dele.
+
+        Devolve quantas linhas sairam de cada tabela, ou `None` se o paciente
+        nao existia. A contagem sobe ate a resposta HTTP de proposito: e uma
+        operacao irreversivel sobre dado clinico, e quem a executa precisa ver
+        o tamanho do que apagou — "removido com sucesso" nao distingue apagar
+        uma ficha vazia de apagar seis meses de historico.
+        """
         if not paciente_id:
             raise ValueError("paciente_id deve ser informado")
+        removidos: dict[str, int] = {}
         with connect(self.db_path) as conn:
             cur = conn.execute("SELECT paciente_id FROM paciente_fichas WHERE paciente_id = ?", (paciente_id,))
             if cur.fetchone() is None:
-                return 0
-            conn.execute("DELETE FROM paciente_rotinas WHERE paciente_id = ?", (paciente_id,))
-            conn.execute("DELETE FROM paciente_documentos WHERE paciente_id = ?", (paciente_id,))
-            conn.execute("DELETE FROM paciente_cama_history WHERE paciente_id = ?", (paciente_id,))
-            conn.execute("DELETE FROM device_assignments WHERE paciente_id = ?", (paciente_id,))
-            conn.execute("DELETE FROM timeline_events WHERE paciente_id = ?", (paciente_id,))
-            conn.execute("DELETE FROM paciente_fichas WHERE paciente_id = ?", (paciente_id,))
-            conn.execute("DELETE FROM pacientes WHERE id = ?", (paciente_id,))
+                return None
+            for tabela, coluna in self._TABELAS_DO_PACIENTE:
+                cursor = conn.execute(
+                    f"DELETE FROM {tabela} WHERE {coluna} = ?", (paciente_id,)  # noqa: S608 - nomes internos, nao entrada
+                )
+                removidos[tabela] = cursor.rowcount if cursor.rowcount > 0 else 0
             conn.commit()
-        return 1
+        return removidos
 
     def proximo_identificador(self, prefixo: str = PACIENTE_ID_PREFIX) -> str:
         with connect(self.db_path) as conn:

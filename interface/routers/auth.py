@@ -1,19 +1,102 @@
 from __future__ import annotations
 
+import asyncio
 import json
+from datetime import datetime, timezone
 import os
+import secrets
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, status, Response
 from passlib.hash import bcrypt
 
 from interface.repositories.users import UserRepository
-from interface.api_shared import _check_auth_rate_limit, DB_PATH
+from interface.api_shared import _check_auth_rate_limit, exigir_senha_forte, DB_PATH
 from interface.schemas import RegisterRequest
-from interface.auth_utils import create_access_token
-from interface.dependencies import get_current_user
+from interface.auth_utils import ACCESS_TOKEN_EXPIRE_SECONDS, create_access_token, em_producao
+from interface.dependencies import _payload_do_jwt, get_current_user, usuario_de_jwt
+from interface.repositories.sessoes import revogar_token
 
 router = APIRouter(tags=["auth"])
 user_repo = UserRepository(DB_PATH)
+
+
+def _requisicao_e_https(request: Request) -> bool:
+    """Detecta HTTPS considerando o proxy reverso.
+
+    O Caddy termina o TLS e fala HTTP com o app, entao request.url.scheme e
+    sempre "http" aqui (o uvicorn nao roda com --proxy-headers); quem carrega a
+    informacao e o X-Forwarded-Proto que o Caddy injeta.
+    """
+    encaminhado = request.headers.get("X-Forwarded-Proto", "")
+    if encaminhado:
+        return encaminhado.split(",")[0].strip().lower() == "https"
+    return request.url.scheme == "https"
+
+
+def _definir_cookie_sessao(response: Response, request: Request, token: str) -> None:
+    """Grava o cookie de sessao com as flags de seguranca corretas.
+
+    - samesite="lax": a API usa allow_credentials=True no CORS; sem SameSite o
+      cookie seria enviado em requisicoes cross-site e todo endpoint que muda
+      estado ficaria exposto a CSRF.
+    - secure quando a requisicao veio por HTTPS: impede o cookie de trafegar em
+      texto claro. Nao pode ser amarrado a ENVIRONMENT: o container roda com
+      ENVIRONMENT=production e ainda publica a porta 8000 em HTTP para debug
+      local — marcar Secure ali faria o browser descartar o cookie e o login
+      simplesmente nao funcionaria.
+
+    Nao grava mais o cookie `session_user`: era texto puro, nao assinado e
+    forjavel (interface/dependencies.py ja o ignorava ha tempos), entao
+    continuar emitindo-o so convidava a voltar a confiar nele.
+    """
+    response.set_cookie(
+        "access_token",
+        token,
+        max_age=ACCESS_TOKEN_EXPIRE_SECONDS,
+        httponly=True,
+        samesite="lax",
+        secure=_requisicao_e_https(request),
+    )
+
+
+def _autorizar_cadastro(request: Request) -> None:
+    """Controla quem pode criar contas.
+
+    O cadastro era totalmente aberto: qualquer um criava uma conta num sistema
+    clinico e, com as rotas agora autenticadas, isso simplesmente contornaria a
+    autenticacao inteira — bastava se registrar para ver todos os pacientes.
+
+    Regras, na ordem:
+    1. Se ainda NAO existe nenhum usuario, libera — e o bootstrap da instalacao
+       (alguem precisa criar a primeira conta).
+    2. Caso contrario, aceita quem ja tem sessao valida (um profissional
+       cadastrando um colega) ou quem apresenta UPP_REGISTER_TOKEN.
+    """
+    try:
+        ja_existe_usuario = user_repo.count() > 0
+    except Exception:
+        # Se nao da para saber, assume o caminho restritivo.
+        ja_existe_usuario = True
+
+    if not ja_existe_usuario:
+        return
+
+    if usuario_de_jwt(request):
+        return
+
+    token_convite = os.getenv("UPP_REGISTER_TOKEN")
+    apresentado = request.headers.get("X-Register-Token", "")
+    if token_convite and apresentado and secrets.compare_digest(apresentado, token_convite):
+        return
+
+    raise HTTPException(
+        status.HTTP_403_FORBIDDEN,
+        detail={
+            "code": "cadastro_restrito",
+            "message": "Cadastro requer sessao ativa ou token de convite.",
+        },
+    )
+
 
 @router.post("/auth/login", status_code=status.HTTP_200_OK)
 async def api_login(request: Request, _: None = Depends(_check_auth_rate_limit)) -> dict:
@@ -34,17 +117,45 @@ async def api_login(request: Request, _: None = Depends(_check_auth_rate_limit))
     if user is not None and user.get("password_hash"):
         ph = user.get("password_hash")
         try:
-            ok = bcrypt.verify(password, ph)
+            # bcrypt e deliberadamente caro (~100ms de CPU). Este handler
+            # precisa continuar `async` por causa do `await request.json()`
+            # acima, entao o hash vai para uma thread: rodando no event loop,
+            # meia duzia de logins simultaneos travava o servidor inteiro,
+            # incluindo os WebSockets de ingestao.
+            ok = await asyncio.to_thread(bcrypt.verify, password, ph)
         except Exception:
             ok = False
         if not ok:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail={"code": "invalid_credentials", "message": "Usuario ou senha invalidos"})
+
+        # Conta desativada nao entra. Sem isto, revogar as sessoes de alguem
+        # desligado seria inutil: bastaria fazer login de novo.
+        if not user.get("ativo", 1):
+            structlog.get_logger(__name__).warning("login_conta_desativada", username=username)
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                detail={"code": "conta_desativada", "message": "Esta conta esta desativada."},
+            )
     else:
-        # fallback to legacy env var password for quick dev (keeps backward compatibility).
-        # No default: if UPP_ADMIN_PASS isn't set, this login path is simply unavailable
-        # (a hardcoded default here would be a login bypass with a known password).
+        # Fallback legado por variavel de ambiente, para bancada/dev.
+        #
+        # Antes bastava a senha bater: como este ramo so roda quando o usuario
+        # NAO existe no banco, qualquer nome inventado + UPP_ADMIN_PASS emitia
+        # um JWT valido com aquele `sub` arbitrario. Agora exige tambem que o
+        # username seja o admin configurado, e o caminho fica indisponivel em
+        # producao (la a autenticacao tem que passar pelo banco).
+        if em_producao():
+            raise HTTPException(
+                status.HTTP_401_UNAUTHORIZED,
+                detail={"code": "invalid_credentials", "message": "Usuario ou senha invalidos"},
+            )
         admin_pass = os.getenv("UPP_ADMIN_PASS")
-        if not admin_pass or password != admin_pass:
+        admin_user = os.getenv("UPP_ADMIN_USER", "admin")
+        credenciais_ok = bool(admin_pass) and (
+            secrets.compare_digest(username, admin_user)
+            and secrets.compare_digest(password, admin_pass)
+        )
+        if not credenciais_ok:
             raise HTTPException(status.HTTP_401_UNAUTHORIZED, detail={"code": "invalid_credentials", "message": "Usuario ou senha invalidos"})
 
     # Generate JWT token
@@ -55,52 +166,83 @@ async def api_login(request: Request, _: None = Depends(_check_auth_rate_limit))
     resp = {"username": username, "token": token, "display_name": user.get("display_name") if user else None, "role": user.get("role", "staff") if user else "staff"}
 
     response = Response(content=json.dumps(resp), media_type="application/json", status_code=status.HTTP_200_OK)
-    # cookie lasts for 8 hours
-    response.set_cookie("session_user", username, max_age=8 * 3600, httponly=True)
-    response.set_cookie("access_token", token, max_age=8 * 3600, httponly=True)
+    _definir_cookie_sessao(response, request, token)
     return response
 
 
 @router.post("/auth/register", status_code=status.HTTP_201_CREATED)
-async def api_register(request: Request, req: RegisterRequest, _: None = Depends(_check_auth_rate_limit)) -> dict:
+def api_register(request: Request, req: RegisterRequest, _: None = Depends(_check_auth_rate_limit)) -> dict:
     username = str(req.username or "").strip()
     password = str(req.password or "")
     display = None if req.display_name is None else str(req.display_name).strip() or None
     if not username or not password:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={"code": "invalid_request", "message": "username e password necessarios"})
 
+    # A politica de senha valia ao TROCAR e nao ao CRIAR: dava para cadastrar
+    # com "a" e so entao ser impedido de trocar para "a". Como o primeiro
+    # usuario da instalacao vira admin, era a conta administrativa que nascia
+    # sem exigencia nenhuma.
+    exigir_senha_forte(password)
+
+    _autorizar_cadastro(request)
+
     # hash password
     try:
         password_hash = bcrypt.hash(password)
     except Exception as exc:
         structlog.get_logger(__name__).exception("hash_error", erro=str(exc))
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={"code": "hash_error", "message": str(exc)})
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={"code": "hash_error", "message": "Erro interno ao processar a requisicao."})
 
     try:
         structlog.get_logger(__name__).info("register_attempt", username=username)
-        user_repo.create(username, password_hash, display)
+        # O papel vem do repositorio: o PRIMEIRO usuario da instalacao vira
+        # admin (alguem precisa poder administrar), os demais staff.
+        papel = user_repo.create(username, password_hash, display)
     except ValueError as exc:
         structlog.get_logger(__name__).warning("register_failed_user_exists", username=username, motivo=str(exc))
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={"code": "user_exists", "message": str(exc)})
     except Exception as exc:
         structlog.get_logger(__name__).exception("register_db_error", username=username, erro=str(exc))
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={"code": "db_error", "message": str(exc)})
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={"code": "db_error", "message": "Erro interno ao processar a requisicao."})
 
     # auto-login after register: set cookie
     
     # Generate JWT token
-    token_data = {"sub": username, "role": "staff"}
+    token_data = {"sub": username, "role": papel}
     token = create_access_token(token_data)
 
-    resp = {"username": username, "display_name": display, "token": token, "role": "staff"}
+    resp = {"username": username, "display_name": display, "token": token, "role": papel}
     response = Response(content=json.dumps(resp), media_type="application/json", status_code=status.HTTP_201_CREATED)
-    response.set_cookie("session_user", username, max_age=8 * 3600, httponly=True)
-    response.set_cookie("access_token", token, max_age=8 * 3600, httponly=True)
+    _definir_cookie_sessao(response, request, token)
     return response
 
 
 @router.post("/auth/logout", status_code=status.HTTP_200_OK)
-async def api_logout() -> dict:
+def api_logout(request: Request) -> dict:
+    """Encerra a sessao de verdade.
+
+    Antes apenas apagava os cookies: quem tivesse copiado o token (ou usasse o
+    header Authorization) continuava autenticado pelas 8h restantes. Sair do
+    sistema num computador compartilhado nao tirava o acesso de ninguem.
+
+    Agora o `jti` do token vai para a denylist, entao aquela sessao morre
+    imediatamente. As demais sessoes do usuario seguem valendo — sair num
+    dispositivo nao deve desconectar os outros.
+    """
+    payload = _payload_do_jwt(request)
+    if payload and payload.get("jti") and payload.get("exp"):
+        try:
+            revogar_token(
+                DB_PATH,
+                jti=payload["jti"],
+                expira_em=datetime.fromtimestamp(int(payload["exp"]), tz=timezone.utc),
+                username=payload.get("sub"),
+            )
+        except Exception:
+            # Nao impedir o logout por falha ao registrar a revogacao: os
+            # cookies ainda sao apagados abaixo.
+            structlog.get_logger(__name__).warning("falha_ao_revogar_token", exc_info=True)
+
     response = Response(content=json.dumps({"ok": True}), media_type="application/json", status_code=status.HTTP_200_OK)
     response.delete_cookie("session_user")
     response.delete_cookie("access_token")
@@ -108,7 +250,7 @@ async def api_logout() -> dict:
 
 
 @router.get("/auth/me", status_code=status.HTTP_200_OK)
-async def api_me(user: str = Depends(get_current_user)) -> dict:
+def api_me(user: str = Depends(get_current_user)) -> dict:
     # Autenticação via get_current_user (JWT only) — não confia mais no
     # cookie session_user forjável.
     # try to include display_name and role when available

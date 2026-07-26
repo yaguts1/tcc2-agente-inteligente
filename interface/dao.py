@@ -52,6 +52,41 @@ from interface.repositories.devices import (
     delete_device_event,
 )
 
+# `__all__` declara que estes nomes sao REEXPORTS intencionais desta
+# fachada, e nao imports esquecidos. Sem isso o `ruff --fix` os remove
+# como F401 (nada os referencia dentro do arquivo) e derruba a
+# aplicacao no import — foi exatamente o que aconteceu ao ligar o lint.
+__all__ = [
+    "ISO_FORMAT",
+    "List",
+    "PACIENTE_ID_PREFIX",
+    "PERFIS_VALIDOS",
+    "PatientRepository",
+    "Sequence",
+    "UserRepository",
+    "_connect",
+    "_ensure_paciente",
+    "alterar_status_alerta",
+    "annotations",
+    "contar_por_paciente",
+    "criar_esquema",
+    "delete_device_event",
+    "inserir_alertas",
+    "inserir_device_event",
+    "inserir_eventos",
+    "inserir_grade",
+    "inserir_timeline_event",
+    "listar_alertas_abertos",
+    "listar_device_events",
+    "listar_devices",
+    "listar_pacientes",
+    "registrar_device",
+    "resolver_paciente_por_device_em",
+    "selecionar_alertas_janela",
+    "selecionar_grade_janela",
+    "selecionar_timeline",
+]
+
 
 # --- Usuarios (delega para UserRepository) ---------------------------------
 
@@ -105,7 +140,8 @@ def atualizar_paciente(
     return PatientRepository(db_path).update(paciente_id, nome, perfil, cama_id, observacoes, rotinas)
 
 
-def remover_paciente(db_path: str, paciente_id: str) -> int:
+def remover_paciente(db_path: str, paciente_id: str) -> dict[str, int] | None:
+    """Remove o paciente e o rastro clinico dele; None se nao existia."""
     return PatientRepository(db_path).delete(paciente_id)
 
 

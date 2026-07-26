@@ -1,11 +1,12 @@
 """Repository for posture grade (grade) and raw event (eventos) bulk inserts."""
 from __future__ import annotations
 
-from datetime import datetime, timedelta
+from datetime import timedelta
 
 import pandas as pd
 
 from interface.db_core import connect, ensure_paciente, norm_iso, _ensure_grade_confianca_column
+from interface.tempo import agora_utc_naive
 
 
 def inserir_grade(
@@ -94,7 +95,9 @@ def selecionar_grade_janela(db_path: str, horas: int | None = 24) -> list[dict]:
             rows = cursor.fetchall()
         return [dict(row) for row in rows]
 
-    agora = datetime.now().replace(microsecond=0)
+    # `ts` no banco é UTC naive — datetime.now() local deslocaria a janela
+    # pelo offset do fuso (ver interface/tempo.py).
+    agora = agora_utc_naive()
     limite_inferior = (agora - timedelta(hours=horas)).strftime("%Y-%m-%dT%H:%M:%S")
     limite_superior = (agora + timedelta(hours=horas)).strftime("%Y-%m-%dT%H:%M:%S")
 

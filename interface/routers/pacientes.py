@@ -1,11 +1,13 @@
 from __future__ import annotations
 
 from typing import List
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
-from datetime import datetime, timedelta
+from datetime import timedelta
 
-from interface.api_shared import DB_PATH, DEFAULT_PERFIL
+from interface.api_shared import DB_PATH, DEFAULT_PERFIL, _check_api_rate_limit
+from interface.dependencies import exigir_papel, get_current_user, verificar_token_dispositivo
+from interface.tempo import agora_utc_naive
 from interface.schemas import PacienteConfigResponse, RotinaConfig, FrontendCreatePatient
 from interface.repositories.pacientes import PatientRepository
 from interface.services.paciente_service import PatientService
@@ -18,7 +20,26 @@ from dados_simulados.gerador import (
 from interface.dao import inserir_grade, inserir_eventos, inserir_alertas
 from modulo_alerta.engine import processar_alertas
 
-router = APIRouter(tags=["pacientes"])
+# Todo o CRUD de pacientes exige sessao autenticada: sao dados clinicos
+# identificaveis (nome, leito, perfil de risco). Antes o router inteiro era
+# publico — dava para ler, criar e alterar pacientes sem credencial nenhuma.
+#
+# O rate limit vale para o CRUD da tela. O `router_dispositivos` abaixo fica
+# DE FORA de proposito: quem o consome e o firmware, com perfil de trafego
+# proprio, e recusar a resolucao paciente<->leito deixaria o ESP32 sem saber
+# de quem e a leitura que ele acabou de medir.
+router = APIRouter(
+    tags=["pacientes"],
+    dependencies=[Depends(get_current_user), Depends(_check_api_rate_limit)],
+)
+
+# Router separado para o endpoint que o FIRMWARE consome
+# (GET /api/pacientes/cama/{cama_id}, ver firmware/esp32_replay/esp32_replay.ino):
+# um ESP32 nao tem sessao de usuario, entao aqui vale o token de dispositivo,
+# o mesmo usado por /eventos e /grade — e nao o JWT.
+router_dispositivos = APIRouter(
+    tags=["pacientes"], dependencies=[Depends(verificar_token_dispositivo)]
+)
 
 # Dependency Injection (Manual for now)
 repository = PatientRepository(DB_PATH)
@@ -26,7 +47,7 @@ service = PatientService(repository)
 
 
 @router.post("/pacientes", response_model=dict, status_code=status.HTTP_201_CREATED)
-async def criar_paciente_endpoint(payload: FrontendCreatePatient) -> dict:
+def criar_paciente_endpoint(payload: FrontendCreatePatient) -> dict:
     """Criar um novo paciente."""
     try:
         return service.create_patient(payload)
@@ -35,12 +56,30 @@ async def criar_paciente_endpoint(payload: FrontendCreatePatient) -> dict:
 
 
 @router.get("/pacientes", response_model=List[dict], status_code=status.HTTP_200_OK)
-async def listar_pacientes_endpoint() -> List[dict]:
+def listar_pacientes_endpoint() -> List[dict]:
     """Listar todos os pacientes."""
     return service.list_patients()
 
 
-@router.get(
+@router.get("/perfis-risco", status_code=status.HTTP_200_OK)
+def listar_perfis_risco() -> dict:
+    """Intervalo de reposicionamento de cada perfil de risco.
+
+    Existe para o formulário mostrar o intervalo correto ANTES de salvar, sem
+    manter uma cópia da tabela no frontend. Já houve dois mapas divergentes
+    (motor 60/90/120 min vs. tela 2/3/4 h, o dobro) informando coisas
+    diferentes sobre o mesmo paciente; um terceiro no JavaScript repetiria o
+    problema. A fonte é a configuração que o motor de alertas usa.
+    """
+    from interface.services.paciente_service import intervalo_horas
+
+    return {
+        nivel: intervalo_horas(perfil)
+        for nivel, perfil in (("high", "alto"), ("medium", "medio"), ("low", "baixo"))
+    }
+
+
+@router_dispositivos.get(
     "/pacientes/cama/{cama_id}",
     response_model=PacienteConfigResponse,
     status_code=status.HTTP_200_OK,
@@ -87,7 +126,7 @@ async def obter_paciente_por_cama_endpoint(cama_id: str) -> PacienteConfigRespon
 
 
 @router.get("/pacientes/{paciente_id}", response_model=dict, status_code=status.HTTP_200_OK)
-async def obter_paciente_endpoint(paciente_id: str) -> dict:
+def obter_paciente_endpoint(paciente_id: str) -> dict:
     """Obter um paciente pelo ID."""
     paciente = service.get_patient(paciente_id)
     if not paciente:
@@ -95,7 +134,7 @@ async def obter_paciente_endpoint(paciente_id: str) -> dict:
     return paciente
 
 @router.patch("/pacientes/{paciente_id}", response_model=dict, status_code=status.HTTP_200_OK)
-async def atualizar_paciente_endpoint(paciente_id: str, payload: FrontendCreatePatient) -> dict:
+def atualizar_paciente_endpoint(paciente_id: str, payload: FrontendCreatePatient) -> dict:
     """Atualizar um paciente existente."""
     try:
         return service.update_patient(paciente_id, payload)
@@ -103,6 +142,43 @@ async def atualizar_paciente_endpoint(paciente_id: str, payload: FrontendCreateP
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paciente nao encontrado")
     except ValueError as e:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+
+
+@router.delete(
+    "/pacientes/{paciente_id}",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(exigir_papel("admin"))],
+)
+async def remover_paciente_endpoint(paciente_id: str) -> dict:
+    """Remove um paciente e todo o rastro clinico dele.
+
+    A rota nao existia. O `PatientRepository.delete` e o `dao.remover_paciente`
+    ja estavam escritos e sem nenhum chamador, e a tela de Pacientes tinha o
+    botao "Excluir" com dialogo de confirmacao chamando `DELETE /api/pacientes/
+    {id}` — que respondia 405. O usuario confirmava a exclusao, via "Erro ao
+    remover paciente" e o paciente continuava na lista.
+
+    Restrito a admin, pelo mesmo motivo de `/simular`: e uma acao irreversivel
+    sobre o historico clinico de uma pessoa. O acesso ja entra na trilha de
+    auditoria pelo middleware (a rota casa com `/api/pacientes`), entao fica
+    registrado QUEM removeu e QUANDO.
+    """
+    try:
+        removidos = service.delete_patient(paciente_id)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    if removidos is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            detail={"code": "paciente_nao_encontrado", "message": "Paciente nao encontrado"},
+        )
+    # A listagem de alertas e cacheada por 30s. Sem invalidar, os alertas do
+    # paciente recem-removido continuariam sendo servidos do cache — a tela
+    # mostraria por meio minuto alertas de alguem que ja nao existe.
+    from interface.api_shared import api_cache
+
+    await api_cache.clear()
+    return {"ok": True, "paciente_id": paciente_id, "removidos": removidos}
 
 
 class SimulationRequest(BaseModel):
@@ -113,13 +189,26 @@ class SimulationRequest(BaseModel):
 class SimulationResult(BaseModel):
     success: bool
     eventos: int
+    """Eventos brutos gravados (tabela `eventos`)."""
+    amostras: int = 0
+    """Amostras da grade de postura gravadas (tabela `grade`)."""
     alertas: int
     duracao: float
     message: str
 
-@router.post("/pacientes/{paciente_id}/simular", response_model=SimulationResult, status_code=status.HTTP_200_OK)
-async def simular_paciente_endpoint(paciente_id: str, payload: SimulationRequest) -> SimulationResult:
-    """Simular dados históricos para um paciente."""
+@router.post(
+    "/pacientes/{paciente_id}/simular",
+    response_model=SimulationResult,
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(exigir_papel("admin"))],
+)
+def simular_paciente_endpoint(paciente_id: str, payload: SimulationRequest) -> SimulationResult:
+    """Simular dados históricos para um paciente.
+
+    Restrito a admin: grava eventos, grade e ALERTAS sintéticos no mesmo banco
+    dos dados reais. Num ambiente de produção, dado simulado misturado ao
+    histórico clínico do paciente é indistinguível do que veio do sensor.
+    """
     
     # 1. Validate patient exists
     paciente = service.get_patient(paciente_id)
@@ -138,8 +227,10 @@ async def simular_paciente_endpoint(paciente_id: str, payload: SimulationRequest
     perfil_obj = PerfilPaciente(**perfil_params)
     
     # 3. Generate Data
-    # Start time: now - duration
-    agora = datetime.now().replace(second=0, microsecond=0)
+    # Start time: now - duration. `inicio` no banco é UTC naive (ver interface/tempo.py),
+    # entao "agora" precisa ser UTC — datetime.now() local deslocaria os timestamps
+    # gerados pelo offset do fuso do servidor.
+    agora = agora_utc_naive().replace(microsecond=0)
     inicio = agora - timedelta(hours=duracao)
     
     # Generate Grade (for engine)
@@ -175,11 +266,18 @@ async def simular_paciente_endpoint(paciente_id: str, payload: SimulationRequest
     _, alertas = processar_alertas(df_grade, perfil_nome, paciente_id)
     alertas_count = inserir_alertas(DB_PATH, alertas)
     
+    # `eventos` reportava grade_count — a contagem de AMOSTRAS da grade — e o
+    # eventos_count real era calculado e descartado. A tela exibia "N eventos"
+    # mostrando outro numero. Agora cada campo carrega a grandeza do seu nome.
     return SimulationResult(
         success=True,
-        eventos=grade_count,
+        eventos=eventos_count,
+        amostras=grade_count,
         alertas=alertas_count,
         duracao=duracao,
-        message=f"Simulacao concluida: {grade_count} amostras, {alertas_count} alertas gerados."
+        message=(
+            f"Simulacao concluida: {grade_count} amostras, {eventos_count} eventos "
+            f"e {alertas_count} alertas gerados."
+        ),
     )
 

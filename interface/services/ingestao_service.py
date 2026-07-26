@@ -20,8 +20,8 @@ from interface.dao import obter_ficha_paciente, obter_ficha_por_cama
 from interface.repositories.alertas import inserir_alertas
 from interface.repositories.devices import (
     delete_device_event,
-    inserir_device_event,
     listar_device_events,
+    resolver_paciente_por_cama_em,
     resolver_paciente_por_device_em,
 )
 from interface.repositories.grade import inserir_eventos, inserir_grade
@@ -101,7 +101,24 @@ def registrar_evento(payload: EventPayload) -> dict[str, Any]:
     alertas = PROCESSADOR.processar_amostra(evento_dict)
     if alertas:
         inserir_alertas(DB_PATH, alertas)
+        _anunciar(alertas)
     return {"alertas": len(alertas)}
+
+
+def _anunciar(alertas: list[dict]) -> None:
+    """Publica os alertas recem-abertos no WS, sem bloquear a ingestao.
+
+    A amostra JA foi persistida neste ponto — uma falha ao anunciar nao pode
+    desfazer isso nem propagar para o dispositivo, que reenviaria um dado que o
+    servidor ja tem. Por isso o try amplo.
+    """
+    # Import local: alerts_service importa deste modulo, e no topo daria ciclo.
+    from interface.services.alerts_service import agendar_anuncio
+
+    try:
+        agendar_anuncio(alertas)
+    except Exception:
+        logger.warning("anuncio_alerta_novo_falhou", exc_info=True)
 
 
 def processar_eventos_filtrados(
@@ -133,14 +150,40 @@ def _do_reconcile(device_id: str | None = None, limit: int = 100) -> dict:
             skipped += 1
             continue
 
-        # Find patient currently in this bed
-        try:
-            paciente = obter_ficha_por_cama(DB_PATH, cama_id, incluir_rotinas=False)
-            pid = paciente.get("paciente_id") if paciente else None
-        except Exception:
-            pid = None
+        # A quem pertencia esta leitura NO INSTANTE em que foi feita.
+        #
+        # Antes: `obter_ficha_por_cama(cama_id)` — o ocupante ATUAL do leito,
+        # ignorando o timestamp do evento. Uma leitura orfa das 02:00, do leito
+        # 201-A, reconciliada as 06:00 depois de o leito trocar de paciente,
+        # era gravada no prontuario do NOVO ocupante. Verificado: o caminho
+        # principal resolvia para PAC-A e a reconciliacao gravava em PAC-B.
+        #
+        # As consequencias sao as duas piores para este sistema: o paciente que
+        # entrou recebe imobilidade que nao e dele (e alertas calculados sobre
+        # isso), e o que saiu fica com um buraco no historico. Nada indica
+        # nenhum dos dois.
+        #
+        # A ordem segue a especificidade: o vinculo do DEVICE com o paciente
+        # naquele instante e mais forte que a ocupacao do leito, e e a mesma
+        # regra que `POST /api/eventos` ja usava — as duas portas de entrada
+        # nao podiam divergir sobre de quem e o dado.
+        ts_ms_evento = ev.get("ts_ms")
+        pid = None
+        if ts_ms_evento is not None:
+            try:
+                pid = resolver_paciente_por_device_em(DB_PATH, did, int(ts_ms_evento))
+                if not pid:
+                    pid = resolver_paciente_por_cama_em(DB_PATH, cama_id, int(ts_ms_evento))
+            except Exception:
+                logger.warning(
+                    "reconcile_resolucao_falhou", event_id=ev.get("id"), exc_info=True
+                )
+                pid = None
 
         if not pid:
+            # Sem saber de QUEM e a leitura, ela fica na fila. Um buraco no
+            # historico e ruim; atribuir ao paciente errado e pior, porque vira
+            # dado clinico falso que ninguem tem como distinguir do verdadeiro.
             skipped += 1
             continue
 

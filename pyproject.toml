@@ -4,10 +4,12 @@ target-version = "py311"
 line-length = 120
 
 [tool.ruff.lint]
-# Início permissivo e não-bloqueante (ver job "lint" no CI). Selecionamos o
-# conjunto padrão do ruff (pyflakes + os erros de pycodestyle mais úteis), que
+# Conjunto padrão do ruff (pyflakes + os erros mais úteis do pycodestyle), que
 # aponta defeitos reais — import não usado (F401), nome indefinido (F821),
 # redefinição (F811), bare-except (E722) — sem inundar com ruído estilístico.
-# A limpeza dessas violações é um follow-up separado; por ora o lint é
-# advisory, para dar visibilidade sem travar o merge.
+#
+# O lint é BLOQUEANTE no CI. A base foi zerada (161 -> 0), incluindo três bugs
+# de verdade que estavam escondidos no meio das violações: `Any` usado sem
+# import em main.py, chave repetida num dicionário de mapeamento de status, e
+# uma contagem calculada e descartada que fazia a tela exibir o número errado.
 select = ["E4", "E7", "E9", "F"]

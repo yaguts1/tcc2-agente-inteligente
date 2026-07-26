@@ -359,7 +359,6 @@ def gerar_sessao_multi(
     
     agora = datetime.now().replace(second=0, microsecond=0)
     inicio_base = agora - timedelta(hours=horas)
-    fim_base = inicio_base + timedelta(hours=horas)
 
     # NOVO: Determinar perfis heterogêneos (Problema 3)
     if perfis_customizados is not None:

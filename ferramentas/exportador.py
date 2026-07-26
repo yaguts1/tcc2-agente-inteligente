@@ -1,8 +1,8 @@
 """Serviço de exportação de alertas em CSV e PDF."""
 
 import io
-import logging
-from datetime import datetime, timedelta
+from dataclasses import dataclass
+from datetime import datetime
 from typing import Optional, List, Dict, Any
 from zoneinfo import ZoneInfo
 
@@ -11,13 +11,12 @@ from reportlab.lib import colors
 from reportlab.lib.pagesizes import letter, landscape
 from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
 from reportlab.lib.units import inch
-from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
+from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer
 from reportlab.lib.enums import TA_CENTER, TA_LEFT
 
 import structlog
 from interface.dao import (
     selecionar_alertas_janela,
-    obter_usuario_por_nome,
 )
 
 logger = structlog.get_logger(__name__)
@@ -25,10 +24,48 @@ logger = structlog.get_logger(__name__)
 # Timezone configuration
 TZ_BR = ZoneInfo("America/Sao_Paulo")
 
+# Janela usada quando o pedido nao traz datas — a mesma da tela de alertas.
+JANELA_PADRAO_HORAS = 24
+
+
+@dataclass
+class ResultadoExport:
+    """O que entrou no relatorio e, sobretudo, o que NAO entrou.
+
+    Um relatorio de auditoria que omite linhas em silencio e pior que nenhum
+    relatorio: quem o le acredita estar diante do conjunto completo e decide
+    com base nisso. Havia duas omissoes invisiveis — truncamento por `limit` e
+    descarte de alertas com `inicio` ilegivel — e o cabecalho ainda declarava
+    "Periodo: Sem limite a Sem limite" sobre dados de 24h.
+    """
+
+    alertas: List[Dict[str, Any]]
+    total_encontrado: int = 0
+    truncado: bool = False
+    ilegiveis: int = 0
+
+    def __post_init__(self):
+        if not self.total_encontrado:
+            self.total_encontrado = len(self.alertas)
+
+    def aviso(self) -> str | None:
+        """Frase impressa no relatorio quando algo ficou de fora. None se nada ficou."""
+        partes = []
+        if self.truncado:
+            partes.append(
+                f"exibindo {len(self.alertas)} de {self.total_encontrado} alertas "
+                "(limite da exportacao atingido)"
+            )
+        if self.ilegiveis:
+            partes.append(
+                f"{self.ilegiveis} alerta(s) com data de inicio ilegivel ficaram fora"
+            )
+        return "; ".join(partes) if partes else None
+
 
 class ExportFilters:
     """Filtros para exportação de alertas."""
-    
+
     def __init__(
         self,
         start_date: Optional[datetime] = None,
@@ -90,11 +127,15 @@ class ExportService:
         
         try:
             # Buscar alertas
-            alerts = self._get_alerts_for_export(filters)
-            
+            resultado = self._get_alerts_for_export(filters)
+            alerts = resultado.alertas
+
             self.logger.info(
                 "csv_export",
                 count=len(alerts),
+                total_encontrado=resultado.total_encontrado,
+                truncado=resultado.truncado,
+                ilegiveis=resultado.ilegiveis,
                 filters={
                     "start_date": filters.start_date.isoformat() if filters.start_date else None,
                     "end_date": filters.end_date.isoformat() if filters.end_date else None,
@@ -113,7 +154,15 @@ class ExportService:
             # Retornar CSV
             csv_buffer = io.StringIO()
             df.to_csv(csv_buffer, index=False, encoding='utf-8')
-            return csv_buffer.getvalue()
+            conteudo = csv_buffer.getvalue()
+
+            # O aviso vai como comentario no fim do arquivo. Um CSV truncado e
+            # visualmente identico a um completo; quem abre a planilha precisa
+            # ver que faltam linhas.
+            aviso = resultado.aviso()
+            if aviso:
+                conteudo += f"# AVISO: {aviso}\n"
+            return conteudo
         
         except Exception as e:
             self.logger.error("csv_export_error", error=str(e), filters=filters)
@@ -140,11 +189,15 @@ class ExportService:
         
         try:
             # Buscar alertas
-            alerts = self._get_alerts_for_export(filters)
-            
+            resultado = self._get_alerts_for_export(filters)
+            alerts = resultado.alertas
+
             self.logger.info(
                 "pdf_export",
                 count=len(alerts),
+                total_encontrado=resultado.total_encontrado,
+                truncado=resultado.truncado,
+                ilegiveis=resultado.ilegiveis,
                 filters={
                     "start_date": filters.start_date.isoformat() if filters.start_date else None,
                     "end_date": filters.end_date.isoformat() if filters.end_date else None,
@@ -156,7 +209,7 @@ class ExportService:
             
             # Gerar PDF
             pdf_buffer = io.BytesIO()
-            self._generate_pdf(pdf_buffer, alerts, filters)
+            self._generate_pdf(pdf_buffer, alerts, filters, resultado)
             
             return pdf_buffer.getvalue()
         
@@ -164,7 +217,7 @@ class ExportService:
             self.logger.error("pdf_export_error", error=str(e), filters=filters)
             raise
     
-    def _get_alerts_for_export(self, filters: ExportFilters) -> List[Dict[str, Any]]:
+    def _get_alerts_for_export(self, filters: ExportFilters) -> "ResultadoExport":
         """
         Busca alertas do banco com os filtros aplicados.
         
@@ -198,24 +251,36 @@ class ExportService:
         
         # Aplicar filtros de data, status e paciente
         filtered_alerts = []
+        ilegiveis = 0
         for alert in all_alerts:
-            # Filtrar por data se especificado (apenas quando range customizado)
-            if filters.start_date:
+            # Filtro de data. `inicio` ilegivel NAO pode sumir do relatorio sem
+            # deixar rastro: o `except: continue` original descartava a linha em
+            # silencio, e um alerta real desaparecia de um documento de
+            # auditoria sem nada indicando isso. Como nao da para afirmar que
+            # ele pertence ao periodo pedido, ele fica de fora — mas CONTADO, e
+            # a contagem sai impressa no relatorio.
+            if filters.start_date or filters.end_date:
+                alert_dt = None
                 try:
-                    alert_dt = datetime.fromisoformat(alert.get('inicio', '').replace('Z', '+00:00'))
-                    if alert_dt.date() < filters.start_date.date():
-                        continue
+                    alert_dt = datetime.fromisoformat(
+                        str(alert.get('inicio', '')).replace('Z', '+00:00')
+                    )
                 except (ValueError, AttributeError):
+                    alert_dt = None
+
+                if alert_dt is None:
+                    ilegiveis += 1
+                    self.logger.warning(
+                        "export_inicio_ilegivel",
+                        paciente_id=alert.get('paciente_id'),
+                        inicio=alert.get('inicio'),
+                    )
                     continue
-            
-            if filters.end_date:
-                try:
-                    alert_dt = datetime.fromisoformat(alert.get('inicio', '').replace('Z', '+00:00'))
-                    if alert_dt.date() > filters.end_date.date():
-                        continue
-                except (ValueError, AttributeError):
+                if filters.start_date and alert_dt.date() < filters.start_date.date():
                     continue
-            
+                if filters.end_date and alert_dt.date() > filters.end_date.date():
+                    continue
+
             # Filtrar por status se especificado
             # Mapear status do banco ('aberto', 'reconhecido', 'fechado') para o esperado ('pending', 'acknowledged', 'completed')
             status_map = {
@@ -232,18 +297,26 @@ class ExportService:
                 continue
             
             filtered_alerts.append(alert)
-            
-            # Limitar resultado
-            if len(filtered_alerts) >= filters.limit:
-                break
-        
-        return filtered_alerts
+
+        # O truncamento era invisivel: o laco parava em `limit` e devolvia a
+        # lista, sem nada dizendo que havia mais. Um relatorio truncado tem a
+        # mesma aparencia de um completo. Agora o corte e explicito e o total
+        # encontrado acompanha o resultado.
+        total = len(filtered_alerts)
+        truncado = total > filters.limit
+        return ResultadoExport(
+            alertas=filtered_alerts[: filters.limit],
+            total_encontrado=total,
+            truncado=truncado,
+            ilegiveis=ilegiveis,
+        )
     
     def _generate_pdf(
         self,
         buffer: io.BytesIO,
         alerts: List[Dict[str, Any]],
         filters: ExportFilters,
+        resultado: "ResultadoExport | None" = None,
     ) -> None:
         """
         Gera PDF com os alertas.
@@ -292,7 +365,14 @@ class ExportService:
         # Data range
         date_str = self._format_date_range(filters)
         story.append(Paragraph(date_str, subtitle_style))
-        
+
+        # O que ficou de fora, impresso ANTES da tabela: um relatorio truncado
+        # e visualmente identico a um completo, e quem o le como evidencia
+        # precisa saber que faltam linhas antes de tirar conclusoes.
+        aviso = resultado.aviso() if resultado else None
+        if aviso:
+            story.append(Paragraph(f"<b>Atenção:</b> {aviso}.", subtitle_style))
+
         story.append(Spacer(1, 0.2*inch))
         
         # Tabela
@@ -313,16 +393,25 @@ class ExportService:
         doc.build(story)
     
     def _format_date_range(self, filters: ExportFilters) -> str:
-        """Formata o range de datas para exibição."""
-        start_str = "Sem limite"
-        end_str = "Sem limite"
-        
-        if filters.start_date:
-            start_str = filters.start_date.strftime("%d/%m/%Y")
-        
-        if filters.end_date:
-            end_str = filters.end_date.strftime("%d/%m/%Y")
-        
+        """Formata o periodo para o cabecalho do relatorio.
+
+        Sem datas, o cabecalho dizia "Periodo: Sem limite a Sem limite" — mas os
+        dados vinham de uma janela de 24h. O documento declarava um escopo que
+        nao era o dele, o que num relatorio usado como evidencia e pior que a
+        ausencia de cabecalho.
+        """
+        if not filters.start_date and not filters.end_date:
+            periodo = (
+                f"<b>Período:</b> últimas {JANELA_PADRAO_HORAS} horas "
+                "(inclui todos os alertas ainda em aberto, independentemente da idade)"
+            )
+        else:
+            start_str = (
+                filters.start_date.strftime("%d/%m/%Y") if filters.start_date else "Sem limite"
+            )
+            end_str = filters.end_date.strftime("%d/%m/%Y") if filters.end_date else "Sem limite"
+            periodo = f"<b>Período:</b> {start_str} a {end_str}"
+
         patient_str = ""
         if filters.patient_id:
             patient_str = f" • Paciente: {filters.patient_id}"
@@ -335,8 +424,8 @@ class ExportService:
                 'completed': 'Concluído',
             }
             status_str = f" • Status: {status_map.get(filters.status, filters.status)}"
-        
-        return f"<b>Período:</b> {start_str} a {end_str}{patient_str}{status_str}"
+
+        return f"{periodo}{patient_str}{status_str}"
     
     def _prepare_table_data(self, alerts: List[Dict[str, Any]]) -> List[List[str]]:
         """Prepara dados para a tabela PDF."""
@@ -444,7 +533,7 @@ class ExportService:
                 # Converter para horário local
                 dt_local = dt.astimezone(TZ_BR)
                 return dt_local.strftime("%d/%m/%Y %H:%M")
-            except:
+            except (ValueError, TypeError):
                 return ts[:16]
         elif isinstance(ts, datetime):
             # Se não tiver timezone, assumir UTC

@@ -4,54 +4,35 @@ from __future__ import annotations
 import pytest
 import pytest_asyncio
 from httpx import ASGITransport, AsyncClient
-from importlib import reload
 from pathlib import Path
-import sqlite3
 from datetime import datetime
 
-from interface.dao import criar_esquema, criar_paciente, inserir_timeline_event
+from interface.dao import criar_paciente, inserir_timeline_event
+
 
 @pytest_asyncio.fixture()
-async def api_client(tmp_path, monkeypatch):
-    tmp_db = tmp_path / "dados.db"
-    monkeypatch.setenv("UPP_DB_PATH", str(tmp_db))
-    criar_esquema(str(tmp_db))
+async def api_client(app_isolado, cabecalho_auth):
+    """A cadeia de reload de 12 modulos que vivia aqui (copiada tambem em
+    test_api.py e test_api_ingestao.py) virou a fixture `app_isolado` em
+    tests/conftest.py.
 
-    # Importacao tardia para respeitar as variaveis de ambiente definidas acima.
-    import interface.api_shared as api_shared
-    import interface.routers.auth as auth
-    import interface.routers.pacientes as pacientes
-    import interface.routers.devices as devices
-    import interface.services.alerts_service as alerts_service
-    import interface.routers.alerts as alerts
-    import interface.routers.dashboard as dashboard
-    import interface.services.ingestao_service as ingestao_service
-    import interface.routers.ingestao as ingestao
-    import interface.routers.backup as backup
-    import interface.routers.admin as admin
-    import interface.web as web_module
-    from interface import api as api_module
+    /api/timeline expoe dados clinicos e exige sessao, entao o client carrega
+    um JWT REAL — nunca um token forjado.
+    """
+    transport = ASGITransport(app=app_isolado.app)
+    async with AsyncClient(
+        transport=transport, base_url="http://testserver", headers=cabecalho_auth()
+    ) as client:
+        yield {"client": client, "db_path": Path(app_isolado.db_path)}
 
-    reload(api_shared)
-    reload(auth)
-    reload(pacientes)
-    reload(devices)
-    reload(alerts_service)
-    reload(alerts)
-    reload(dashboard)
-    reload(ingestao_service)
-    reload(ingestao)
-    reload(backup)
-    reload(admin)
-    reload(api_module)
-    reload(web_module)
 
-    api_module.reset_processador()
-    api_module.reset_rate_limiter()
-
-    transport = ASGITransport(app=web_module.app)
-    async with AsyncClient(transport=transport, base_url="http://testserver") as client:
-        yield {"client": client, "db_path": tmp_db}
+@pytest.mark.asyncio
+async def test_timeline_exige_autenticacao(app_isolado):
+    """Sem credencial, /api/timeline responde 401."""
+    transport = ASGITransport(app=app_isolado.app)
+    async with AsyncClient(transport=transport, base_url="http://testserver") as anon:
+        resp = await anon.get("/api/timeline")
+    assert resp.status_code == 401
 
 @pytest.mark.asyncio
 async def test_get_timeline_empty(api_client):
@@ -106,6 +87,40 @@ async def test_get_timeline_filter_tipo(api_client):
     events = resp.json()
     assert len(events) == 1
     assert events[0]["tipo"] == "type_a"
+
+@pytest.mark.asyncio
+async def test_evento_com_meta_ilegivel_continua_na_linha_do_tempo(api_client):
+    """`meta` corrompido nao pode fazer o evento inteiro sumir da timeline.
+
+    O `except` que trata o JSON do `meta` devolve None e segue — o evento fica.
+    O que faltava era o rastro: nada distinguia "nao havia meta" de "nao deu
+    para ler o meta", entao um detalhe clinico gravado no evento desaparecia
+    sem deixar sinal.
+    """
+    import sqlite3
+
+    client = api_client["client"]
+    db_path = api_client["db_path"]
+
+    ficha = criar_paciente(str(db_path), "Ana", "alto")
+    pid = ficha["paciente_id"]
+    ts_now = datetime.now().isoformat()
+    ts_ms = int(datetime.now().timestamp() * 1000)
+
+    evento_id = inserir_timeline_event(
+        str(db_path), pid, ts_now, ts_ms, "repositioning", "Reposicionado", {"lado": "direito"}
+    )
+    with sqlite3.connect(str(db_path)) as conn:
+        conn.execute("UPDATE timeline_events SET meta = ? WHERE id = ?", ("{nao e json", evento_id))
+
+    resp = await client.get("/api/timeline")
+    assert resp.status_code == 200
+    eventos = resp.json()
+
+    assert len(eventos) == 1
+    assert eventos[0]["tipo"] == "repositioning"
+    assert eventos[0]["meta"] is None
+
 
 @pytest.mark.asyncio
 async def test_get_timeline_filter_paciente(api_client):

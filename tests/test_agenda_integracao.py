@@ -5,7 +5,6 @@ import sqlite3
 import tempfile
 import types
 from datetime import datetime, timedelta
-import json
 
 import pytest
 import pandas as pd
@@ -15,7 +14,7 @@ from interface.dao_agenda import (
     is_timestamp_in_suppressed_period,
     ensure_agendas_table,
 )
-from interface.dao import criar_paciente, _connect
+from interface.dao import _connect
 from modulo_alerta.engine import processar_alertas
 
 
@@ -25,39 +24,36 @@ def db_temp():
     fd, path = tempfile.mkstemp(suffix=".db")
     os.close(fd)
     
-    # Initialize database schema
-    conn = _connect(path)
-    
-    # Create minimal schema
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS pacientes (
-            id TEXT PRIMARY KEY
-        )
-    """)
-    conn.execute("""
-        CREATE TABLE IF NOT EXISTS paciente_fichas (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            paciente_id TEXT UNIQUE,
-            nome TEXT,
-            perfil TEXT,
-            cama_id TEXT,
-            observacoes TEXT,
-            created_at TEXT,
-            updated_at TEXT,
-            FOREIGN KEY(paciente_id) REFERENCES pacientes(id)
-        )
-    """)
-    conn.commit()
-    conn.close()
-    
+    # Initialize database schema. `_connect` agora e um context manager que
+    # commita e FECHA ao sair (antes devolvia a Connection crua e o close ficava
+    # por conta de quem chamasse).
+    with _connect(path) as conn:
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS pacientes (
+                id TEXT PRIMARY KEY
+            )
+        """)
+        conn.execute("""
+            CREATE TABLE IF NOT EXISTS paciente_fichas (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                paciente_id TEXT UNIQUE,
+                nome TEXT,
+                perfil TEXT,
+                cama_id TEXT,
+                observacoes TEXT,
+                created_at TEXT,
+                updated_at TEXT,
+                FOREIGN KEY(paciente_id) REFERENCES pacientes(id)
+            )
+        """)
+
     yield path
     
     # Cleanup - force close any remaining connections
-    import sqlite3
     # Close any open connections
     try:
         sqlite3.connect(path).close()
-    except:
+    except Exception:
         pass
     
     # Try to remove file, with retry for Windows
@@ -77,15 +73,13 @@ def db_temp():
 
 def _create_test_patient(paciente_id: str, db_path: str):
     """Helper to create a test patient."""
-    conn = _connect(db_path)
-    conn.execute("INSERT INTO pacientes (id) VALUES (?)", (paciente_id,))
-    conn.execute(
-        """INSERT INTO paciente_fichas (paciente_id, nome, perfil, cama_id, created_at, updated_at)
-           VALUES (?, ?, ?, ?, ?, ?)""",
-        (paciente_id, "Test Patient", "medio", "101", datetime.now().isoformat(), datetime.now().isoformat())
-    )
-    conn.commit()
-    conn.close()
+    with _connect(db_path) as conn:
+        conn.execute("INSERT INTO pacientes (id) VALUES (?)", (paciente_id,))
+        conn.execute(
+            """INSERT INTO paciente_fichas (paciente_id, nome, perfil, cama_id, created_at, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?)""",
+            (paciente_id, "Test Patient", "medio", "101", datetime.now().isoformat(), datetime.now().isoformat())
+        )
 
 
 def test_agenda_suppression_basic(db_temp):

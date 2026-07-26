@@ -1,9 +1,41 @@
 """Service layer for Patient operations."""
 from __future__ import annotations
 
-from typing import List, Optional, Dict
+from typing import List, Optional
 from interface.repositories.pacientes import PatientRepository
 from interface.schemas import FrontendCreatePatient
+
+# Vocabulário do frontend (en) e do banco (pt) para o perfil de risco. A
+# validação de quais valores são aceitos fica no schema, que rejeita na borda.
+_RISK_PARA_PERFIL = {
+    "high": "alto",
+    "medium": "medio",
+    "low": "baixo",
+    "alto": "alto",
+    "medio": "medio",
+    "baixo": "baixo",
+}
+
+
+def intervalo_horas(perfil: str) -> float:
+    """Intervalo de reposicionamento do perfil, em horas.
+
+    Derivado de `config.janela_por_perfil`, que é a MESMA fonte que o motor de
+    alertas usa para decidir quando disparar. Antes havia um mapa fixo aqui
+    ({alto: 2, medio: 3, baixo: 4}) que divergia do motor (60/90/120 min) por um
+    fator de DOIS: a tela informava "reposicionar a cada 2h" para um paciente de
+    alto risco enquanto o sistema alertava a cada 1h.
+
+    Num parâmetro clínico, duas fontes de verdade significam que pelo menos uma
+    está errada — e ninguém consegue saber qual olhando a tela.
+    """
+    from configuracao import carregar_configuracao
+
+    minutos = carregar_configuracao().janela_por_perfil.get(perfil)
+    if not minutos:
+        minutos = carregar_configuracao().janela_por_perfil["medio"]
+    return round(minutos / 60, 2)
+
 
 class PatientService:
     def __init__(self, repository: PatientRepository):
@@ -32,21 +64,14 @@ class PatientService:
             "medio": "medium",
             "baixo": "low"
         }
-        
-        # Map perfil to default interval (hours)
-        interval_map = {
-            "alto": 2,
-            "medio": 3,
-            "baixo": 4
-        }
-        
+
         return {
             "id": ficha.get("paciente_id"),
             "name": ficha.get("nome"),
             "room": room,
             "bed": bed,
             "riskLevel": perfil_map.get(perfil, "medium"),
-            "repositioningInterval": interval_map.get(perfil, 3),
+            "repositioningInterval": intervalo_horas(perfil),
             "createdAt": ficha.get("created_at"),
             "updatedAt": ficha.get("updated_at")
         }
@@ -62,16 +87,10 @@ class PatientService:
         return self._transform_patient(ficha)
 
     def create_patient(self, payload: FrontendCreatePatient) -> dict:
-        # Map riskLevel to perfil
-        risk_map = {
-            "high": "alto",
-            "medium": "medio",
-            "low": "baixo",
-            "alto": "alto",
-            "medio": "medio",
-            "baixo": "baixo"
-        }
-        perfil = risk_map.get(payload.riskLevel.lower(), "medio")
+        # riskLevel ja vem validado pelo schema (FrontendCreatePatient), entao
+        # aqui nao ha default silencioso: um valor fora do mapa e um bug, nao
+        # um paciente rebaixado para risco medio sem aviso.
+        perfil = _RISK_PARA_PERFIL[payload.riskLevel.lower()]
 
         # Construct cama_id
         cama_id = None
@@ -92,16 +111,10 @@ class PatientService:
         return self._transform_patient(novo_paciente)
 
     def update_patient(self, paciente_id: str, payload: FrontendCreatePatient) -> dict:
-        # Map riskLevel to perfil
-        risk_map = {
-            "high": "alto",
-            "medium": "medio",
-            "low": "baixo",
-            "alto": "alto",
-            "medio": "medio",
-            "baixo": "baixo"
-        }
-        perfil = risk_map.get(payload.riskLevel.lower(), "medio")
+        # riskLevel ja vem validado pelo schema (FrontendCreatePatient), entao
+        # aqui nao ha default silencioso: um valor fora do mapa e um bug, nao
+        # um paciente rebaixado para risco medio sem aviso.
+        perfil = _RISK_PARA_PERFIL[payload.riskLevel.lower()]
 
         # Construct cama_id
         cama_id = None
@@ -121,6 +134,10 @@ class PatientService:
             rotinas=None
         )
         return self._transform_patient(atualizado)
+
+    def delete_patient(self, paciente_id: str) -> Optional[dict]:
+        """Remove o paciente. Devolve o que foi apagado, ou None se nao existia."""
+        return self.repository.delete(paciente_id)
 
     def get_patient_by_bed(self, cama_id: str) -> Optional[dict]:
         return self.repository.get_by_cama(cama_id, include_routines=True)

@@ -62,9 +62,15 @@ async function handleResponse<T>(response: Response): Promise<T> {
   return response.json();
 }
 
+type RequestOptions = RequestInit & {
+  responseType?: 'json' | 'blob';
+  /** Recebe os cabeçalhos da resposta antes do corpo ser lido. */
+  onHeaders?: (headers: Headers) => void;
+};
+
 async function request<T>(
   url: string,
-  options: RequestInit & { responseType?: 'json' | 'blob' } = {}
+  options: RequestOptions = {}
 ): Promise<T> {
   // DEBUG: log requests to help diagnose why calls to /api/* might not reach backend
   try {
@@ -109,7 +115,7 @@ async function request<T>(
     }
   }
 
-  const { responseType, ...fetchOptions } = options;
+  const { responseType, onHeaders, ...fetchOptions } = options;
 
   const response = await fetch(finalUrl, {
     // rely on same-origin behavior and Vite proxy in dev; use same-origin
@@ -119,6 +125,8 @@ async function request<T>(
     ...fetchOptions,
   });
 
+  onHeaders?.(response.headers);
+
   if (responseType === 'blob') {
     if (!response.ok) {
       throw new ApiException(response.statusText || 'Erro no download', response.status);
@@ -127,6 +135,27 @@ async function request<T>(
   }
 
   return handleResponse<T>(response);
+}
+
+/**
+ * Como `request`, mas devolve também os cabeçalhos da resposta.
+ *
+ * Existe para metadados de paginação (`X-Total-Count`): o corpo continua sendo
+ * o array puro — que é o contrato de `/frontend/alerts` — e o total, que a
+ * lista sozinha não consegue expressar, viaja no cabeçalho.
+ */
+async function requestComHeaders<T>(
+  url: string,
+  options: RequestOptions = {}
+): Promise<{ dados: T; headers: Headers }> {
+  let headers = new Headers();
+  const dados = await request<T>(url, {
+    ...options,
+    onHeaders: (h) => {
+      headers = h;
+    },
+  });
+  return { dados, headers };
 }
 
 // Auth API
@@ -212,12 +241,56 @@ export interface AlertsResponse {
   alerts: Alert[];
 }
 
+/**
+ * Resultado de uma ação em lote sobre alertas.
+ *
+ * `processed` e `failed` são o que torna a falha PARCIAL visível: o lote pode
+ * ter sucesso para a maioria e falhar para alguns (tipicamente 409
+ * `transicao_invalida`, quando outra pessoa já agiu sobre aquele alerta).
+ * `errors[].alert_id` identifica exatamente quais precisam de nova tentativa.
+ */
+export interface BatchResult {
+  ok: boolean;
+  processed: number;
+  failed: number;
+  errors: Array<{ alert_id: string; error: string }>;
+}
+
+/**
+ * Teto de alertas pedidos numa carga do dashboard.
+ *
+ * O dashboard filtra em MEMÓRIA (FilterBar), então o que não vier na resposta
+ * não existe para o filtro. Com o default do backend (100) uma enfermaria
+ * movimentada esconderia alertas sem nenhum sinal na tela. 500 cobre com folga
+ * uma unidade real; se ainda assim estourar, `truncado` acende o aviso em vez
+ * de a lista mentir por omissão.
+ */
+const TETO_DE_ALERTAS = 500;
+
+export interface PaginaDeAlertas {
+  itens: Alert[];
+  /** Quantos casam com os filtros no servidor, antes do corte por `limit`. */
+  total: number;
+  /** `true` quando o servidor tinha mais do que coube na resposta. */
+  truncado: boolean;
+}
+
 export const alertsApi = {
-  getAlerts: (horas?: number) => {
-    const url = horas
-      ? `/api/frontend/alerts?horas=${horas}`
-      : '/api/frontend/alerts';
-    return request<Alert[]>(url);
+  getAlerts: async (horas?: number): Promise<PaginaDeAlertas> => {
+    const params = new URLSearchParams({ limit: String(TETO_DE_ALERTAS) });
+    if (horas) params.set('horas', String(horas));
+
+    const { dados, headers } = await requestComHeaders<Alert[]>(
+      `/api/frontend/alerts?${params.toString()}`
+    );
+    // Sem o header (versão antiga do backend) assume-se o tamanho da lista:
+    // não inventa truncamento que não se pode comprovar.
+    const total = Number(headers.get('X-Total-Count') ?? dados.length);
+    return {
+      itens: dados,
+      total: Number.isFinite(total) ? total : dados.length,
+      truncado: Number.isFinite(total) && total > dados.length,
+    };
   },
 
   acknowledge: (id: string) =>
@@ -231,22 +304,16 @@ export const alertsApi = {
     }),
 
   batchAcknowledge: (alertIds: string[]) =>
-    request<{ ok: boolean; processed: number; failed: number; errors: Array<{ alert_id: string; error: string }> }>(
-      '/api/frontend/alerts/batch/acknowledge',
-      {
-        method: 'POST',
-        body: JSON.stringify({ alert_ids: alertIds }),
-      }
-    ),
+    request<BatchResult>('/api/frontend/alerts/batch/acknowledge', {
+      method: 'POST',
+      body: JSON.stringify({ alert_ids: alertIds }),
+    }),
 
   batchComplete: (alertIds: string[]) =>
-    request<{ ok: boolean; processed: number; failed: number; errors: Array<{ alert_id: string; error: string }> }>(
-      '/api/frontend/alerts/batch/complete',
-      {
-        method: 'POST',
-        body: JSON.stringify({ alert_ids: alertIds }),
-      }
-    ),
+    request<BatchResult>('/api/frontend/alerts/batch/complete', {
+      method: 'POST',
+      body: JSON.stringify({ alert_ids: alertIds }),
+    }),
 };
 
 // Timeline API
@@ -299,7 +366,13 @@ export interface CreatePatientRequest {
   room: string;
   bed: string;
   riskLevel: 'high' | 'medium' | 'low';
-  repositioningInterval: number;
+  /**
+   * Opcional e ignorado pelo backend: o intervalo é derivado do perfil de
+   * risco. Era obrigatório aqui, o formulário deixava editá-lo e o valor era
+   * descartado sem aviso — quem alterasse acreditaria ter mudado o protocolo
+   * do paciente. Use `patientsApi.getPerfisRisco()` para exibir o valor real.
+   */
+  repositioningInterval?: number;
 }
 
 // Simulation API
@@ -311,14 +384,39 @@ export interface SimulationRequest {
 
 export interface SimulationResult {
   success: boolean;
+  /** Eventos brutos gravados. Antes este campo carregava a contagem de
+   *  AMOSTRAS da grade, então a tela exibia "N eventos" com outro número. */
   eventos: number;
+  /** Amostras da grade de postura gravadas. */
+  amostras: number;
   alertas: number;
   duracao: number;
   error?: string;
   message?: string;
 }
 
+/** Intervalo de reposicionamento por nivel de risco, em horas. Vem do backend
+ *  (mesma configuracao que o motor de alertas usa) para o formulario nao
+ *  manter uma copia divergente da tabela. */
+export type PerfisRisco = Record<'high' | 'medium' | 'low', number>;
+
+/**
+ * Resultado de `DELETE /api/pacientes/{id}`.
+ *
+ * `removidos` traz quantas linhas saíram de cada tabela. A exclusão é
+ * irreversível e leva junto o histórico clínico (alertas, timeline, grade),
+ * então quem executa precisa ver o tamanho do que apagou — "removido com
+ * sucesso" não distingue apagar uma ficha vazia de apagar meses de histórico.
+ */
+export interface DeletePatientResult {
+  ok: boolean;
+  paciente_id: string;
+  removidos: Record<string, number>;
+}
+
 export const patientsApi = {
+  getPerfisRisco: () => request<PerfisRisco>('/api/perfis-risco'),
+
   getPatients: () => request<Patient[]>('/api/pacientes'),
 
   getPatient: (id: string) => request<Patient>(`/api/pacientes/${id}`),
@@ -336,7 +434,7 @@ export const patientsApi = {
     }),
 
   deletePatient: (id: string) =>
-    request<void>(`/api/pacientes/${id}`, {
+    request<DeletePatientResult>(`/api/pacientes/${id}`, {
       method: 'DELETE',
     }),
 
@@ -435,7 +533,19 @@ export interface BedStats {
 }
 
 export interface DeviceEventsStats {
+  /** TODOS os órfãos pendentes, inclusive os que nenhum leito alcança. */
   total_orphans: number;
+  /** Os que a reconciliação por leito consegue resolver (soma de `beds`). */
+  orfaos_com_leito: number;
+  /**
+   * Órfãos sem `cama_id` no payload. Nenhum botão desta tela os resolve — eles
+   * dependem da reconciliação por dispositivo/tempo. Antes entravam no
+   * `total_orphans` sem aparecer em leito nenhum, então o operador reconciliava
+   * tudo e o número não zerava, sem explicação.
+   */
+  orfaos_sem_leito: number;
+  /** O agrupamento por leito foi calculado sobre uma amostra cortada. */
+  amostra_truncada: boolean;
   beds: BedStats[];
 }
 
@@ -470,10 +580,51 @@ export interface DashboardStats {
   completedToday: number;
   totalPatients: number;
   completionRate: number;
+  /**
+   * Pacientes com leito atribuído SEM leituras recentes (sensor, rede ou
+   * ingestão com problema). Existe porque "nenhum alerta" é ambíguo: pode
+   * significar que está tudo bem, ou que o sistema parou de receber dados.
+   */
+  unmonitoredPatients: number;
+  /** Minutos sem dados a partir dos quais o paciente conta como não monitorado. */
+  monitoringLimitMin: number;
 }
 
 export const statsApi = {
   getStats: () => request<DashboardStats>('/api/stats'),
+};
+
+/**
+ * Situação de monitoramento de um paciente com leito atribuído.
+ *
+ * `/api/stats` já traz a CONTAGEM de pacientes sem dados, e o dashboard exibe
+ * o aviso. O que faltava era o detalhe: quem. Sem ele, o aviso diz "3
+ * pacientes sem monitoramento — verifique o sensor" e não há como descobrir
+ * quais leitos checar sem ir ao log do servidor.
+ */
+export interface StatusMonitoramento {
+  paciente_id: string;
+  nome: string | null;
+  cama_id: string | null;
+  ultima_leitura: string | null;
+  minutos_sem_dados: number | null;
+  monitorado: boolean;
+  /** Distingue "o sensor parou" de "nunca chegou leitura" (erro de instalação
+   *  ou de vínculo device↔leito, cuja ação corretiva é outra). */
+  nunca_recebeu_dados: boolean;
+}
+
+export interface MonitoramentoResponse {
+  limite_min: number;
+  total_com_leito: number;
+  monitorados: number;
+  sem_monitoramento: number;
+  pacientes_sem_monitoramento: StatusMonitoramento[];
+  pacientes: StatusMonitoramento[];
+}
+
+export const monitoramentoApi = {
+  getStatus: () => request<MonitoramentoResponse>('/api/monitoramento'),
 };
 
 // Export API
@@ -536,4 +687,118 @@ export const exportAlertsToPDF = async (params: ExportParams): Promise<void> => 
   document.body.appendChild(link);
   link.click();
   link.remove();
+};
+
+// ---------------------------------------------------------------------------
+// Gestão de usuários (admin)
+//
+// As rotas existiam desde o commit que criou o router e nenhuma tela as
+// consumia: não havia como listar, promover, desativar ou resetar senha. Numa
+// instalação real isso significa que quem sai da equipe mantém acesso
+// indefinidamente.
+// ---------------------------------------------------------------------------
+
+/**
+ * Tamanho mínimo de senha. Espelha `SENHA_MIN_LEN` do backend
+ * (interface/api_shared.py), que é quem de fato recusa.
+ *
+ * Havia TRÊS respostas diferentes para "qual é a senha mínima": o formulário
+ * de cadastro exigia 6, o endpoint de cadastro não exigia nada e os endpoints
+ * de troca exigiam 8. Quem cadastrava com 6 passava — e depois era impedido de
+ * trocar para uma senha do mesmo tamanho.
+ */
+export const SENHA_MIN_LEN = 8;
+
+export type PapelUsuario = 'admin' | 'staff';
+
+export interface Usuario {
+  username: string;
+  display_name: string | null;
+  role: PapelUsuario;
+  ativo: boolean;
+  created_at: string;
+}
+
+export const usuariosApi = {
+  listar: () => request<Usuario[]>('/api/usuarios'),
+
+  alterarPapel: (username: string, role: PapelUsuario) =>
+    request<{ ok: boolean; username: string; role: PapelUsuario }>(
+      `/api/usuarios/${encodeURIComponent(username)}/papel`,
+      { method: 'PATCH', body: JSON.stringify({ role }) }
+    ),
+
+  alterarAtivo: (username: string, ativo: boolean) =>
+    request<{ ok: boolean; username: string; ativo: boolean }>(
+      `/api/usuarios/${encodeURIComponent(username)}/ativo`,
+      { method: 'PATCH', body: JSON.stringify({ ativo }) }
+    ),
+
+  /** Reset por administrador (esquecimento, comprometimento). Derruba as
+   *  sessões do alvo — senão o JWT já emitido seguiria valendo por horas. */
+  definirSenha: (username: string, nova_senha: string) =>
+    request<{ ok: boolean; username: string }>(
+      `/api/usuarios/${encodeURIComponent(username)}/senha`,
+      { method: 'POST', body: JSON.stringify({ nova_senha }) }
+    ),
+
+  /** Troca da própria senha. Exige a atual e ENCERRA a própria sessão. */
+  trocarPropriaSenha: (senha_atual: string, nova_senha: string) =>
+    request<{ ok: boolean; sessoes_encerradas: boolean }>('/api/usuarios/eu/senha', {
+      method: 'POST',
+      body: JSON.stringify({ senha_atual, nova_senha }),
+    }),
+};
+
+// ---------------------------------------------------------------------------
+// Backup (admin)
+// ---------------------------------------------------------------------------
+
+export interface BackupItem {
+  filename: string;
+  size_mb: number;
+  created_at: string;
+  age_hours: number;
+  /** Presentes apenas na verificação. */
+  ok?: boolean;
+  motivo?: string | null;
+  linhas?: Record<string, number> | null;
+}
+
+export interface BackupStatus {
+  total: number;
+  validos: number;
+  invalidos: string[];
+  ultimo_valido: string | null;
+  idade_horas: number | null;
+  /**
+   * `false` quando o backup mais recente é pequeno demais em relação ao banco
+   * vivo — sinal de que é cópia de OUTRO banco. Já aconteceu: a suíte de
+   * testes gravava cópias do banco de teste no diretório real e a mais nova,
+   * válida e recentíssima, virava o "último backup bom".
+   */
+  proporcional: boolean;
+  /** Recente E proporcional. É o único campo que responde "estou coberto?". */
+  saudavel: boolean;
+}
+
+export const backupApi = {
+  criar: () => request<{ ok: boolean; filename: string }>('/api/admin/backup/create', {
+    method: 'POST',
+  }),
+
+  listar: () => request<{ backups: BackupItem[]; count: number }>('/api/admin/backup/list'),
+
+  status: () => request<BackupStatus>('/api/admin/backup/status'),
+
+  verificar: () =>
+    request<{ backups: BackupItem[]; invalidos: number }>('/api/admin/backup/verify', {
+      method: 'POST',
+    }),
+
+  limpar: (keepDays: number) =>
+    request<{ ok: boolean; removed_count: number }>(
+      `/api/admin/backup/cleanup?keep_days=${keepDays}`,
+      { method: 'POST' }
+    ),
 };

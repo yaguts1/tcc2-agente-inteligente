@@ -1,6 +1,6 @@
 """WebSocket connection manager com suporte a filtros."""
 
-from typing import Dict, List, Optional, Set
+from typing import Dict, List, Optional
 from fastapi import WebSocket
 import structlog
 from datetime import datetime
@@ -151,7 +151,11 @@ class ConnectionManagerOptimized:
         
         disconnected = []
         
-        for websocket, client_data in self.active_connections.items():
+        # Snapshot: há `await` dentro do laço, então uma conexão ou desconexão
+        # concorrente mutaria o dict durante a iteração e levantaria
+        # "dictionary changed size during iteration", abortando o broadcast
+        # para todos os clientes restantes.
+        for websocket, client_data in list(self.active_connections.items()):
             try:
                 filters = client_data["filters"]
                 
