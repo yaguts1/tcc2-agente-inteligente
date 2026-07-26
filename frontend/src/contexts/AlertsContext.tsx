@@ -28,6 +28,16 @@ const AlertsContext = createContext<AlertsContextType | undefined>(undefined);
 
 const POLL_INTERVAL = 30000;
 
+// Com o WebSocket conectado o polling desacelera, mas NUNCA para.
+//
+// Antes era `enabled: !wsConnected`: uma conexão aberta era tratada como
+// garantia de que as mensagens chegam. Não é — a conexão pode estar viva e o
+// servidor não publicar nada (foi exatamente o que acontecia: nada anunciava
+// alerta novo). Numa tela de monitoramento de leito, a falha de um canal não
+// pode significar tela congelada sem ninguém perceber: o segundo canal existe
+// para que o defeito de um vire atraso, e não ausência.
+const POLL_INTERVAL_COM_WS = 120000;
+
 export function AlertsProvider({ children }: { children: ReactNode }) {
   const [alerts, setAlerts] = useState<Alert[]>([]);
   const [isLoading, setIsLoading] = useState(true);
@@ -76,6 +86,17 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
 
   // WebSocket handler
   const handleWebSocketMessage = useCallback((message: any) => {
+    // `alert_new` = o motor abriu um alerta: alguém precisa virar um paciente.
+    // Só `prev.map` NÃO daria conta — map atualiza itens existentes e não
+    // consegue inserir. Mesmo que o backend anunciasse (e não anunciava), um
+    // alerta novo jamais apareceria na tela. Aqui recarrega-se a lista, que
+    // além de inserir traz nome, quarto, leito e horários já calculados pelo
+    // servidor — dado que a mensagem não carrega e que a tela não deve inventar.
+    if (message.type === 'alert_new') {
+      fetchAlerts();
+      return;
+    }
+
     if (message.type === 'alert_update') {
       const { alert_id, status } = message;
       if (alert_id && status) {
@@ -88,7 +109,7 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
         );
       }
     }
-  }, []);
+  }, [fetchAlerts]);
 
   useEffect(() => {
     return subscribe(handleWebSocketMessage);
@@ -99,10 +120,10 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
     fetchAlerts();
   }, [fetchAlerts]);
 
-  // Polling
+  // Polling — sempre ativo, mais lento quando o WS está conectado.
   const { stop, start } = usePolling({
-    interval: POLL_INTERVAL,
-    enabled: !wsConnected,
+    interval: wsConnected ? POLL_INTERVAL_COM_WS : POLL_INTERVAL,
+    enabled: true,
     onPoll: fetchAlerts,
   });
 

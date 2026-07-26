@@ -202,6 +202,93 @@ def _montar_payload_broadcast(alert_id: str, paciente_id: str, ws_status: str) -
     }
 
 
+def montar_payload_alerta_novo(paciente_id: str, alerta: dict) -> dict:
+    """Mensagem de um alerta RECEM-CRIADO pelo motor.
+
+    Mesmos campos do `alert_update` porque e contra eles que o WebSocketFilter
+    filtra; muda o `type`, para o cliente distinguir "apareceu um alerta" de
+    "o status de um alerta mudou" — sao reacoes diferentes na tela.
+    """
+    inicio = str(alerta.get("inicio") or "")
+    return {
+        "type": "alert_new",
+        "alert_id": f"{paciente_id}__{inicio}",
+        "status": _STATUS_MAP.get(str(alerta.get("status") or "aberto"), "pending"),
+        "patient_id": paciente_id,
+        "severity": _RISK_MAP.get(str(alerta.get("perfil") or "").lower()),
+        "alert_type": alerta.get("tipo"),
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+_LOOP: asyncio.AbstractEventLoop | None = None
+
+
+def registrar_loop(loop: asyncio.AbstractEventLoop) -> None:
+    """Guarda o loop principal, chamado no startup (interface/web.py)."""
+    global _LOOP
+    _LOOP = loop
+
+
+def agendar_anuncio(alertas: list[dict]) -> None:
+    """Agenda o anuncio dos alertas novos a partir de QUALQUER contexto.
+
+    A ingestao HTTP (`POST /api/eventos`) e um handler `def`, ou seja, roda no
+    threadpool do FastAPI — fora do event loop. `asyncio.get_running_loop()`
+    levanta RuntimeError ali, entao agendar so com `create_task` nao anunciaria
+    nada no caminho principal, que e justamente o do sensor real.
+
+    Por isso as duas portas: dentro do loop, `create_task`; de outra thread,
+    `run_coroutine_threadsafe` no loop guardado no startup.
+    """
+    if not alertas:
+        return
+    copia = list(alertas)
+    try:
+        asyncio.get_running_loop().create_task(anunciar_alertas_novos(copia))
+        return
+    except RuntimeError:
+        pass
+
+    loop = _LOOP
+    if loop is None or loop.is_closed():
+        # Sem loop registrado nao ha cliente WS neste processo (scripts, testes
+        # sincronos). Nao e erro, e ausencia de destinatario.
+        return
+    try:
+        asyncio.run_coroutine_threadsafe(anunciar_alertas_novos(copia), loop)
+    except Exception:
+        logger.warning("agendar_anuncio_falhou", exc_info=True)
+
+
+async def anunciar_alertas_novos(alertas: list[dict]) -> None:
+    """Publica no WS os alertas que o motor acabou de abrir.
+
+    NADA anunciava alerta novo: `broadcast` so era chamado por reconhecer e
+    completar. Como o frontend desliga o polling enquanto o WS esta conectado,
+    o resultado era o pior possivel para um monitor de leito — a tela ficava
+    congelada na lista carregada na abertura da pagina e o alerta que manda
+    virar o paciente nunca chegava. O docstring da rota /ws/alerts afirmava
+    justamente o contrario ("New alerts will be pushed").
+
+    Tambem invalida o cache de 30s da listagem: sem isso, o refetch disparado
+    pela mensagem poderia devolver a lista velha, ainda sem o alerta.
+    """
+    if not alertas:
+        return
+    await api_cache.clear()
+    for alerta in alertas:
+        paciente_id = str(alerta.get("paciente_id") or "")
+        if not paciente_id:
+            continue
+        try:
+            await ws_manager_optimized.broadcast(montar_payload_alerta_novo(paciente_id, alerta))
+        except Exception:
+            # Um cliente WS problematico nao pode impedir a ingestao da amostra
+            # seguinte — mas o silencio aqui e o que escondeu o defeito original.
+            logger.warning("broadcast_alerta_novo_falhou", paciente_id=paciente_id, exc_info=True)
+
+
 async def _aplicar_operacao(alert_id: str, user: str, operacao: Literal["acknowledge", "complete"]) -> None:
     """Aplica reconhecer/completar a um único alerta: atualiza status,
     registra timeline, faz broadcast via WS e invalida o cache."""

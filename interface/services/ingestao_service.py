@@ -99,7 +99,24 @@ def registrar_evento(payload: EventPayload) -> dict[str, Any]:
     alertas = PROCESSADOR.processar_amostra(evento_dict)
     if alertas:
         inserir_alertas(DB_PATH, alertas)
+        _anunciar(alertas)
     return {"alertas": len(alertas)}
+
+
+def _anunciar(alertas: list[dict]) -> None:
+    """Publica os alertas recem-abertos no WS, sem bloquear a ingestao.
+
+    A amostra JA foi persistida neste ponto — uma falha ao anunciar nao pode
+    desfazer isso nem propagar para o dispositivo, que reenviaria um dado que o
+    servidor ja tem. Por isso o try amplo.
+    """
+    # Import local: alerts_service importa deste modulo, e no topo daria ciclo.
+    from interface.services.alerts_service import agendar_anuncio
+
+    try:
+        agendar_anuncio(alertas)
+    except Exception:
+        logger.warning("anuncio_alerta_novo_falhou", exc_info=True)
 
 
 def processar_eventos_filtrados(

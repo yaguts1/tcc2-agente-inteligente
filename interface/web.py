@@ -113,6 +113,15 @@ async def _lifespan(app: FastAPI):
             ),
         )
 
+    # O loop principal, para a ingestao (handler `def`, threadpool) conseguir
+    # publicar no WS os alertas que o motor abrir. Sem isto, `POST /api/eventos`
+    # nao tem como alcancar o loop e o alerta novo nunca chega a tela.
+    import asyncio as _asyncio
+
+    from interface.services.alerts_service import registrar_loop
+
+    registrar_loop(_asyncio.get_running_loop())
+
     # Mesmo padrao do token de dispositivo: sem a chave, a trilha de auditoria
     # continua funcionando, mas quem escreve no banco consegue recalcular a
     # cadeia inteira depois de adultera-la. O aviso precisa aparecer.
