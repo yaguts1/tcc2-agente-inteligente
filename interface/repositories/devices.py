@@ -53,6 +53,31 @@ def inserir_device_event(db_path: str, device_id: str, ts: str, ts_ms: int, payl
         return int(cursor.lastrowid)
 
 
+def contar_device_events(
+    db_path: str, device_id: str | None = None, include_processed: bool = False
+) -> int:
+    """Quantos device_events existem com esses filtros, sem aplicar `limit`.
+
+    Existe para o painel de orfaos poder dizer o TOTAL mesmo quando a listagem
+    e cortada. `listar_device_events` limitado a N devolve N e nao ha como
+    distinguir "existem N" de "existem muito mais": num painel cuja funcao e
+    diagnosticar acumulo de eventos nao reconciliados, o numero parar de subir
+    ao bater no teto e exatamente o contrario do que se precisa ver.
+    """
+    sql = "SELECT COUNT(*) FROM device_events"
+    params: list = []
+    where_clauses: list[str] = []
+    if device_id:
+        where_clauses.append("device_id = ?")
+        params.append(device_id)
+    if not include_processed:
+        where_clauses.append("processed_at IS NULL")
+    if where_clauses:
+        sql = f"{sql} WHERE {' AND '.join(where_clauses)}"
+    with connect(db_path) as conn:
+        return int(conn.execute(sql, tuple(params)).fetchone()[0])
+
+
 def listar_device_events(db_path: str, device_id: str | None = None, limit: int = 100, include_processed: bool = False) -> list[dict]:
     """List device_events. By default only returns events where processed_at IS NULL.
 

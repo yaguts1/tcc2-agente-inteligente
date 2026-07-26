@@ -34,19 +34,38 @@ partir daí, criar conta exige sessão ativa ou `X-Register-Token`.
 
 ```
 src/
-  components/   pages/, alerts/, patients/, auth/, ui/ (wrappers Radix), shared/
+  components/   pages/, admin/, alerts/, patients/, auth/, ui/ (wrappers Radix), shared/
   contexts/     AlertsContext (lista de alertas), WebSocketContext
   hooks/        useAuth, usePolling, useWebSocket, useCriticalAlerts, ...
   lib/          api.ts (chamadas HTTP), storage.ts
 ```
 
+## Estilos
+
+A fonte autoral é `src/styles/globals.css`, importada por `main.tsx`. O
+Tailwind v4 roda pelo plugin `@tailwindcss/vite` (ver `vite.config.ts`), então
+classe utilitária nova tem efeito normalmente.
+
+> Esta seção existia como "Limitação conhecida" afirmando o oposto — que
+> `src/index.css` era um artefato gerado commitado como fonte, que o
+> `tailwindcss` não estava no `package.json` e que qualquer classe nova
+> falharia em silêncio. Já não é verdade: o arquivo não existe mais, a
+> dependência está declarada e o `globals.css` deixou de ser órfão. Ficou
+> registrado porque um README que declara algo quebrado quando está funcionando
+> custa tempo de quem chega — ou faz alguém "consertar" o que está certo.
+
+## Rotas e bundle
+
+A navegação usa `react-router` (`BrowserRouter` em `App.tsx`), com uma rota por
+página e `lazy()` em cada uma. Ou seja: há URL por página, histórico do browser
+e code splitting — o build sai em chunks separados (`DashboardPage`,
+`TimelinePage`, `PatientsPage`, `AdminPage`) além do chunk comum.
+
+> Também descrito antes como limitação ("a navegação é `useState` sobre um
+> `switch`, sem URLs, sem histórico, bundle único de ~434 kB"), igualmente
+> superado.
+
 ## Limitações conhecidas
 
-- **`src/index.css` é um artefato gerado do Tailwind v4 commitado como fonte**, e
-  o `tailwindcss` não está no `package.json`. Na prática, qualquer classe
-  utilitária nova que você escrever **não terá efeito** — e isso falha em
-  silêncio. A fonte autoral é `src/styles/globals.css`, hoje órfã. Restaurar o
-  toolchain está pendente.
-- Não há router: a navegação é `useState` sobre um `switch` em `App.tsx`, logo
-  não há URLs por página, histórico do browser nem code splitting (o bundle sai
-  em um único chunk de ~434 kB).
+- Os testes cobrem a camada de alertas, admin e as conversões de data; páginas
+  inteiras (Dashboard, Pacientes) ainda não têm teste de componente.
