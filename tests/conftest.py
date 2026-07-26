@@ -82,7 +82,10 @@ def recarregar_app():
         modulo = importlib.reload(importlib.import_module(nome))
 
     api_shared = importlib.import_module("interface.api_shared")
-    api_shared._reset_auth_rate_limits()
+    # Todos os baldes, nao so o de auth: o de `api` passou a valer para
+    # alertas, timeline, stats e pacientes, e um teste que faz varias
+    # requisicoes deixaria o proximo comecando com o balde pela metade.
+    api_shared.rate_limiter.reset()
     api_shared.reset_rate_limiter()
     importlib.import_module("interface.api").reset_processador()
     return modulo  # interface.web

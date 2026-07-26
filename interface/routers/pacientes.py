@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel
 from datetime import timedelta
 
-from interface.api_shared import DB_PATH, DEFAULT_PERFIL
+from interface.api_shared import DB_PATH, DEFAULT_PERFIL, _check_api_rate_limit
 from interface.dependencies import exigir_papel, get_current_user, verificar_token_dispositivo
 from interface.tempo import agora_utc_naive
 from interface.schemas import PacienteConfigResponse, RotinaConfig, FrontendCreatePatient
@@ -23,7 +23,15 @@ from modulo_alerta.engine import processar_alertas
 # Todo o CRUD de pacientes exige sessao autenticada: sao dados clinicos
 # identificaveis (nome, leito, perfil de risco). Antes o router inteiro era
 # publico — dava para ler, criar e alterar pacientes sem credencial nenhuma.
-router = APIRouter(tags=["pacientes"], dependencies=[Depends(get_current_user)])
+#
+# O rate limit vale para o CRUD da tela. O `router_dispositivos` abaixo fica
+# DE FORA de proposito: quem o consome e o firmware, com perfil de trafego
+# proprio, e recusar a resolucao paciente<->leito deixaria o ESP32 sem saber
+# de quem e a leitura que ele acabou de medir.
+router = APIRouter(
+    tags=["pacientes"],
+    dependencies=[Depends(get_current_user), Depends(_check_api_rate_limit)],
+)
 
 # Router separado para o endpoint que o FIRMWARE consome
 # (GET /api/pacientes/cama/{cama_id}, ver firmware/esp32_replay/esp32_replay.ino):

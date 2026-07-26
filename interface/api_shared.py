@@ -290,9 +290,41 @@ async def _check_auth_rate_limit(request: Request) -> None:
     await rate_limiter.check_limit('auth', limit=5, window_seconds=60, request=request)
 
 
+def _limite_api_por_minuto() -> int:
+    """Teto de requisicoes por minuto e por IP nos endpoints comuns.
+
+    Configuravel porque o numero certo depende da instalacao: o balde e por IP
+    real (ver `ip_do_cliente`), entao varias estacoes atras do mesmo NAT
+    dividiriam o mesmo teto.
+
+    O default e folgado de proposito. O modo de falha de um limite apertado e
+    o dashboard de um leito exibindo erro no meio do plantao — bem pior do que
+    o que o limite previne, que e um cliente em laco. 240/min (4/s sustentados)
+    para um cliente em laco, e deixa ordens de grandeza de folga para o uso
+    real: o dashboard faz ~2 requisicoes/min por polling, mais rajadas quando
+    varios alertas abrem juntos.
+    """
+    try:
+        return max(1, int(os.getenv("API_RATE_LIMIT_POR_MINUTO", "240")))
+    except ValueError:
+        return 240
+
+
 async def _check_api_rate_limit(request: Request) -> None:
-    """Rate limiting for general API endpoints (100 requests per minute per IP)."""
-    await rate_limiter.check_limit('api', limit=100, window_seconds=60, request=request)
+    """Rate limit dos endpoints comuns da API (por minuto, por IP).
+
+    Estava definido e NUNCA aplicado: nenhum endpoint o declarava como
+    dependencia, entao alertas, timeline, stats, pacientes e exportacao nao
+    tinham teto nenhum. So login (5/min), lote (10/min) e ingestao (token
+    bucket) eram protegidos.
+
+    Nao vale para `/healthz`, `/api/health` nem `/metrics`: o healthcheck do
+    container e o scraping do Prometheus batem em intervalo fixo, e limita-los
+    faria o proprio monitoramento derrubar o servico que ele vigia.
+    """
+    await rate_limiter.check_limit(
+        'api', limit=_limite_api_por_minuto(), window_seconds=60, request=request
+    )
 
 
 async def _check_batch_rate_limit(request: Request) -> None:

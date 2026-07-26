@@ -6,7 +6,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 
-from interface.api_shared import DB_PATH, _check_batch_rate_limit
+from interface.api_shared import DB_PATH, _check_api_rate_limit, _check_batch_rate_limit
 from interface.schemas import BatchAlertRequest
 from interface.ws_manager_optimized import ws_manager_optimized, WebSocketFilter
 from interface.dependencies import get_current_user
@@ -34,6 +34,7 @@ async def frontend_alerts(
     limit: int = 100,
     offset: int = 0,
     _: str = Depends(get_current_user),
+    __: None = Depends(_check_api_rate_limit),
 ) -> list[dict]:
     """Return alerts in a shape convenient for the React frontend with optional filters.
 
@@ -142,6 +143,7 @@ def export_alerts_csv(
     patient_id: Optional[str] = Query(None, description="ID do paciente"),
     limit: int = Query(10000, ge=1, le=100000, description="Limite de registros"),
     user: str = Depends(get_current_user),
+    _: None = Depends(_check_api_rate_limit),
 ):
     """
     Exporta alertas em formato CSV.
@@ -202,6 +204,7 @@ def export_alerts_pdf(
     status_filter: Optional[str] = Query(None, alias="status", description="Status: pending, acknowledged, completed"),
     patient_id: Optional[str] = Query(None, description="ID do paciente"),
     user: str = Depends(get_current_user),
+    _: None = Depends(_check_api_rate_limit),
 ):
     """
     Exporta alertas em formato PDF.
