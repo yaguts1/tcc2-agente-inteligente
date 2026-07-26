@@ -15,6 +15,19 @@ enum class ReplayState {
 };
 
 // -------------------------------
+// Desfecho de um POST de evento
+// -------------------------------
+// A distinção importa: repetir para sempre um evento que o servidor NUNCA vai
+// aceitar (linha malformada -> 422) trava a fila inteira atrás dele, e desistir
+// de um evento que falhou por queda de rede perde dado de sensor. São reações
+// opostas, e antes as duas situações eram o mesmo `false`.
+enum class ResultadoEnvio {
+  ACK = 0,      // 2xx — entregue
+  TRANSIENTE,   // rede caiu, 5xx, 408, 429 — tentar de novo
+  PERMANENTE,   // demais 4xx — o servidor recusa este conteúdo, insistir não muda
+};
+
+// -------------------------------
 // Comandos externos (Serial/OTA)
 // -------------------------------
 enum class ReplayCommand {
@@ -40,7 +53,12 @@ struct ReplayConfig {
   bool respeitarTimestamp;       // true -> usa delta entre ts_utc de cada linha
 
   // Retry
-  uint8_t  tentativasMax;        // Nº máximo de retries por pacote
+  uint8_t  tentativasMax;        // TOTAL de tentativas por pacote (contando a
+                                 // primeira); 0 = infinito
+                                 // (recomendado). Com um limite, uma indisponi-
+                                 // bilidade do servidor maior que a soma dos
+                                 // backoffs para o replay de vez, e so um
+                                 // CMD_START manual o traz de volta.
   uint32_t backoffBaseMs;        // Backoff inicial (exponencial)
   uint32_t backoffMaxMs;         // Teto para backoff (ms)
   bool     backoffWithJitter;    // aplicar jitter ao backoff
@@ -69,6 +87,7 @@ struct ReplayStatus {
   uint32_t seqAtual{0};            // Sequência de mensagens
   uint32_t totalEnviados{0};       // Contagem de ACKs (2xx)
   uint32_t totalFalhas{0};         // Contagem de falhas
+  uint32_t totalDescartados{0};    // Eventos recusados em definitivo (4xx)
   uint32_t ultimaRespostaMs{0};    // Timestamp do último ACK
   bool replayAtivo{false};
 };
