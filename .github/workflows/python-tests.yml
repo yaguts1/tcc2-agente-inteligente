@@ -53,6 +53,45 @@ jobs:
           --cov=interface --cov=nucleo --cov=modulo_alerta --cov=servicos
           --cov-report=term-missing
 
+  firmware:
+    # O firmware era a unica parte do sistema sem verificacao no fluxo: nao
+    # havia toolchain, entao mudancas iam para o repositorio sem nunca terem
+    # passado por um compilador. Foi assim que o sketch chegou a um estado em
+    # que NAO COMPILAVA (dois .ino na mesma pasta, com setup() e loop()
+    # duplicados) sem que nada acusasse.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # O toolchain do ESP32 tem centenas de MB e nao muda entre execucoes.
+      - name: Cache do PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/.platformio/.cache
+            ~/.platformio/packages
+            ~/.platformio/platforms
+          key: pio-${{ runner.os }}-${{ hashFiles('firmware/platformio.ini') }}
+          restore-keys: pio-${{ runner.os }}-
+
+      - name: Instalar PlatformIO
+        run: pip install --quiet platformio
+
+      # Testes da logica pura (classificacao de resposta, backoff, timestamp),
+      # rodando na maquina — sem ESP32. E a parte com regra de negocio, e era a
+      # parte sem teste nenhum.
+      - name: Testes da logica do firmware
+        run: pio test -d firmware -e nativo
+
+      # As DUAS variantes, a cada push. Era exatamente a divergencia entre elas
+      # que deixou a versao recomendada cinco correcoes atras da outra.
+      - name: Compilar firmware (HTTP e WebSocket)
+        run: pio run -d firmware
+
   frontend:
     runs-on: ubuntu-latest
     defaults:

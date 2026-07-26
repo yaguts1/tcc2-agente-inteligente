@@ -233,3 +233,6 @@ firmware/esp32_replay/config.h
 
 # Arquivos temporarios
 tmp_*.py
+
+# Artefatos de build do firmware (PlatformIO)
+firmware/.pio/

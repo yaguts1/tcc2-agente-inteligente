@@ -102,6 +102,27 @@ e este projeto adota [Semantic Versioning](https://semver.org/lang/pt-BR/).
   cortada em silêncio é resposta incompleta a uma pergunta legal. Agora traz
   `X-Total-Count`.
 
+### Adicionado — firmware entra no fluxo de verificação
+
+- **Toolchain de build e testes para o ESP32** (`firmware/platformio.ini`). O
+  firmware era a única parte do sistema sem verificação nenhuma: sem compilador
+  no fluxo, mudanças chegavam ao repositório sem nunca terem sido compiladas —
+  foi assim que o sketch chegou a um estado em que **não compilava** sem que
+  nada acusasse.
+  - `pio run -d firmware` compila **as duas** variantes (HTTP e WebSocket). O
+    transporte passou a ser flag de build, e não edição de `config.h`,
+    justamente para as duas serem verificadas a cada push: era a divergência
+    entre elas que deixou a recomendada cinco correções atrás.
+  - `pio test -d firmware -e nativo`: 22 testes da lógica pura, rodando na
+    máquina, sem ESP32. Cobrem onde há decisão — quando desistir de um evento,
+    quanto esperar antes de tentar de novo, como ler timestamp com fuso.
+  - `firmware/esp32_replay/logica_pura.h` isola essa lógica de Arduino, rede e
+    sistema de arquivos, e o firmware **delega** para ela: sem isso os testes
+    exercitariam uma cópia paralela, não o que roda no dispositivo.
+  - Job `firmware` na CI, com cache do toolchain.
+- Confirmado que o ambiente reprova de verdade: um nome de função com typo e uma
+  função sem `return` (daí `-Werror=return-type`) fazem o build falhar.
+
 ### Corrigido — firmware ESP32
 
 - **O sketch não compilava.** `esp32_replay.ino` e `esp32_replay_websocket.ino`

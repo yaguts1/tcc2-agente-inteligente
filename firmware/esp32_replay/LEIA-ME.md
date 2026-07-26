@@ -32,6 +32,40 @@ Em `config.h`:
 > em poucas dezenas de milissegundos e encerrava o replay na primeira
 > oscilação de rede.
 
+## Compilar e testar (sem placa)
+
+O firmware era a única parte do sistema sem verificação no fluxo: não havia
+toolchain, então mudanças chegavam ao repositório sem nunca terem passado por um
+compilador. Foi assim que o sketch chegou a um estado em que **não compilava**
+sem que nada acusasse.
+
+```bash
+pip install platformio
+
+pio run  -d firmware                 # compila as duas variantes (HTTP e WebSocket)
+pio run  -d firmware -e websocket    # só uma
+pio test -d firmware -e nativo       # testes da lógica, na máquina, sem ESP32
+```
+
+`pio test -e nativo` precisa de um **gcc do host**. No Windows, sem MinGW, roda
+por container:
+
+```bash
+docker run --rm -v "$PWD:/repo" -w /repo python:3.11-slim sh -c   "apt-get update -qq && apt-get install -y -qq build-essential &&    pip install -q platformio && pio test -d firmware -e nativo"
+```
+
+A CI roda os dois a cada push (job `firmware`). O `config.h` é criado a partir
+do exemplo quando não existe — serve para compilar, nunca para gravar num
+dispositivo real.
+
+### O que os testes cobrem
+
+Só a lógica que não depende de hardware, que é onde estão as decisões:
+classificação da resposta do servidor (quando desistir de um evento), backoff
+(quanto esperar) e leitura de timestamp ISO com fuso. Rede, SPIFFS e a máquina
+de estados continuam exigindo um dispositivo — o compilador cobre a sintaxe
+deles, não o comportamento.
+
 ## 🚀 Como Usar
 
 ### 1. Configuração Inicial

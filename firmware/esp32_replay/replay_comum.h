@@ -25,6 +25,7 @@
 
 #include "esp32_replay.h"
 #include "config.h"
+#include "logica_pura.h"
 
 #include <WiFi.h>
 #include <SPIFFS.h>
@@ -134,14 +135,12 @@ inline String urlEncode(const String &valor) {
   return saida;
 }
 
+// Delega para `logica_pura.h`, que é onde a regra está testada. Aqui fica só
+// a parte que depende do hardware: a fonte de aleatoriedade.
 inline uint32_t calcularBackoff(uint8_t tentativa) {
-  unsigned long res = g_config.backoffBaseMs * (1UL << tentativa);
-  if (g_config.backoffMaxMs > 0 && res > g_config.backoffMaxMs) res = g_config.backoffMaxMs;
-  if (g_config.backoffWithJitter) {
-    uint32_t jitter = (uint32_t)(res / 4);
-    res += (uint32_t)(esp_random() % (jitter + 1));
-  }
-  return (uint32_t)res;
+  return pura::calcularBackoffMs(g_config.backoffBaseMs, g_config.backoffMaxMs,
+                                 tentativa, g_config.backoffWithJitter,
+                                 (uint32_t)esp_random());
 }
 
 inline void atualizarEstado(ReplayState novo) {
@@ -197,39 +196,9 @@ inline void confirmarEventoAtual() {
 }
 
 inline bool parseIsoToEpochSeconds(const String &iso, unsigned long &out_s) {
-  if (iso.length() < 19) return false;
-  int year = iso.substring(0, 4).toInt();
-  int month = iso.substring(5, 7).toInt();
-  int day = iso.substring(8, 10).toInt();
-  int hour = iso.substring(11, 13).toInt();
-  int minute = iso.substring(14, 16).toInt();
-  int second = iso.substring(17, 19).toInt();
-  if (year <= 1970 || month < 1 || month > 12 || day < 1 || day > 31) return false;
-  if (hour < 0 || hour > 23 || minute < 0 || minute > 59 || second < 0 || second > 59) return false;
-  auto days_from_civil = [](int y, unsigned m, unsigned d) -> long {
-    y -= m <= 2; const long era = (y >= 0 ? y : y - 399) / 400;
-    const unsigned yoe = static_cast<unsigned>(y - era * 400);
-    const unsigned doy = (153u * (m + (m > 2 ? -3 : 9)) + 2) / 5 + d - 1;
-    const unsigned doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-    return era * 146097L + static_cast<long>(doe) - 719468L;
-  };
-  long days = days_from_civil(year, static_cast<unsigned>(month), static_cast<unsigned>(day));
-  unsigned long epoch = (unsigned long)days * 86400UL + (unsigned long)hour * 3600UL +
-                        (unsigned long)minute * 60UL + (unsigned long)second;
-  if (iso.length() > 19) {
-    String tail = iso.substring(19); tail.trim();
-    if (tail.length() > 0 && (tail.charAt(0) == '+' || tail.charAt(0) == '-') && tail.length() >= 6) {
-      int sign = (tail.charAt(0) == '+') ? 1 : -1;
-      int off_h = tail.substring(1, 3).toInt();
-      int off_m = tail.substring(4, 6).toInt();
-      if (off_h >= 0 && off_h <= 23 && off_m >= 0 && off_m <= 59) {
-        long offs = (long)off_h * 3600L + (long)off_m * 60L;
-        if (sign > 0) epoch -= (unsigned long)offs; else epoch += (unsigned long)offs;
-      }
-    }
-  }
-  out_s = epoch;
-  return true;
+  // A regra vive em `logica_pura.h` (testada em firmware/test); aqui só se
+  // converte o String do Arduino para o que ela recebe.
+  return pura::epochDeIso(iso.c_str(), (size_t)iso.length(), out_s);
 }
 
 inline bool lerProximoEvento(EventoReplay &evento) {
@@ -269,13 +238,11 @@ inline bool lerProximoEvento(EventoReplay &evento) {
 // continuar tentando para se recuperar sozinho quando alguém corrigir — pular
 // as amostras nesse caso seria perda silenciosa de dado clínico.
 inline ResultadoEnvio classificarResposta(int status) {
-  if (status >= 200 && status < 300) return ResultadoEnvio::ACK;
-  if (status < 0) return ResultadoEnvio::TRANSIENTE;   // erro de rede
-  if (status >= 500) return ResultadoEnvio::TRANSIENTE;
-  if (status == 408 || status == 429) return ResultadoEnvio::TRANSIENTE;
-  if (status == 401 || status == 403) return ResultadoEnvio::TRANSIENTE;
-  if (status >= 400) return ResultadoEnvio::PERMANENTE;
-  return ResultadoEnvio::TRANSIENTE;
+  switch (pura::classificarStatusHttp(status)) {
+    case pura::Desfecho::ACK:        return ResultadoEnvio::ACK;
+    case pura::Desfecho::PERMANENTE: return ResultadoEnvio::PERMANENTE;
+    default:                         return ResultadoEnvio::TRANSIENTE;
+  }
 }
 
 inline void resetarReplay() {

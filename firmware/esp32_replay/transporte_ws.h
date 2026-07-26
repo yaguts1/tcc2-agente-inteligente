@@ -75,16 +75,13 @@ inline void aoEventoWebSocket(WStype_t tipo, uint8_t *payload, size_t length) {
         // `invalid_device_token` é configuração errada: insistir permite que o
         // dispositivo se recupere sozinho quando alguém corrigir, e desistir
         // seria descartar amostra clínica por engano de operação.
-        String codigo = doc["error"] | "";
-        if (codigo == "persist_failed" || codigo == "processing_failed" ||
-            codigo == "invalid_device_token") {
-          g_ultimoDesfecho = ResultadoEnvio::TRANSIENTE;
-        } else {
-          // Conteúdo que o servidor nunca vai aceitar (ex.: JSON inválido).
-          g_ultimoDesfecho = ResultadoEnvio::PERMANENTE;
-        }
+        const char *codigo = doc["error"] | "";
+        // Regra em `logica_pura.h`, testada em firmware/test.
+        g_ultimoDesfecho = (pura::classificarErroWebSocket(codigo) == pura::Desfecho::PERMANENTE)
+                               ? ResultadoEnvio::PERMANENTE
+                               : ResultadoEnvio::TRANSIENTE;
         g_status.totalFalhas++;
-        registrarLog("[FALHA] ws error=" + codigo);
+        registrarLog("[FALHA] ws error=" + String(codigo));
       }
       break;
     }
