@@ -10,7 +10,7 @@ import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { BackupPanel } from './BackupPanel';
-import type { BackupItem, BackupStatus } from '../../lib/api';
+import type { BackupItem, BackupStatus, EstadoReplicacao } from '../../lib/api';
 
 vi.mock('../../lib/api', async (importarOriginal) => {
   const original = await importarOriginal<typeof import('../../lib/api')>();
@@ -36,6 +36,18 @@ const arquivo = (over: Partial<BackupItem> = {}): BackupItem => ({
   ...over,
 });
 
+const semReplicacao = (over: Partial<EstadoReplicacao> = {}): EstadoReplicacao => ({
+  configurada: false,
+  intervalo_horas: null,
+  ok: null,
+  idade_horas: null,
+  destino: null,
+  arquivos: null,
+  erro: null,
+  saudavel: false,
+  ...over,
+});
+
 const estado = (over: Partial<BackupStatus> = {}): BackupStatus => ({
   total: 1,
   validos: 1,
@@ -44,6 +56,7 @@ const estado = (over: Partial<BackupStatus> = {}): BackupStatus => ({
   idade_horas: 5,
   proporcional: true,
   saudavel: true,
+  replicacao: semReplicacao(),
   ...over,
 });
 

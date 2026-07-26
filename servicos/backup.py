@@ -12,6 +12,7 @@ seguranca em que as pessoas confiam e que falha calado e pior que a ausencia
 dele, porque desloca a atencao para longe do risco.
 """
 
+import json
 import os
 import shutil
 import sqlite3
@@ -34,6 +35,91 @@ TABELAS_ESSENCIAIS = ("pacientes", "grade", "eventos", "alertas")
 # Quantos backups mais recentes nunca sao apagados, por mais velhos que sejam.
 # `cleanup_old_backups(keep_days=0)` removia TODOS — inclusive o unico bom.
 MANTER_MINIMO = 3
+
+
+# Recibo deixado pelo script de replicacao (scripts/replicar_backups.sh) dentro
+# do proprio diretorio de backups. Comeca com ponto para nao ser confundido com
+# backup pelo glob `backup_*.db`.
+RECIBO_REPLICACAO = ".replicacao.json"
+
+
+def intervalo_de_replicacao_horas() -> int | None:
+    """De quantas em quantas horas se espera uma replicacao externa.
+
+    `None` (variavel ausente) significa "esta instalacao nao replica", e a tela
+    informa isso sem alarme. E deliberado: alarmar por algo que a instituicao
+    nao configurou treina a equipe a ignorar o aviso vermelho, e o aviso
+    vermelho e a unica defesa contra a falha calada de verdade.
+    """
+    bruto = os.getenv("BACKUP_REPLICACAO_INTERVALO_HORAS", "").strip()
+    if not bruto:
+        return None
+    try:
+        return max(1, int(bruto))
+    except ValueError:
+        logger.warning("replicacao_intervalo_invalido", valor=bruto)
+        return None
+
+
+def estado_replicacao(backup_dir: str | Path) -> dict:
+    """A copia FORA da VM esta de pe?
+
+    Backup no mesmo disco do banco cobre erro de operacao e corrupcao; nao
+    cobre disco morto nem VM apagada. O transporte para fora vive num script do
+    host (ver `scripts/replicar_backups.sh`) — de proposito, para nao colocar
+    chave SSH no container nem prender o sistema a um transporte so. Mas o
+    script sozinho recria o problema que backup existe para evitar: uma
+    replicacao que para de rodar e indistinguivel de uma que funciona.
+
+    Por isso o script deixa um recibo e esta funcao o le. `configurada: False`
+    quer dizer que nao se espera replicacao; `saudavel: False` com
+    `configurada: True` e um alarme de verdade.
+    """
+    intervalo = intervalo_de_replicacao_horas()
+    base: dict = {
+        "configurada": intervalo is not None,
+        "intervalo_horas": intervalo,
+        "ok": None,
+        "idade_horas": None,
+        "destino": None,
+        "arquivos": None,
+        "erro": None,
+        "saudavel": False,
+    }
+    if intervalo is None:
+        return base
+
+    caminho = Path(backup_dir) / RECIBO_REPLICACAO
+    try:
+        recibo = json.loads(caminho.read_text(encoding="utf-8"))
+    except FileNotFoundError:
+        base["erro"] = "nenhuma replicacao registrada"
+        return base
+    except Exception as exc:
+        logger.warning("recibo_replicacao_ilegivel", caminho=str(caminho), erro=str(exc))
+        base["erro"] = "recibo de replicacao ilegivel"
+        return base
+
+    base["ok"] = bool(recibo.get("ok"))
+    base["destino"] = recibo.get("destino") or None
+    base["arquivos"] = recibo.get("arquivos")
+    base["erro"] = recibo.get("erro") or None
+
+    terminado = str(recibo.get("terminado_em") or "")
+    try:
+        quando = datetime.fromisoformat(terminado.replace("Z", "+00:00"))
+        if quando.tzinfo is None:
+            quando = quando.replace(tzinfo=timezone.utc)
+        idade = (datetime.now(timezone.utc) - quando).total_seconds() / 3600
+        base["idade_horas"] = round(idade, 1)
+    except (ValueError, TypeError):
+        base["erro"] = base["erro"] or "recibo sem data valida"
+        return base
+
+    # Mesma tolerancia de meio intervalo usada para o backup local: um ciclo que
+    # atrasa alguns minutos nao e incidente, um ciclo que nao aconteceu e.
+    base["saudavel"] = bool(base["ok"]) and base["idade_horas"] <= intervalo * 1.5
+    return base
 
 
 def intervalo_de_backup_horas() -> int:
@@ -299,6 +385,12 @@ class BackupService:
             "idade_horas": mais_recente["age_hours"] if mais_recente else None,
             "proporcional": proporcional,
             "saudavel": recente and proporcional,
+            # A copia externa entra no MESMO veredito, mas em campo proprio:
+            # `saudavel` continua respondendo sobre o backup local (que e o que
+            # cobre erro de operacao e corrupcao), e `replicacao.saudavel`
+            # responde sobre perda da VM. Fundir os dois num booleano so
+            # esconderia qual das duas protecoes caiu.
+            "replicacao": estado_replicacao(self.backup_dir),
         }
 
     def restore_backup(self, backup_filename: str, target_path: str | None = None) -> bool:

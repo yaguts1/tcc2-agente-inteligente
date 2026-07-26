@@ -102,6 +102,39 @@ e este projeto adota [Semantic Versioning](https://semver.org/lang/pt-BR/).
   cortada em silêncio é resposta incompleta a uma pergunta legal. Agora traz
   `X-Total-Count`.
 
+### Adicionado — réplica externa de backup
+
+- Réplica dos backups para **fora da VM**, por `scripts/replicar_backups.sh`
+  (rsync, executado pelo cron do host). Backup no mesmo disco do banco cobre
+  erro de operação e corrupção, mas perda de disco ou da VM levaria os dois
+  juntos — e a tela diria "Backup em dia" até o fim.
+  - O transporte fica **fora da aplicação** de propósito: rodá-lo no processo
+    web exigiria chave SSH dentro do container e prenderia o sistema a um
+    transporte só. Migrar para nuvem é trocar uma linha do script (`rsync` por
+    `rclone copy`, `aws s3 sync`); o recibo e a tela não mudam.
+  - O script deixa um **recibo** que a aplicação lê e reporta em
+    `/admin/backup/status` e na tela. Sem isso, uma replicação que parasse de
+    rodar seria indistinguível de uma que funciona — exatamente a falha que
+    backup existe para evitar. Erro também gera recibo.
+  - Sem `BACKUP_REPLICACAO_INTERVALO_HORAS`, a tela informa que não há réplica
+    configurada **sem alarme**: alarmar pelo que a instituição não configurou
+    treina a equipe a ignorar o vermelho.
+
+### Corrigido — configuração que não chegava ao container
+
+- **Onze variáveis documentadas no `.env.example` e lidas pelo código nunca
+  eram repassadas ao container.** O `docker-compose.yml` lista as variáveis uma
+  a uma (não há `env_file:`), então quem preenchesse `BACKUP_INTERVAL_HOURS=6`
+  seguiria com 24, quem ajustasse `MONITORAMENTO_LIMITE_MIN` não mudaria nada,
+  e a retenção da auditoria jamais rodaria — tudo em silêncio, porque o default
+  existe e funciona. O mesmo defeito já havia sido encontrado para
+  `UPP_DEVICE_TOKEN` e `UPP_AUDIT_KEY`; corrigiram essas duas e as outras
+  ficaram. `tests/test_configuracao_chega_ao_container.py` impede a próxima.
+- `UPP_ADMIN_USER` e `PROCESSADOR_ESTRATEGIA` têm default real no código, então
+  são repassadas com o default no compose (`${VAR:-admin}`) e não vazias:
+  variável definida como `""` substitui o default por string vazia, o que seria
+  trocar um defeito por outro.
+
 ### Adicionado — operação
 
 - Rate limit nos endpoints comuns (alertas, timeline, stats, pacientes,

@@ -20,11 +20,10 @@ usuários e a trilha de auditoria.
 Os backups ficam em `/data/backups` (configurável por `UPP_BACKUP_DIR`), no
 mesmo volume.
 
-> **Isto não é proteção contra perda do servidor.** Backup no mesmo volume
-> cobre erro de operação, corrupção de banco e migração malfeita. Não cobre
-> disco morto, VM apagada nem ransomware. Copiar `/data/backups` para fora da
-> máquina, com a periodicidade que a instituição exigir, é uma decisão de
-> infraestrutura que este sistema não toma sozinho.
+> **Backup no mesmo volume não protege contra perda do servidor.** Ele cobre
+> erro de operação, corrupção de banco e migração malfeita. Não cobre disco
+> morto, VM apagada nem ransomware. Para isso existe a réplica externa, na
+> seção "Cópia fora do servidor" abaixo.
 
 ## Quando acontece
 
@@ -60,6 +59,89 @@ precisar restaurar:
 | `idade_horas` alta | O agendador parou; procurar `backup_scheduler_error` no log |
 | `proporcional: false` | O backup mais recente é bem menor que a base viva — provavelmente é backup de **outro** banco |
 | `invalidos` não vazio | Há arquivos corrompidos no diretório; os nomes estão na lista |
+
+O mesmo `status` traz um bloco `replicacao`, sobre a cópia fora do servidor —
+ver a seção seguinte. Os dois vereditos são separados de propósito: `saudavel`
+responde sobre o backup local (erro de operação, corrupção) e
+`replicacao.saudavel` sobre perda da VM. Fundir os dois num booleano só
+esconderia qual das duas proteções caiu.
+
+## Cópia fora do servidor
+
+Backup no mesmo disco do banco não sobrevive à perda do disco. A réplica
+externa é feita por `scripts/replicar_backups.sh`, executado pelo **cron do
+host** — não pela aplicação.
+
+**Por que fora da aplicação.** Rodar o `rsync` a partir do processo web exigiria
+chave SSH dentro do container e execução de shell a partir da aplicação, e
+prenderia o sistema a um transporte só. Do jeito que está, migrar para nuvem é
+trocar **uma linha** do script (`rsync` por `rclone copy`, `aws s3 sync`, o que
+for); o recibo e a tela continuam iguais.
+
+**Por que a aplicação ainda precisa saber.** Uma replicação que morre calada é
+indistinguível de uma que funciona — a mesma falha que backup existe para
+evitar. Por isso o script deixa um recibo (`.replicacao.json`, dentro do próprio
+diretório de backups) e a aplicação o lê. Erro também gera recibo: é o caso que
+mais importa registrar.
+
+### Configurar
+
+Na VM de destino, uma conta só para isto, com chave dedicada:
+
+```bash
+# no destino
+sudo useradd -m -s /bin/sh backup
+sudo -u backup mkdir -p /srv/upp-backups
+
+# na VM da aplicação
+ssh-keygen -t ed25519 -f /root/.ssh/id_upp_backup -N ''
+ssh-copy-id -i /root/.ssh/id_upp_backup.pub backup@IP_DO_DESTINO
+```
+
+No `.env` da aplicação (para a aplicação saber que deve haver réplica):
+
+```
+BACKUP_REPLICACAO_INTERVALO_HORAS=24
+```
+
+No cron do **host** (não do container):
+
+```cron
+0 4 * * * BACKUP_DESTINO=backup@IP_DO_DESTINO:/srv/upp-backups/ \
+          BACKUP_SSH_KEY=/root/.ssh/id_upp_backup \
+          BACKUP_DESTINO_LABEL=vm-secundaria \
+          /caminho/do/projeto/scripts/replicar_backups.sh \
+          >> /var/log/upp-replica.log 2>&1
+```
+
+`BACKUP_REPLICACAO_INTERVALO_HORAS` precisa bater com a frequência do cron: é
+contra ele que a aplicação julga se a réplica está atrasada (com tolerância de
+meio intervalo, para um ciclo que atrasa alguns minutos não virar alarme).
+
+Sem a variável, a tela informa que não há réplica configurada — **sem alarme
+vermelho**. Alarmar por algo que a instituição não configurou treina a equipe a
+ignorar o vermelho, e o vermelho é a única defesa contra a falha calada de
+verdade.
+
+### Conferir
+
+Na tela: Admin → Backup → card "Cópia fora do servidor". Por API, o bloco
+`replicacao` do `status`:
+
+```json
+{"configurada": true, "intervalo_horas": 24, "ok": true, "idade_horas": 3.2,
+ "destino": "vm-secundaria", "arquivos": 4, "erro": null, "saudavel": true}
+```
+
+| Situação | O que fazer |
+|---|---|
+| `erro: "nenhuma replicacao registrada"` | O cron nunca rodou; conferir a entrada e o caminho do script |
+| `ok: false` | A última tentativa falhou; o motivo está em `erro` e no `/var/log/upp-replica.log` |
+| `idade_horas` alta com `ok: true` | O cron parou de disparar; a última execução até funcionou |
+
+> **A réplica também não está testada enquanto ninguém restaurar a partir
+> dela.** Vale repetir na VM de destino o ensaio da seção "Restaurar", usando
+> um arquivo vindo do `rsync` e não do diretório local.
 
 ## Restaurar
 

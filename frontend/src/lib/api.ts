@@ -778,7 +778,34 @@ export interface BackupStatus {
    * válida e recentíssima, virava o "último backup bom".
    */
   proporcional: boolean;
-  /** Recente E proporcional. É o único campo que responde "estou coberto?". */
+  /**
+   * Recente E proporcional. Responde "estou coberto?" para o backup LOCAL, que
+   * cobre erro de operação e corrupção de banco — não perda da VM.
+   */
+  saudavel: boolean;
+  replicacao: EstadoReplicacao;
+}
+
+/**
+ * A cópia FORA da VM.
+ *
+ * Backup no mesmo disco do banco não cobre disco morto nem VM apagada. O
+ * transporte vive num script do host (`scripts/replicar_backups.sh`), que
+ * deixa um recibo — sem ele, uma replicação que parou de rodar seria
+ * indistinguível de uma que funciona, que é exatamente a falha que backup
+ * existe para evitar.
+ */
+export interface EstadoReplicacao {
+  /** `false` = esta instalação não replica; informar sem alarmar. */
+  configurada: boolean;
+  intervalo_horas: number | null;
+  /** Resultado da última execução do script. */
+  ok: boolean | null;
+  idade_horas: number | null;
+  destino: string | null;
+  arquivos: number | null;
+  erro: string | null;
+  /** Configurada, última execução OK e dentro do intervalo esperado. */
   saudavel: boolean;
 }
 

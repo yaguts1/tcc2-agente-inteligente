@@ -25,6 +25,7 @@ import {
   Database,
   HardDriveDownload,
   RefreshCw,
+  Server,
   ShieldCheck,
   Trash2,
 } from 'lucide-react';
@@ -223,6 +224,64 @@ export function BackupPanel() {
                 </p>
               )}
             </div>
+          </CardContent>
+        </Card>
+      )}
+
+      {/*
+        A cópia FORA da VM, em card próprio.
+        Não é fundida no `saudavel` acima de propósito: são duas proteções
+        contra falhas diferentes — o backup local cobre erro de operação e
+        corrupção, a réplica cobre perda do servidor. Um booleano só esconderia
+        qual das duas caiu.
+      */}
+      {status && (
+        <Card
+          className={
+            !status.replicacao.configurada
+              ? ''
+              : status.replicacao.saudavel
+                ? 'border-success'
+                : 'border-danger bg-danger-light/30'
+          }
+        >
+          <CardHeader className="pb-3">
+            <CardTitle className="text-sm flex items-center gap-2">
+              <Server className="w-4 h-4" />
+              Cópia fora do servidor
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="text-sm">
+            {!status.replicacao.configurada ? (
+              // Informa sem alarmar: alarmar por algo que a instituição não
+              // configurou treina a equipe a ignorar o vermelho.
+              <p className="text-muted-foreground">
+                Não configurada. Os backups existem apenas <strong>neste servidor</strong>: cobrem
+                erro de operação e corrupção do banco, mas <strong>não</strong> cobrem perda de
+                disco ou da VM. Ver <code>scripts/replicar_backups.sh</code> e{' '}
+                <code>BACKUP_REPLICACAO_INTERVALO_HORAS</code>.
+              </p>
+            ) : status.replicacao.saudavel ? (
+              <p className="text-foreground">
+                Última réplica {status.replicacao.idade_horas != null && idade(status.replicacao.idade_horas)}
+                {status.replicacao.destino && <> para <strong>{status.replicacao.destino}</strong></>}
+                {status.replicacao.arquivos != null && <> — {status.replicacao.arquivos} arquivo(s)</>}.
+              </p>
+            ) : (
+              <div className="space-y-1">
+                <p className="font-bold text-foreground">
+                  A cópia externa não está confirmada.
+                </p>
+                <p className="text-muted-foreground">
+                  {status.replicacao.erro
+                    ? status.replicacao.erro
+                    : status.replicacao.idade_horas != null
+                      ? `Última tentativa ${idade(status.replicacao.idade_horas)}, acima do intervalo esperado de ${status.replicacao.intervalo_horas}h.`
+                      : 'Sem registro de execução.'}{' '}
+                  Enquanto isso, uma perda do servidor levaria banco e backups juntos.
+                </p>
+              </div>
+            )}
           </CardContent>
         </Card>
       )}

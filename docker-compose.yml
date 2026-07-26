@@ -19,6 +19,27 @@ services:
       # o aviso de startup passando por ruido.
       - UPP_DEVICE_TOKEN=${UPP_DEVICE_TOKEN:-}
       - UPP_AUDIT_KEY=${UPP_AUDIT_KEY:-}
+      # O mesmo defeito das duas acima valia para TODAS as de ajuste abaixo:
+      # documentadas no .env.example, lidas pelo codigo e nunca repassadas ao
+      # container. Quem preenchesse BACKUP_INTERVAL_HOURS=6 continuaria com 24,
+      # quem ajustasse MONITORAMENTO_LIMITE_MIN nao mudaria nada, e a retencao
+      # da auditoria jamais rodaria — tudo em silencio, porque o default existe
+      # e funciona. Foi corrigido para duas variaveis e o resto ficou.
+      # `tests/test_configuracao_chega_ao_container.py` impede a proxima.
+      # `:-admin` e nao `:-`: o codigo usa "admin" como default, e mandar
+      # string vazia trocaria o default por "", que nao casa com usuario algum.
+      - UPP_ADMIN_USER=${UPP_ADMIN_USER:-admin}
+      - UPP_REGISTER_TOKEN=${UPP_REGISTER_TOKEN:-}
+      - BACKUP_INTERVAL_HOURS=${BACKUP_INTERVAL_HOURS:-}
+      - BACKUP_REPLICACAO_INTERVALO_HORAS=${BACKUP_REPLICACAO_INTERVALO_HORAS:-}
+      - HOUSEKEEPING_INTERVAL_HOURS=${HOUSEKEEPING_INTERVAL_HOURS:-}
+      - AUDITORIA_RETENCAO_DIAS=${AUDITORIA_RETENCAO_DIAS:-}
+      - API_RATE_LIMIT_POR_MINUTO=${API_RATE_LIMIT_POR_MINUTO:-}
+      - MONITORAMENTO_LIMITE_MIN=${MONITORAMENTO_LIMITE_MIN:-}
+      - MONITORAMENTO_CHECK_INTERVAL=${MONITORAMENTO_CHECK_INTERVAL:-}
+      - DEVICE_RECONCILE_INTERVAL=${DEVICE_RECONCILE_INTERVAL:-}
+      # Idem: o default real e `estado_em_memoria`.
+      - PROCESSADOR_ESTRATEGIA=${PROCESSADOR_ESTRATEGIA:-estado_em_memoria}
     ports:
       - "8000:8000"
     volumes:

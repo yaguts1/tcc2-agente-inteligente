@@ -11,6 +11,7 @@ provado.
 """
 
 import sqlite3
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -300,3 +301,196 @@ class TestIntervaloDeBackup:
 
         assert resp.status_code == 200, resp.text
         assert "saudavel" in resp.json()
+
+
+class TestReplicacaoExterna:
+    """A copia FORA da VM precisa ser observavel, nao so existir.
+
+    Backup no mesmo disco do banco cobre erro de operacao e corrupcao; nao
+    cobre disco morto nem VM apagada. O transporte fica num script do host (para
+    nao por chave SSH no container nem prender o sistema a um transporte so),
+    mas script sozinho recria a falha calada: uma replicacao que parou de rodar
+    e indistinguivel de uma que funciona. Dai o recibo.
+    """
+
+    def _recibo(self, backup_dir, **campos):
+        import json as _json
+        from pathlib import Path
+
+        from servicos.backup import RECIBO_REPLICACAO
+
+        base = {
+            "terminado_em": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "ok": True,
+            "arquivos": 3,
+            "duracao_s": 4,
+            "destino": "backup@10.0.0.9",
+            "erro": "",
+        }
+        base.update(campos)
+        (Path(backup_dir) / RECIBO_REPLICACAO).write_text(
+            _json.dumps(base), encoding="utf-8"
+        )
+
+    def test_sem_configuracao_nao_alarma(self, tmp_path, monkeypatch):
+        """Alarmar por algo que a instituicao nao configurou treina a equipe a
+        ignorar o vermelho — e o vermelho e a unica defesa contra a falha
+        calada de verdade."""
+        from servicos.backup import estado_replicacao
+
+        monkeypatch.delenv("BACKUP_REPLICACAO_INTERVALO_HORAS", raising=False)
+
+        estado = estado_replicacao(tmp_path)
+
+        assert estado["configurada"] is False
+        assert estado["erro"] is None
+
+    def test_configurada_sem_recibo_e_alarme(self, tmp_path, monkeypatch):
+        """Configurou e nunca rodou: e exatamente o caso que o recibo existe
+        para expor."""
+        from servicos.backup import estado_replicacao
+
+        monkeypatch.setenv("BACKUP_REPLICACAO_INTERVALO_HORAS", "24")
+
+        estado = estado_replicacao(tmp_path)
+
+        assert estado["configurada"] is True
+        assert estado["saudavel"] is False
+        assert "nenhuma replicacao" in estado["erro"]
+
+    def test_replicacao_recente_e_bem_sucedida(self, tmp_path, monkeypatch):
+        from servicos.backup import estado_replicacao
+
+        monkeypatch.setenv("BACKUP_REPLICACAO_INTERVALO_HORAS", "24")
+        self._recibo(tmp_path)
+
+        estado = estado_replicacao(tmp_path)
+
+        assert estado["saudavel"] is True
+        assert estado["destino"] == "backup@10.0.0.9"
+        assert estado["arquivos"] == 3
+
+    def test_replicacao_que_falhou_nao_conta_como_cobertura(self, tmp_path, monkeypatch):
+        """Recibo recente com ok=false e o caso perigoso: ha registro de
+        execucao, mas nao ha copia."""
+        from servicos.backup import estado_replicacao
+
+        monkeypatch.setenv("BACKUP_REPLICACAO_INTERVALO_HORAS", "24")
+        self._recibo(tmp_path, ok=False, erro="rsync falhou: connection refused")
+
+        estado = estado_replicacao(tmp_path)
+
+        assert estado["saudavel"] is False
+        assert "connection refused" in estado["erro"]
+
+    def test_replicacao_velha_demais_deixa_de_valer(self, tmp_path, monkeypatch):
+        """O cron pode ter morrido; um recibo de duas semanas nao prova nada
+        sobre hoje."""
+        from servicos.backup import estado_replicacao
+
+        monkeypatch.setenv("BACKUP_REPLICACAO_INTERVALO_HORAS", "24")
+        antigo = datetime.now(timezone.utc) - timedelta(days=14)
+        self._recibo(tmp_path, terminado_em=antigo.strftime("%Y-%m-%dT%H:%M:%SZ"))
+
+        estado = estado_replicacao(tmp_path)
+
+        assert estado["saudavel"] is False
+        assert estado["idade_horas"] > 300
+
+    def test_tolera_atraso_de_meio_intervalo(self, tmp_path, monkeypatch):
+        """Um ciclo que atrasa nao e incidente; um ciclo que nao aconteceu e.
+        Mesma tolerancia ja usada para o backup local."""
+        from servicos.backup import estado_replicacao
+
+        monkeypatch.setenv("BACKUP_REPLICACAO_INTERVALO_HORAS", "24")
+        atrasado = datetime.now(timezone.utc) - timedelta(hours=30)
+        self._recibo(tmp_path, terminado_em=atrasado.strftime("%Y-%m-%dT%H:%M:%SZ"))
+
+        assert estado_replicacao(tmp_path)["saudavel"] is True
+
+    def test_recibo_corrompido_nao_derruba_o_status(self, tmp_path, monkeypatch):
+        """O endpoint de status e a ferramenta de diagnostico: nao pode cair
+        junto com o que ele diagnostica."""
+        from pathlib import Path
+
+        from servicos.backup import RECIBO_REPLICACAO, estado_replicacao
+
+        monkeypatch.setenv("BACKUP_REPLICACAO_INTERVALO_HORAS", "24")
+        (Path(tmp_path) / RECIBO_REPLICACAO).write_text("{isto nao e json", encoding="utf-8")
+
+        estado = estado_replicacao(tmp_path)
+
+        assert estado["saudavel"] is False
+        assert "ilegivel" in estado["erro"]
+
+    def test_recibo_nao_aparece_como_backup(self, tmp_path):
+        """O glob de backups e `backup_*.db`; o recibo comeca com ponto. Se
+        entrasse na listagem, viraria um "backup" que nao restaura."""
+        from servicos.backup import BackupService
+
+        self._recibo(tmp_path)
+        servico = BackupService(str(tmp_path / "x.db"), backup_dir=str(tmp_path))
+
+        assert servico.list_backups() == []
+
+    def test_status_expoe_a_replicacao(self, tmp_path, monkeypatch):
+        """A tela le `estado()`; a replicacao precisa chegar por ali."""
+        from servicos.backup import BackupService
+
+        monkeypatch.setenv("BACKUP_REPLICACAO_INTERVALO_HORAS", "24")
+        self._recibo(tmp_path)
+        servico = BackupService(str(tmp_path / "x.db"), backup_dir=str(tmp_path))
+
+        estado = servico.estado()
+
+        assert estado["replicacao"]["saudavel"] is True
+        # E o veredito local continua separado do externo: sao protecoes contra
+        # falhas diferentes, e um booleano so esconderia qual delas caiu.
+        assert "saudavel" in estado and estado["saudavel"] is not estado["replicacao"]
+
+    def test_le_o_formato_que_o_script_realmente_gera(self, tmp_path, monkeypatch):
+        """Contrato entre `scripts/replicar_backups.sh` e a aplicacao.
+
+        Os outros testes desta classe escrevem o recibo a mao, o que valida a
+        leitura mas nao o acordo entre as duas metades. Estes sao os bytes que
+        o script emite de fato (com a quebra de linha do heredoc no meio, que e
+        JSON valido mas ja quebraria um parser ingenuo). Se alguem mudar o
+        formato num lado, este teste cai.
+        """
+        from pathlib import Path
+
+        from servicos.backup import RECIBO_REPLICACAO, estado_replicacao
+
+        monkeypatch.setenv("BACKUP_REPLICACAO_INTERVALO_HORAS", "24")
+        agora = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        bruto = (
+            '{"terminado_em":"' + agora + '","ok":true,"arquivos":2,"duracao_s":0,\n'
+            ' "destino":"vm-secundaria","erro":""}'
+        )
+        (Path(tmp_path) / RECIBO_REPLICACAO).write_text(bruto, encoding="utf-8")
+
+        estado = estado_replicacao(tmp_path)
+
+        assert estado["saudavel"] is True
+        assert estado["destino"] == "vm-secundaria"
+        assert estado["arquivos"] == 2
+
+    def test_le_o_recibo_de_falha_que_o_script_gera(self, tmp_path, monkeypatch):
+        """O caminho de falha do script tambem grava recibo — e e o que
+        importa: uma replicacao que morre calada e o defeito a evitar."""
+        from pathlib import Path
+
+        from servicos.backup import RECIBO_REPLICACAO, estado_replicacao
+
+        monkeypatch.setenv("BACKUP_REPLICACAO_INTERVALO_HORAS", "24")
+        agora = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        bruto = (
+            '{"terminado_em":"' + agora + '","ok":false,"arquivos":0,"duracao_s":1,\n'
+            ' "destino":"vm-secundaria","erro":"rsync nao encontrado no host"}'
+        )
+        (Path(tmp_path) / RECIBO_REPLICACAO).write_text(bruto, encoding="utf-8")
+
+        estado = estado_replicacao(tmp_path)
+
+        assert estado["saudavel"] is False
+        assert estado["erro"] == "rsync nao encontrado no host"

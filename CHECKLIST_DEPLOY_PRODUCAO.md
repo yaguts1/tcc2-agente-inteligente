@@ -23,5 +23,10 @@ Passo a passo completo está em [`GUIA_BUILD_DEPLOYMENT.md`](GUIA_BUILD_DEPLOYME
 
 ## Rotina operacional
 
-- [ ] Backups copiados periodicamente para fora da VM (`docker cp`/`rsync`, ver guia)
+- [ ] Réplica dos backups para fora da VM configurada:
+  - [ ] Conta e chave SSH dedicadas criadas na VM de destino
+  - [ ] Entrada de cron do host chamando `scripts/replicar_backups.sh`
+  - [ ] `BACKUP_REPLICACAO_INTERVALO_HORAS` no `.env`, batendo com a frequência do cron
+  - [ ] Admin → Backup → "Cópia fora do servidor" mostra a última réplica
+  - [ ] Restauração ensaiada a partir de um arquivo vindo da réplica, não do diretório local
 - [ ] Atualização = `git pull` + `docker compose up -d --build` (volume persiste, não precisa recriar)
