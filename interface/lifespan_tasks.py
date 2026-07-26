@@ -137,12 +137,20 @@ def start_backup_task(app: FastAPI, db_path: str, backup_dir: str) -> asyncio.Ta
 
     async def _loop() -> None:
         logger.info("backup_scheduler_started", interval_hours=interval_hours, backup_dir=backup_dir)
+        # Backup logo na subida, ANTES do primeiro sono. O loop dormia o
+        # intervalo inteiro primeiro, entao uma instalacao reiniciada com mais
+        # frequencia que o intervalo (24h por padrao) nunca chegava a fazer
+        # backup nenhum — e foi exatamente o que se observou: o diretorio
+        # estava vazio com o agendador "ativo" desde sempre.
+        primeira = True
         while True:
-            try:
-                await asyncio.sleep(interval_hours * 3600)
-            except asyncio.CancelledError:
-                logger.info("backup_scheduler_sleep_cancelled")
-                raise
+            if not primeira:
+                try:
+                    await asyncio.sleep(interval_hours * 3600)
+                except asyncio.CancelledError:
+                    logger.info("backup_scheduler_sleep_cancelled")
+                    raise
+            primeira = False
             try:
                 await asyncio.to_thread(scheduled_backup_task, db_path, backup_dir, 7)
                 logger.info("backup_scheduler_cycle_done")
