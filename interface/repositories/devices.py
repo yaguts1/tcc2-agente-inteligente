@@ -119,3 +119,27 @@ def delete_device_event(db_path: str, event_id: int, processed_at: str | None = 
     with connect(db_path) as conn:
         cur = conn.execute("UPDATE device_events SET processed_at = ? WHERE id = ? AND processed_at IS NULL", (processed_at, int(event_id)))
         return cur.rowcount
+
+
+def resolver_paciente_por_cama_em(db_path: str, cama_id: str, ts_ms: int) -> str | None:
+    """Quem ocupava a cama no instante `ts_ms`, segundo `paciente_cama_history`.
+
+    A tabela de historico ja era mantida (start_ms/end_ms a cada troca de
+    leito), mas nada a consultava: a reconciliacao usava a ficha ATUAL do
+    paciente na cama, ou seja, o ocupante de agora, ignorando o instante da
+    leitura.
+    """
+    if not cama_id:
+        return None
+    with connect(db_path) as conn:
+        cur = conn.execute(
+            "SELECT paciente_id FROM paciente_cama_history"
+            " WHERE cama_id = ? AND start_ms <= ? AND (end_ms IS NULL OR end_ms >= ?)"
+            " ORDER BY start_ms DESC LIMIT 1",
+            (str(cama_id), int(ts_ms), int(ts_ms)),
+        )
+        row = cur.fetchone()
+        if row is None:
+            return None
+        pid = row["paciente_id"]
+        return None if pid is None else str(pid)

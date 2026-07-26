@@ -6,19 +6,27 @@ import interface.services.ingestao_service as svc
 
 
 def _evento_orfao():
+    # `ts_ms` é obrigatório: a reconciliação resolve o dono da leitura pelo
+    # INSTANTE em que ela foi feita (ver test_reconciliacao_dono_da_leitura.py).
+    # Sem timestamp não há como saber de quem é o dado, e o evento fica na fila.
     return {
         "id": 42,
         "device_id": "DEV-1",
+        "ts_ms": 1_780_000_000_000,
         "payload": {"cama_id": "C-1", "postura": "supino"},
     }
 
 
 def _preparar(monkeypatch, delete_retorno=None, delete_exc=None):
-    """Isola _do_reconcile: 1 evento órfão, paciente na cama, ingestão
-    sempre 'ok', e um `delete_device_event` controlável."""
+    """Isola _do_reconcile: 1 evento órfão, paciente resolvido, ingestão
+    sempre 'ok', e um `delete_device_event` controlável.
+
+    O que este arquivo cobre é a MARCAÇÃO do evento como processado, não a
+    resolução do paciente — por isso a resolução é fixada aqui.
+    """
     ingeridos = []
     monkeypatch.setattr(svc, "listar_device_events", lambda *a, **k: [_evento_orfao()])
-    monkeypatch.setattr(svc, "obter_ficha_por_cama", lambda *a, **k: {"paciente_id": "PAC-1"})
+    monkeypatch.setattr(svc, "resolver_paciente_por_device_em", lambda *a, **k: "PAC-1")
     monkeypatch.setattr(svc, "normalizar_payload", lambda payload, header: payload)
     monkeypatch.setattr(svc, "registrar_evento", lambda evento: ingeridos.append(evento))
 
