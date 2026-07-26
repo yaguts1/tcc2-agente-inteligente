@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, status
 
 from interface.dependencies import get_current_user
 
-from interface.api_shared import DB_PATH, erro_interno
+from interface.api_shared import DB_PATH, _check_api_rate_limit, erro_interno
 from interface.dao import (
     registrar_device,
     listar_devices,
@@ -16,7 +16,10 @@ from interface.schemas import DeviceRegisterRequest
 # Painel de dispositivos (listagem, eventos brutos, estatisticas): consumido
 # pela tela de administracao, nao pelo firmware — o ESP32 se registra pelo
 # proprio fluxo de ingestao.
-router = APIRouter(tags=["devices"], dependencies=[Depends(get_current_user)])
+router = APIRouter(
+    tags=["devices"],
+    dependencies=[Depends(get_current_user), Depends(_check_api_rate_limit)],
+)
 
 
 @router.post("/devices/register", status_code=status.HTTP_201_CREATED)

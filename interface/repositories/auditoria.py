@@ -109,18 +109,22 @@ def registrar(
         )
 
 
-def consultar(
-    db_path: str,
-    *,
-    paciente_id: str | None = None,
-    usuario: str | None = None,
-    apenas_negados: bool = False,
-    desde_ms: int | None = None,
-    ate_ms: int | None = None,
-    limit: int = 200,
-    offset: int = 0,
-) -> list[dict]:
-    """Consulta a trilha. Ordena do mais recente para o mais antigo."""
+def _filtros_sql(
+    paciente_id: str | None,
+    usuario: str | None,
+    apenas_negados: bool,
+    desde_ms: int | None,
+    ate_ms: int | None,
+) -> tuple[str, list[Any]]:
+    """Monta o WHERE compartilhado por `consultar` e `contar`.
+
+    Existe porque `contar` recebia `**filtros` e nao usava NENHUM: contava a
+    tabela inteira enquanto a docstring prometia o total dos que casam com os
+    filtros. Como nada em producao chamava `contar`, o defeito nunca apareceu
+    — e apareceria agora, ao paginar a consulta filtrada, na forma de um total
+    maior que o real. Uma unica fonte para os dois impede que voltem a
+    divergir.
+    """
     condicoes: list[str] = []
     params: list[Any] = []
     if paciente_id:
@@ -137,13 +141,29 @@ def consultar(
     if ate_ms is not None:
         condicoes.append("ts_ms <= ?")
         params.append(int(ate_ms))
+    onde = (" WHERE " + " AND ".join(condicoes)) if condicoes else ""
+    return onde, params
+
+
+def consultar(
+    db_path: str,
+    *,
+    paciente_id: str | None = None,
+    usuario: str | None = None,
+    apenas_negados: bool = False,
+    desde_ms: int | None = None,
+    ate_ms: int | None = None,
+    limit: int = 200,
+    offset: int = 0,
+) -> list[dict]:
+    """Consulta a trilha. Ordena do mais recente para o mais antigo."""
+    onde, params = _filtros_sql(paciente_id, usuario, apenas_negados, desde_ms, ate_ms)
 
     sql = (
         "SELECT id, ts, usuario, papel, acao, metodo, rota, paciente_id, status,"
         " negado, ip, duracao_ms, detalhe FROM auditoria"
     )
-    if condicoes:
-        sql += " WHERE " + " AND ".join(condicoes)
+    sql += onde
     sql += " ORDER BY ts_ms DESC, id DESC LIMIT ? OFFSET ?"
     params.extend([int(limit), int(offset)])
 
@@ -163,10 +183,26 @@ def consultar(
     return resultado
 
 
-def contar(db_path: str, **filtros: Any) -> int:
-    """Total de registros que casam com os filtros (para paginacao)."""
+def contar(
+    db_path: str,
+    *,
+    paciente_id: str | None = None,
+    usuario: str | None = None,
+    apenas_negados: bool = False,
+    desde_ms: int | None = None,
+    ate_ms: int | None = None,
+) -> int:
+    """Total de registros que casam com os filtros (para paginacao).
+
+    Os parametros eram `**filtros` e nao chegavam ao SQL: a funcao contava a
+    tabela inteira, contrariando a propria docstring. Agora sao explicitos e
+    passam pelo mesmo `_filtros_sql` que `consultar` usa.
+    """
+    onde, params = _filtros_sql(paciente_id, usuario, apenas_negados, desde_ms, ate_ms)
     with connect(db_path) as conn:
-        return int(conn.execute("SELECT COUNT(*) FROM auditoria").fetchone()[0])
+        return int(
+            conn.execute(f"SELECT COUNT(*) FROM auditoria{onde}", tuple(params)).fetchone()[0]
+        )
 
 
 def verificar_integridade(db_path: str, limit: int | None = None) -> dict:

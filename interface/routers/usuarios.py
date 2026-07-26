@@ -27,13 +27,17 @@ from passlib.hash import bcrypt
 from pydantic import BaseModel, Field
 
 from interface.api_shared import erro_interno
+from interface.api_shared import _check_api_rate_limit
 from interface.dependencies import exigir_papel, get_current_user
 from interface.repositories.sessoes import revogar_sessoes_do_usuario
 from interface.repositories.users import UserRepository
 
 logger = structlog.get_logger(__name__)
 
-router = APIRouter(tags=["usuarios"], dependencies=[Depends(exigir_papel("admin"))])
+router = APIRouter(
+    tags=["usuarios"],
+    dependencies=[Depends(exigir_papel("admin")), Depends(_check_api_rate_limit)],
+)
 # A troca da PROPRIA senha nao e operacao administrativa: qualquer usuario
 # autenticado pode (e deve poder) faze-la.
 router_proprio = APIRouter(tags=["usuarios"])

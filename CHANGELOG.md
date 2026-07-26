@@ -92,6 +92,37 @@ e este projeto adota [Semantic Versioning](https://semver.org/lang/pt-BR/).
   consumia — o aviso dizia "3 pacientes sem monitoramento, verifique o sensor"
   sem dizer qual leito conferir.
 
+- `contar()` da trilha de auditoria recebia `**filtros` e **ignorava todos**,
+  contando a tabela inteira enquanto a docstring prometia o total dos que casam
+  com os filtros. Nada em produção a chamava, então o defeito nunca apareceu —
+  e apareceria agora, ao paginar a consulta filtrada, como um total maior que o
+  real.
+- `GET /auditoria` cortava em `limit` sem dizer. Numa trilha usada para
+  responder "quem acessou os dados deste titular?" (LGPD Art. 18), resposta
+  cortada em silêncio é resposta incompleta a uma pergunta legal. Agora traz
+  `X-Total-Count`.
+
+### Adicionado — operação
+
+- Rate limit nos endpoints comuns (alertas, timeline, stats, pacientes,
+  exportação). `_check_api_rate_limit` existia e **nenhum endpoint o declarava
+  como dependência**: só login (5/min), lote (10/min) e ingestão (token bucket)
+  tinham teto. Configurável por `API_RATE_LIMIT_POR_MINUTO`, padrão folgado
+  (240/min por IP). `/healthz`, `/api/health` e `/metrics` ficam de fora — um
+  429 ali faria o monitoramento derrubar o serviço que ele vigia.
+- Limpeza periódica de tokens revogados já expirados, que só faziam a tabela
+  crescer. A rotina existia pronta e sem nenhum chamador fora dos testes.
+- `POST /api/auditoria/expurgar` (admin): a interface que faltava para o
+  expurgo da trilha. `expurgar_anteriores_a` existia com a docstring pedindo
+  "uma operação explícita, e não um expurgo automático com prazo arbitrário" —
+  mas não havia endpoint, comando nem agendamento, ou seja, explícito e
+  inalcançável. Sem `confirmar=true` devolve só a prévia de quantas linhas
+  sairiam.
+- Retenção contínua da trilha por `AUDITORIA_RETENCAO_DIAS`. **Vazio por
+  padrão**: sem política declarada nada é expurgado, e valor inválido ou não
+  positivo também não expurga — diante de configuração que não se entende, o
+  lado seguro do erro é preservar.
+
 ### Decisões registradas
 
 - Os filtros por conexão do WebSocket (`?severity=`, `?patient_id=`,

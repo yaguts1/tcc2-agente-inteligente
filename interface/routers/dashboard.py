@@ -5,7 +5,14 @@ from datetime import datetime, timezone
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 
-from interface.api_shared import DB_PATH, APP_VERSION, APP_START_TIME, DEFAULT_PERFIL, erro_interno
+from interface.api_shared import (
+    DB_PATH,
+    APP_VERSION,
+    APP_START_TIME,
+    DEFAULT_PERFIL,
+    _check_api_rate_limit,
+    erro_interno,
+)
 from interface.dao import (
     selecionar_alertas_janela,
     listar_fichas_pacientes,
@@ -75,8 +82,10 @@ def health_check() -> dict:
     }
 
 
+# `/health` fica FORA do rate limit de proposito (ver `_check_api_rate_limit`):
+# healthcheck limitado faz o monitoramento derrubar o servico que ele vigia.
 @router.get("/stats", status_code=status.HTTP_200_OK)
-def get_stats() -> dict:
+def get_stats(_: None = Depends(_check_api_rate_limit)) -> dict:
     """Retorna estatísticas do dashboard para o frontend.
     
     ✅ CORRIGIDO: Usa janela temporal CONSISTENTE de 24h para todas as métricas
@@ -143,7 +152,7 @@ def get_stats() -> dict:
 
 
 @router.get("/monitoramento", status_code=status.HTTP_200_OK)
-def status_monitoramento() -> dict:
+def status_monitoramento(_: None = Depends(_check_api_rate_limit)) -> dict:
     """Quais pacientes estão (ou não) com dados chegando.
 
     Responde à pergunta que o dashboard não conseguia responder: "não há
@@ -162,7 +171,9 @@ def status_monitoramento() -> dict:
 
 
 @router.get("/validate-repositioning/{paciente_id}", status_code=status.HTTP_200_OK)
-def validate_repositioning_contract(paciente_id: str) -> dict:
+def validate_repositioning_contract(
+    paciente_id: str, _: None = Depends(_check_api_rate_limit)
+) -> dict:
     """Valida o contrato Backend/Frontend para repouso.
     
     Valida:
@@ -263,7 +274,8 @@ def get_timeline(
     tipo: str | None = None,
     start_ms: int | None = None,
     end_ms: int | None = None,
-    limit: int = 100
+    limit: int = 100,
+    _: None = Depends(_check_api_rate_limit),
 ) -> list[dict]:
     """
     Retorna eventos da timeline com filtros opcionais.
