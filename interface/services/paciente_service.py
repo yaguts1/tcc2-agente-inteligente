@@ -135,5 +135,9 @@ class PatientService:
         )
         return self._transform_patient(atualizado)
 
+    def delete_patient(self, paciente_id: str) -> Optional[dict]:
+        """Remove o paciente. Devolve o que foi apagado, ou None se nao existia."""
+        return self.repository.delete(paciente_id)
+
     def get_patient_by_bed(self, cama_id: str) -> Optional[dict]:
         return self.repository.get_by_cama(cama_id, include_routines=True)

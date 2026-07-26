@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
-import { alertsApi, Alert, ApiException } from '../lib/api';
+import { alertsApi, Alert, ApiException, BatchResult } from '../lib/api';
 import { useWebSocketContext } from './WebSocketContext';
 import { usePolling } from '../hooks/usePolling';
 import { useCriticalAlerts, CriticalAlert } from '../hooks/useCriticalAlerts';
@@ -21,6 +21,8 @@ interface AlertsContextType {
   fetchAlerts: () => Promise<void>;
   acknowledgeAlert: (id: string) => Promise<void>;
   completeAlert: (id: string) => Promise<void>;
+  acknowledgeAlertsEmLote: (ids: string[]) => Promise<BatchResult>;
+  completeAlertsEmLote: (ids: string[]) => Promise<BatchResult>;
   criticalAlertsData: CriticalAlertsData;
 }
 
@@ -192,17 +194,83 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  /**
+   * Ação em lote pelo endpoint de lote do backend.
+   *
+   * Antes a AlertsTable fazia `Promise.all(ids.map(acknowledgeAlert))` — uma
+   * requisição por alerta. Dois problemas, ambos visíveis para o usuário:
+   *
+   * 1. `Promise.all` rejeita no PRIMEIRO erro. O 409 `transicao_invalida` é
+   *    esperado (duas pessoas agindo no mesmo alerta em telas diferentes), e
+   *    bastava um para o enfermeiro ver "erro" — enquanto os outros 19 já
+   *    tinham sido gravados. A seleção nem era limpa, e nada dizia o que
+   *    passou e o que não passou.
+   * 2. N requisições em paralelo, cada uma com seu round-trip, seu optimistic
+   *    update e seu `fetchAlerts` agendado.
+   *
+   * `/frontend/alerts/batch/*` existe exatamente para isto e responde
+   * `{processed, failed, errors[]}` — a contagem que torna a falha parcial
+   * visível. O resultado sobe para quem chamou decidir o que fazer com os
+   * que falharam.
+   */
+  const processarEmLote = async (
+    alertIds: string[],
+    operacao: 'acknowledge' | 'complete'
+  ): Promise<BatchResult> => {
+    stop(); // Pausa o polling enquanto a operação corre
+    try {
+      const resultado =
+        operacao === 'acknowledge'
+          ? await alertsApi.batchAcknowledge(alertIds)
+          : await alertsApi.batchComplete(alertIds);
+
+      const rotulo = operacao === 'acknowledge' ? 'reconhecido' : 'concluído';
+      if (resultado.failed === 0) {
+        toast.success(
+          `${resultado.processed} alerta${resultado.processed === 1 ? '' : 's'} ${rotulo}${
+            resultado.processed === 1 ? '' : 's'
+          }`
+        );
+      } else if (resultado.processed === 0) {
+        toast.error(`Nenhum alerta pôde ser ${rotulo}. Verifique e tente de novo.`);
+      } else {
+        // O caso que o Promise.all tornava invisível.
+        toast.warning(
+          `${resultado.processed} de ${alertIds.length} ${rotulo}s — ${resultado.failed} falharam e seguem selecionados`
+        );
+      }
+
+      await fetchAlerts();
+      return resultado;
+    } catch (err) {
+      await fetchAlerts(); // Reverte para o estado real do servidor
+      if (err instanceof ApiException) {
+        toast.error(err.message);
+      } else {
+        toast.error('Erro ao processar alertas em lote');
+      }
+      throw err;
+    } finally {
+      start();
+    }
+  };
+
+  const acknowledgeAlertsEmLote = (ids: string[]) => processarEmLote(ids, 'acknowledge');
+  const completeAlertsEmLote = (ids: string[]) => processarEmLote(ids, 'complete');
+
   return (
-    <AlertsContext.Provider 
-      value={{ 
-        alerts, 
-        isLoading, 
-        error, 
-        isOffline, 
-        fetchAlerts, 
-        acknowledgeAlert, 
+    <AlertsContext.Provider
+      value={{
+        alerts,
+        isLoading,
+        error,
+        isOffline,
+        fetchAlerts,
+        acknowledgeAlert,
         completeAlert,
-        criticalAlertsData 
+        acknowledgeAlertsEmLote,
+        completeAlertsEmLote,
+        criticalAlertsData
       }}
     >
       {children}

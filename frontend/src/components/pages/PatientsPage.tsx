@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { patientsApi, Patient, ApiException } from '../../lib/api';
+import { getStoredUser } from '../../lib/storage';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
@@ -30,6 +31,11 @@ export function PatientsPage() {
   const [deletingPatient, setDeletingPatient] = useState<Patient | null>(null);
   const [selectedPatientForAgenda, setSelectedPatientForAgenda] = useState<Patient | null>(null);
 
+  // Só afordância de UI: quem decide é o backend, que exige o papel `admin`
+  // vindo do JWT assinado. Esconder o botão evita oferecer uma ação que
+  // responderia 403 — não é, e não pode ser confundido com, autorização.
+  const ehAdmin = getStoredUser()?.role === 'admin';
+
   const fetchPatients = async () => {
     try {
       console.log('[PatientsPage] fetchPatients() called');
@@ -55,8 +61,19 @@ export function PatientsPage() {
 
   const handleDelete = async (patient: Patient) => {
     try {
-      await patientsApi.deletePatient(patient.id);
-      toast.success('Paciente removido com sucesso');
+      const resultado = await patientsApi.deletePatient(patient.id);
+      // O que foi apagado junto vai no toast. A exclusão leva o histórico
+      // clínico inteiro (alertas, timeline, grade) e é irreversível — um
+      // "removido com sucesso" genérico esconderia a diferença entre apagar
+      // uma ficha recém-criada e apagar meses de acompanhamento.
+      const historico =
+        (resultado?.removidos?.alertas ?? 0) +
+        (resultado?.removidos?.timeline_events ?? 0);
+      toast.success(
+        historico > 0
+          ? `Paciente removido — ${historico} registros de histórico apagados`
+          : 'Paciente removido com sucesso'
+      );
       setDeletingPatient(null);
       await fetchPatients();
     } catch (err) {
@@ -262,13 +279,16 @@ export function PatientsPage() {
                       <Edit className="w-4 h-4 mr-1" />
                       Editar
                     </Button>
-                    <Button
-                      variant="outline"
-                      size="sm"
-                      onClick={() => setDeletingPatient(patient)}
-                    >
-                      <Trash2 className="w-4 h-4" />
-                    </Button>
+                    {ehAdmin && (
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setDeletingPatient(patient)}
+                        aria-label={`Excluir ${patient.name}`}
+                      >
+                        <Trash2 className="w-4 h-4" />
+                      </Button>
+                    )}
                   </div>
                 </CardContent>
               </Card>
@@ -287,7 +307,9 @@ export function PatientsPage() {
             <AlertDialogTitle>Confirmar Exclusão</AlertDialogTitle>
             <AlertDialogDescription>
               Tem certeza que deseja remover o paciente{' '}
-              <strong>{deletingPatient?.name}</strong>? Esta ação não pode ser
+              <strong>{deletingPatient?.name}</strong>? Serão apagados também{' '}
+              <strong>todo o histórico de alertas, a linha do tempo e as
+              leituras de sensor</strong> deste paciente. Esta ação não pode ser
               desfeita.
             </AlertDialogDescription>
           </AlertDialogHeader>
