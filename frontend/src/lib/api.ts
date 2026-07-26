@@ -676,3 +676,106 @@ export const exportAlertsToPDF = async (params: ExportParams): Promise<void> => 
   link.click();
   link.remove();
 };
+
+// ---------------------------------------------------------------------------
+// Gestão de usuários (admin)
+//
+// As rotas existiam desde o commit que criou o router e nenhuma tela as
+// consumia: não havia como listar, promover, desativar ou resetar senha. Numa
+// instalação real isso significa que quem sai da equipe mantém acesso
+// indefinidamente.
+// ---------------------------------------------------------------------------
+
+export type PapelUsuario = 'admin' | 'staff';
+
+export interface Usuario {
+  username: string;
+  display_name: string | null;
+  role: PapelUsuario;
+  ativo: boolean;
+  created_at: string;
+}
+
+export const usuariosApi = {
+  listar: () => request<Usuario[]>('/api/usuarios'),
+
+  alterarPapel: (username: string, role: PapelUsuario) =>
+    request<{ ok: boolean; username: string; role: PapelUsuario }>(
+      `/api/usuarios/${encodeURIComponent(username)}/papel`,
+      { method: 'PATCH', body: JSON.stringify({ role }) }
+    ),
+
+  alterarAtivo: (username: string, ativo: boolean) =>
+    request<{ ok: boolean; username: string; ativo: boolean }>(
+      `/api/usuarios/${encodeURIComponent(username)}/ativo`,
+      { method: 'PATCH', body: JSON.stringify({ ativo }) }
+    ),
+
+  /** Reset por administrador (esquecimento, comprometimento). Derruba as
+   *  sessões do alvo — senão o JWT já emitido seguiria valendo por horas. */
+  definirSenha: (username: string, nova_senha: string) =>
+    request<{ ok: boolean; username: string }>(
+      `/api/usuarios/${encodeURIComponent(username)}/senha`,
+      { method: 'POST', body: JSON.stringify({ nova_senha }) }
+    ),
+
+  /** Troca da própria senha. Exige a atual e ENCERRA a própria sessão. */
+  trocarPropriaSenha: (senha_atual: string, nova_senha: string) =>
+    request<{ ok: boolean; sessoes_encerradas: boolean }>('/api/usuarios/eu/senha', {
+      method: 'POST',
+      body: JSON.stringify({ senha_atual, nova_senha }),
+    }),
+};
+
+// ---------------------------------------------------------------------------
+// Backup (admin)
+// ---------------------------------------------------------------------------
+
+export interface BackupItem {
+  filename: string;
+  size_mb: number;
+  created_at: string;
+  age_hours: number;
+  /** Presentes apenas na verificação. */
+  ok?: boolean;
+  motivo?: string | null;
+  linhas?: Record<string, number> | null;
+}
+
+export interface BackupStatus {
+  total: number;
+  validos: number;
+  invalidos: string[];
+  ultimo_valido: string | null;
+  idade_horas: number | null;
+  /**
+   * `false` quando o backup mais recente é pequeno demais em relação ao banco
+   * vivo — sinal de que é cópia de OUTRO banco. Já aconteceu: a suíte de
+   * testes gravava cópias do banco de teste no diretório real e a mais nova,
+   * válida e recentíssima, virava o "último backup bom".
+   */
+  proporcional: boolean;
+  /** Recente E proporcional. É o único campo que responde "estou coberto?". */
+  saudavel: boolean;
+}
+
+export const backupApi = {
+  criar: () => request<{ ok: boolean; filename: string }>('/api/admin/backup/create', {
+    method: 'POST',
+  }),
+
+  listar: () => request<{ backups: BackupItem[]; count: number }>('/api/admin/backup/list'),
+
+  status: () => request<BackupStatus>('/api/admin/backup/status'),
+
+  verificar: () =>
+    request<{ backups: BackupItem[]; invalidos: number }>('/api/admin/backup/verify', {
+      method: 'POST',
+    }),
+
+  limpar: (keepDays: number) =>
+    request<{ ok: boolean; removed_count: number }>(
+      `/api/admin/backup/cleanup?keep_days=${keepDays}`,
+      { method: 'POST' }
+    ),
+};
