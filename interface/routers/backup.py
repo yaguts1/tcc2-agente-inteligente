@@ -39,6 +39,26 @@ async def list_backups() -> dict:
     return {"backups": backups, "count": len(backups)}
 
 
+@router.get("/admin/backup/status", status_code=status.HTTP_200_OK)
+async def backup_status() -> dict:
+    """Existe um backup recente que realmente restaura?
+
+    Sem isto, a unica evidencia de que o backup funciona e uma linha de log que
+    ninguem le. O agendador podia estar falhando havia semanas sem que nada na
+    aplicacao ficasse diferente de uma instalacao saudavel — e a descoberta
+    chegaria no dia da restauracao.
+    """
+    intervalo = int(os.getenv("BACKUP_INTERVAL_HOURS", "24"))
+    return await asyncio.to_thread(backup_service.estado, intervalo)
+
+
+@router.post("/admin/backup/verify", status_code=status.HTTP_200_OK)
+async def verify_backups() -> dict:
+    """Abre cada backup e confere se da para restaurar a partir dele."""
+    resultados = await asyncio.to_thread(backup_service.verificar_todos)
+    return {"backups": resultados, "invalidos": sum(1 for r in resultados if not r["ok"])}
+
+
 @router.post("/admin/backup/cleanup", status_code=status.HTTP_200_OK)
 async def cleanup_backups(keep_days: int = 7) -> dict:
     """Remove backups mais antigos que keep_days dias."""
