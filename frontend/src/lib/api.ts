@@ -212,6 +212,21 @@ export interface AlertsResponse {
   alerts: Alert[];
 }
 
+/**
+ * Resultado de uma ação em lote sobre alertas.
+ *
+ * `processed` e `failed` são o que torna a falha PARCIAL visível: o lote pode
+ * ter sucesso para a maioria e falhar para alguns (tipicamente 409
+ * `transicao_invalida`, quando outra pessoa já agiu sobre aquele alerta).
+ * `errors[].alert_id` identifica exatamente quais precisam de nova tentativa.
+ */
+export interface BatchResult {
+  ok: boolean;
+  processed: number;
+  failed: number;
+  errors: Array<{ alert_id: string; error: string }>;
+}
+
 export const alertsApi = {
   getAlerts: (horas?: number) => {
     const url = horas
@@ -231,22 +246,16 @@ export const alertsApi = {
     }),
 
   batchAcknowledge: (alertIds: string[]) =>
-    request<{ ok: boolean; processed: number; failed: number; errors: Array<{ alert_id: string; error: string }> }>(
-      '/api/frontend/alerts/batch/acknowledge',
-      {
-        method: 'POST',
-        body: JSON.stringify({ alert_ids: alertIds }),
-      }
-    ),
+    request<BatchResult>('/api/frontend/alerts/batch/acknowledge', {
+      method: 'POST',
+      body: JSON.stringify({ alert_ids: alertIds }),
+    }),
 
   batchComplete: (alertIds: string[]) =>
-    request<{ ok: boolean; processed: number; failed: number; errors: Array<{ alert_id: string; error: string }> }>(
-      '/api/frontend/alerts/batch/complete',
-      {
-        method: 'POST',
-        body: JSON.stringify({ alert_ids: alertIds }),
-      }
-    ),
+    request<BatchResult>('/api/frontend/alerts/batch/complete', {
+      method: 'POST',
+      body: JSON.stringify({ alert_ids: alertIds }),
+    }),
 };
 
 // Timeline API
@@ -333,6 +342,20 @@ export interface SimulationResult {
  *  manter uma copia divergente da tabela. */
 export type PerfisRisco = Record<'high' | 'medium' | 'low', number>;
 
+/**
+ * Resultado de `DELETE /api/pacientes/{id}`.
+ *
+ * `removidos` traz quantas linhas saíram de cada tabela. A exclusão é
+ * irreversível e leva junto o histórico clínico (alertas, timeline, grade),
+ * então quem executa precisa ver o tamanho do que apagou — "removido com
+ * sucesso" não distingue apagar uma ficha vazia de apagar meses de histórico.
+ */
+export interface DeletePatientResult {
+  ok: boolean;
+  paciente_id: string;
+  removidos: Record<string, number>;
+}
+
 export const patientsApi = {
   getPerfisRisco: () => request<PerfisRisco>('/api/perfis-risco'),
 
@@ -353,7 +376,7 @@ export const patientsApi = {
     }),
 
   deletePatient: (id: string) =>
-    request<void>(`/api/pacientes/${id}`, {
+    request<DeletePatientResult>(`/api/pacientes/${id}`, {
       method: 'DELETE',
     }),
 

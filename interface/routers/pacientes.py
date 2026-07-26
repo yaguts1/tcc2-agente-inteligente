@@ -136,6 +136,43 @@ def atualizar_paciente_endpoint(paciente_id: str, payload: FrontendCreatePatient
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
+@router.delete(
+    "/pacientes/{paciente_id}",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(exigir_papel("admin"))],
+)
+async def remover_paciente_endpoint(paciente_id: str) -> dict:
+    """Remove um paciente e todo o rastro clinico dele.
+
+    A rota nao existia. O `PatientRepository.delete` e o `dao.remover_paciente`
+    ja estavam escritos e sem nenhum chamador, e a tela de Pacientes tinha o
+    botao "Excluir" com dialogo de confirmacao chamando `DELETE /api/pacientes/
+    {id}` — que respondia 405. O usuario confirmava a exclusao, via "Erro ao
+    remover paciente" e o paciente continuava na lista.
+
+    Restrito a admin, pelo mesmo motivo de `/simular`: e uma acao irreversivel
+    sobre o historico clinico de uma pessoa. O acesso ja entra na trilha de
+    auditoria pelo middleware (a rota casa com `/api/pacientes`), entao fica
+    registrado QUEM removeu e QUANDO.
+    """
+    try:
+        removidos = service.delete_patient(paciente_id)
+    except ValueError as exc:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail=str(exc)) from exc
+    if removidos is None:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            detail={"code": "paciente_nao_encontrado", "message": "Paciente nao encontrado"},
+        )
+    # A listagem de alertas e cacheada por 30s. Sem invalidar, os alertas do
+    # paciente recem-removido continuariam sendo servidos do cache — a tela
+    # mostraria por meio minuto alertas de alguem que ja nao existe.
+    from interface.api_shared import api_cache
+
+    await api_cache.clear()
+    return {"ok": True, "paciente_id": paciente_id, "removidos": removidos}
+
+
 class SimulationRequest(BaseModel):
     duracao_horas: int
     seed: int = 42

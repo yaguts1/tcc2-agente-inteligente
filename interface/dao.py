@@ -140,7 +140,8 @@ def atualizar_paciente(
     return PatientRepository(db_path).update(paciente_id, nome, perfil, cama_id, observacoes, rotinas)
 
 
-def remover_paciente(db_path: str, paciente_id: str) -> int:
+def remover_paciente(db_path: str, paciente_id: str) -> dict[str, int] | None:
+    """Remove o paciente e o rastro clinico dele; None se nao existia."""
     return PatientRepository(db_path).delete(paciente_id)
 
 

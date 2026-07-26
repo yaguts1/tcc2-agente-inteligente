@@ -20,7 +20,9 @@ export function DashboardPage() {
     isOffline: alertsOffline, 
     fetchAlerts, 
     acknowledgeAlert, 
-    completeAlert 
+    completeAlert,
+    acknowledgeAlertsEmLote,
+    completeAlertsEmLote
   } = useAlerts();
 
   const [stats, setStats] = useState<DashboardStats | null>(null);
@@ -326,6 +328,8 @@ export function DashboardPage() {
           })}
           onAcknowledge={handleAcknowledge}
           onComplete={handleComplete}
+          onBulkAcknowledge={acknowledgeAlertsEmLote}
+          onBulkComplete={completeAlertsEmLote}
           isLoading={isLoading}
         />
       </Card>

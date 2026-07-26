@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert } from '../../lib/api';
+import { Alert, BatchResult } from '../../lib/api';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Checkbox } from '../ui/checkbox';
@@ -31,6 +31,9 @@ interface AlertsTableProps {
   alerts: Alert[];
   onAcknowledge: (alertId: string) => void;
   onComplete: (alertId: string) => void;
+  /** Ações em lote. Usam o endpoint de lote, que reporta sucesso parcial. */
+  onBulkAcknowledge: (alertIds: string[]) => Promise<BatchResult>;
+  onBulkComplete: (alertIds: string[]) => Promise<BatchResult>;
   isLoading: boolean;
 }
 
@@ -38,6 +41,8 @@ export function AlertsTable({
   alerts,
   onAcknowledge,
   onComplete,
+  onBulkAcknowledge,
+  onBulkComplete,
   isLoading,
 }: AlertsTableProps) {
   const [confirmingComplete, setConfirmingComplete] = useState<string | null>(null);
@@ -52,6 +57,7 @@ export function AlertsTable({
     toggleAlert,
     toggleAll,
     clearSelection,
+    selecionarApenas,
   } = useAlertSelection(alerts.map((a) => a.id));
 
   const formatTime = (dateString: string) => {
@@ -166,12 +172,38 @@ export function AlertsTable({
     }
   };
 
-  // Bulk action handlers
-  const handleBulkAcknowledge = async () => {
+  // Ações em lote.
+  //
+  // Era `Promise.all(selectedIds.map(onAcknowledge))`: uma requisição por
+  // alerta e, pior, `Promise.all` REJEITA no primeiro erro. Como o 409
+  // `transicao_invalida` é um resultado esperado (outra pessoa já agiu sobre
+  // aquele alerta), bastava um para o enfermeiro ver "erro" — enquanto os
+  // demais já tinham sido gravados. A seleção ficava intacta e nada dizia
+  // quais passaram, então repetir a ação era a única saída.
+  //
+  // O endpoint de lote responde `{processed, failed, errors[]}`. Os que
+  // falharam continuam selecionados: o próximo clique repete exatamente o que
+  // faltou, em vez de reprocessar o que já deu certo.
+  const executarEmLote = async (
+    acao: (ids: string[]) => Promise<BatchResult>
+  ) => {
     setProcessingId('bulk');
     try {
-      await Promise.all(selectedIds.map((id) => onAcknowledge(id)));
-      clearSelection();
+      const resultado = await acao(selectedIds);
+      if (resultado.failed === 0) {
+        clearSelection();
+        return;
+      }
+      // O backend só inclui `alert_id` quando sabe a qual alerta o erro
+      // pertence; numa falha inesperada o item vem sem ele. Sem id não dá para
+      // saber o que refazer, então a seleção fica como está — encolhê-la
+      // sugeriria que o resto passou, que é justamente o que não se sabe.
+      const idsQueFalharam = resultado.errors
+        .map((e) => e.alert_id)
+        .filter((id): id is string => Boolean(id));
+      if (idsQueFalharam.length === resultado.failed) {
+        selecionarApenas(idsQueFalharam);
+      }
     } catch (err) {
       semRelancar(err);
     } finally {
@@ -179,17 +211,8 @@ export function AlertsTable({
     }
   };
 
-  const handleBulkComplete = async () => {
-    setProcessingId('bulk');
-    try {
-      await Promise.all(selectedIds.map((id) => onComplete(id)));
-      clearSelection();
-    } catch (err) {
-      semRelancar(err);
-    } finally {
-      setProcessingId(null);
-    }
-  };
+  const handleBulkAcknowledge = () => executarEmLote(onBulkAcknowledge);
+  const handleBulkComplete = () => executarEmLote(onBulkComplete);
 
   const sortedAlerts = [...alerts].sort((a, b) => {
     const aOverdue = isOverdue(a.nextRepositioning);

@@ -10,7 +10,7 @@ import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
 
 import { AlertsTable } from './AlertsTable';
-import type { Alert } from '../../lib/api';
+import type { Alert, BatchResult } from '../../lib/api';
 
 const AGORA = new Date('2026-01-01T12:00:00Z');
 
@@ -29,19 +29,30 @@ function alerta(over: Partial<Alert> = {}): Alert {
   };
 }
 
+const loteOk = (ids: string[]): BatchResult => ({
+  ok: true,
+  processed: ids.length,
+  failed: 0,
+  errors: [],
+});
+
 function renderizar(props: Partial<Parameters<typeof AlertsTable>[0]> = {}) {
   const onAcknowledge = vi.fn().mockResolvedValue(undefined);
   const onComplete = vi.fn().mockResolvedValue(undefined);
+  const onBulkAcknowledge = vi.fn(async (ids: string[]) => loteOk(ids));
+  const onBulkComplete = vi.fn(async (ids: string[]) => loteOk(ids));
   const utils = render(
     <AlertsTable
       alerts={[alerta()]}
       onAcknowledge={onAcknowledge}
       onComplete={onComplete}
+      onBulkAcknowledge={onBulkAcknowledge}
+      onBulkComplete={onBulkComplete}
       isLoading={false}
       {...props}
     />,
   );
-  return { ...utils, onAcknowledge, onComplete };
+  return { ...utils, onAcknowledge, onComplete, onBulkAcknowledge, onBulkComplete };
 }
 
 describe('acoes individuais', () => {
@@ -138,21 +149,68 @@ describe('alerta atrasado', () => {
 });
 
 describe('acoes em lote', () => {
-  it('aplica a acao a todos os selecionados', async () => {
-    const alertas = [
-      alerta({ id: 'PAC-0001__a', patientName: 'Maria Silva' }),
-      alerta({ id: 'PAC-0002__b', patientName: 'Joao Souza' }),
-    ];
-    const { onAcknowledge } = renderizar({ alerts: alertas });
+  const doisAlertas = () => [
+    alerta({ id: 'PAC-0001__a', patientName: 'Maria Silva' }),
+    alerta({ id: 'PAC-0002__b', patientName: 'Joao Souza' }),
+  ];
 
+  async function selecionarTodosEReconhecer() {
     await userEvent.click(screen.getByLabelText('Selecionar todos os alertas'));
     // A barra de lote aparece com os itens selecionados; o botao dela e o
     // ultimo "Reconhecer" do documento (as linhas tambem tem o seu).
     const botoes = await screen.findAllByRole('button', { name: /reconhecer/i });
     await userEvent.click(botoes[botoes.length - 1]);
+  }
+
+  it('manda UMA requisicao de lote, nao uma por alerta', async () => {
+    // Este teste afirmava `onAcknowledge` chamado 2x — ou seja, sacramentava o
+    // `Promise.all(ids.map(...))` que era o defeito. N requisicoes soltas nao
+    // tem como reportar sucesso parcial: `Promise.all` rejeita no primeiro
+    // erro e o resto do lote fica invisivel.
+    const { onBulkAcknowledge, onAcknowledge } = renderizar({ alerts: doisAlertas() });
+
+    await selecionarTodosEReconhecer();
 
     await waitFor(() => {
-      expect(onAcknowledge).toHaveBeenCalledTimes(2);
+      expect(onBulkAcknowledge).toHaveBeenCalledTimes(1);
     });
+    expect(onBulkAcknowledge).toHaveBeenCalledWith(['PAC-0001__a', 'PAC-0002__b']);
+    expect(onAcknowledge).not.toHaveBeenCalled();
+  });
+
+  it('limpa a selecao quando o lote inteiro passa', async () => {
+    renderizar({ alerts: doisAlertas() });
+
+    await selecionarTodosEReconhecer();
+
+    await waitFor(() => {
+      expect(screen.queryByText(/selecionado/i)).not.toBeInTheDocument();
+    });
+  });
+
+  it('mantem selecionados apenas os que falharam', async () => {
+    // O caso que o `Promise.all` tornava impossivel de tratar: parte do lote
+    // grava e parte nao (409 quando outra pessoa ja agiu sobre o alerta).
+    // Limpar tudo esconderia quais precisam de nova tentativa; manter tudo
+    // faria o proximo clique reprocessar o que ja deu certo.
+    const onBulkAcknowledge = vi.fn(async (): Promise<BatchResult> => ({
+      ok: false,
+      processed: 1,
+      failed: 1,
+      errors: [{ alert_id: 'PAC-0002__b', error: 'transicao_invalida' }],
+    }));
+    renderizar({ alerts: doisAlertas(), onBulkAcknowledge });
+
+    await selecionarTodosEReconhecer();
+
+    await waitFor(() => {
+      expect(screen.getByText(/1 selecionado/i)).toBeInTheDocument();
+    });
+
+    // E o que sobrou selecionado e exatamente o que falhou.
+    const linhaQueFalhou = screen.getByRole('row', { name: /Joao Souza/i });
+    expect(within(linhaQueFalhou).getByRole('checkbox')).toBeChecked();
+    const linhaQuePassou = screen.getByRole('row', { name: /Maria Silva/i });
+    expect(within(linhaQuePassou).getByRole('checkbox')).not.toBeChecked();
   });
 });
