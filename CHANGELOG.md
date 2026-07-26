@@ -102,6 +102,26 @@ e este projeto adota [Semantic Versioning](https://semver.org/lang/pt-BR/).
   cortada em silêncio é resposta incompleta a uma pergunta legal. Agora traz
   `X-Total-Count`.
 
+### Adicionado — teste de integração do protocolo do firmware
+
+- `tests/test_protocolo_firmware.py` cobre as duas coisas que o firmware não
+  consegue verificar sozinho, sem precisar de placa:
+  - **O contrato.** Cada resposta que o firmware interpreta é afirmada: o
+    formato de `/api/pacientes/cama/{cama}`, o 404 de cama vazia, o **422** que
+    dispara descarte definitivo e o `{"status":"ok","seq":N}` do WebSocket. Se
+    alguém mexer no servidor e quebrar uma dessas suposições, isto falha — em
+    vez de o defeito aparecer num ESP32 numa enfermaria. Verificado que reprova:
+    remover o `seq` do ACK ou trocar o 422 por 500 derruba os testes.
+  - **A máquina de estados.** O algoritmo do firmware é reimplementado e
+    submetido a queda de servidor, reboot e linha recusada. Nenhuma amostra
+    pode se perder ou duplicar, e o checkpoint não pode passar de uma amostra
+    não entregue.
+- `TestOsDefeitosReaisSeriamPegos` reexecuta o algoritmo **antigo** de
+  propósito e demonstra que estes testes o reprovam: o checkpoint na leitura
+  perde exatamente a amostra que estava em trânsito quando o link caiu, e o
+  limite de 5 tentativas encerra o replay sem entregar nada numa
+  indisponibilidade que o padrão (infinito) apenas atrasaria.
+
 ### Adicionado — firmware entra no fluxo de verificação
 
 - **Toolchain de build e testes para o ESP32** (`firmware/platformio.ini`). O
