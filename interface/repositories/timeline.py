@@ -3,7 +3,11 @@ from __future__ import annotations
 
 import json
 
+import structlog
+
 from interface.db_core import connect, ensure_paciente
+
+logger = structlog.get_logger(__name__)
 
 
 def inserir_timeline_event(
@@ -70,7 +74,9 @@ def selecionar_timeline(
 ) -> list[dict]:
     """Seleciona eventos da timeline aplicando filtros opcionais. Retorna lista de dicts.
 
-    Ordena por `ts_ms` ascendente.
+    Ordena por `ts_ms` DESCENDENTE — mais recente primeiro. A docstring dizia
+    "ascendente", o oposto do SQL, e a ordem importa: com `LIMIT`, e ela que
+    decide se o corte descarta os eventos antigos (o desejado) ou os recentes.
     """
     sql = "SELECT id, paciente_id, ts, ts_ms, tipo, descricao, meta, created_at FROM timeline_events"
     params: list = []
@@ -100,7 +106,18 @@ def selecionar_timeline(
         try:
             meta_parsed = None if meta_val is None else json.loads(meta_val)
         except Exception:
+            # O evento continua na lista (perde-lo seria pior), mas o `meta`
+            # ilegivel deixa rastro: antes ele virava `None` calado, e um
+            # detalhe clinico gravado no evento desaparecia sem que ninguem
+            # pudesse notar a diferenca entre "nao havia meta" e "nao deu para
+            # ler o meta".
             meta_parsed = None
+            logger.warning(
+                "timeline_meta_ilegivel",
+                evento_id=row["id"],
+                paciente_id=row["paciente_id"],
+                tipo=row["tipo"],
+            )
         results.append(
             {
                 "id": row["id"],

@@ -20,6 +20,12 @@
       environment: 'jsdom',
       globals: true,
       setupFiles: './src/setupTests.ts',
+      // Mesmo fuso que a CI do backend usa (e que o container roda). Sob
+      // TZ=UTC os testes de data passariam mesmo com o bug de conversao —
+      // meia-noite local e meia-noite UTC coincidem e o erro some.
+      env: {
+        TZ: 'America/Sao_Paulo',
+      },
     },
     server: {
       port: 3000,

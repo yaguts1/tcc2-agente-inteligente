@@ -5,12 +5,17 @@ import json
 import secrets
 from collections import defaultdict
 from datetime import datetime, timezone
-from typing import Any, AsyncIterator, Dict
+from typing import Any, Dict
 
 import structlog
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status, WebSocket, WebSocketDisconnect
 
-from interface.api_shared import DB_PATH, _aplicar_rate_limit
+from interface.api_shared import (
+    DB_PATH,
+    _aplicar_rate_limit,
+    iterar_linhas_jsonl,
+    tipo_de_conteudo_aceito,
+)
 from interface.dependencies import (
     TOKEN_DISPOSITIVO_HEADER,
     token_dispositivo_configurado,
@@ -51,24 +56,6 @@ def _ts_da_medicao(payload: Dict[str, Any], device_id: str | None) -> datetime:
         except (ValueError, TypeError):
             logger.warning("ws_ts_utc_ilegivel", device_id=device_id, ts_utc=str(bruto))
     return datetime.now(timezone.utc).replace(tzinfo=None)
-
-
-async def _iterar_jsonl(arquivo: UploadFile) -> AsyncIterator[str]:
-    buffer = ""
-    chunk_size = 64 * 1024
-    while True:
-        chunk = await arquivo.read(chunk_size)
-        if not chunk:
-            break
-        buffer += chunk.decode("utf-8")
-        while "\n" in buffer:
-            linha, buffer = buffer.split("\n", 1)
-            linha = linha.strip()
-            if linha:
-                yield linha
-    restante = buffer.strip()
-    if restante:
-        yield restante
 
 
 @router.post(
@@ -212,7 +199,7 @@ async def receber_grade(
     _: None = Depends(_aplicar_rate_limit),
     __: None = Depends(verificar_token_dispositivo),
 ) -> ApiResponse:
-    if arquivo.content_type not in {"application/jsonl", "application/octet-stream", "text/plain"}:
+    if not tipo_de_conteudo_aceito(arquivo.content_type):
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             detail={"code": "invalid_content_type", "message": "Envie arquivo JSONL valido."},
@@ -220,25 +207,47 @@ async def receber_grade(
 
     device_header = request.headers.get("X-Device-Id")
     contagem_por_paciente: Dict[str, int] = defaultdict(int)
+    dispositivos_vistos: set[str] = set()
     total_alertas = 0
     linhas_lidas = 0
-    perdidos = 0  # amostras que nao puderam ser persistidas
+    perdidos = 0  # amostras que nao puderam ser persistidas (reenviar resolve)
+    rejeitadas: list[int] = []  # linhas malformadas (reenviar NAO resolve)
 
     try:
-        async for linha in _iterar_jsonl(arquivo):
+        async for linha in iterar_linhas_jsonl(arquivo):
             linhas_lidas += 1
+            # Uma linha ruim nao aborta o lote.
+            #
+            # Antes, tanto o JSON invalido (400) quanto a estrutura invalida
+            # (422, de dentro de `normalizar_payload`) interrompiam o upload no
+            # meio. As linhas anteriores JA estavam gravadas — cada insercao
+            # abre a propria conexao e comita — mas a resposta era so um erro,
+            # sem numero algum: o cliente nao tinha como saber que metade do
+            # arquivo entrou. Reenviar o arquivo era a unica saida, e o que
+            # protegia contra a duplicacao era o cache de dedup em memoria, de
+            # 2048 entradas por dispositivo, que um restart zera.
+            #
+            # Agora a linha ruim e contada e reportada, e o resto do lote segue.
             try:
                 dados = json.loads(linha)
-            except json.JSONDecodeError as exc:
-                raise HTTPException(
-                    status.HTTP_400_BAD_REQUEST,
-                    detail={
-                        "code": "invalid_jsonl",
-                        "message": f"Linha JSON invalida na posicao {linhas_lidas}.",
-                    },
-                ) from exc
-            evento = normalizar_payload(dados, device_header)
+            except json.JSONDecodeError:
+                rejeitadas.append(linhas_lidas)
+                logger.warning(
+                    "grade_linha_json_invalida", device_id=device_header, linha=linhas_lidas
+                )
+                continue
+            try:
+                evento = normalizar_payload(dados, device_header)
+            except HTTPException:
+                rejeitadas.append(linhas_lidas)
+                logger.warning(
+                    "grade_linha_estrutura_invalida",
+                    device_id=device_header,
+                    linha=linhas_lidas,
+                )
+                continue
             evento_dict = evento.model_dump(mode="python")
+            dispositivos_vistos.add(evento.device_id)
             # ensure device registered (falha benigna: device já pode existir)
             try:
                 registrar_device(DB_PATH, evento.device_id, meta=None)
@@ -287,36 +296,76 @@ async def receber_grade(
     finally:
         await arquivo.close()
 
-    flush_eventos = flush_filtro()
-    if flush_eventos:
-        total_alertas += processar_eventos_filtrados(flush_eventos, contagem_por_paciente)
+    # Flush restrito aos dispositivos deste upload.
+    #
+    # `flush_filtro()` sem argumento esvazia o buffer de reordenacao de TODOS os
+    # dispositivos, inclusive os que estao transmitindo ao vivo por outra
+    # conexao. Aquelas amostras eram processadas antes da janela de jitter
+    # fechar, e o buffer que existia justamente para reorden-las desaparecia:
+    # a amostra seguinte, com `ts` anterior, chegava depois e ja nao tinha com o
+    # que ser reordenada.
+    for dispositivo in dispositivos_vistos:
+        flush_eventos = flush_filtro(dispositivo)
+        if flush_eventos:
+            total_alertas += processar_eventos_filtrados(flush_eventos, contagem_por_paciente)
     processados = sum(contagem_por_paciente.values())
+
+    # Nenhuma linha aproveitavel: 400, e so aqui.
+    #
+    # A regra que separa este caso do anterior e o que ficou gravado. Se alguma
+    # linha entrou, abortar com erro apagaria o unico registro de que ela
+    # entrou, e o cliente reenviaria o arquivo inteiro — por isso o lote misto
+    # responde 200 com a contagem. Quando TODAS as linhas foram rejeitadas nao
+    # ha nada gravado para preservar, e o arquivo esta errado: dizer "sucesso"
+    # e que seria mentira.
+    if linhas_lidas and len(rejeitadas) == linhas_lidas:
+        logger.warning(
+            "grade_arquivo_ilegivel", device_id=device_header, linhas=linhas_lidas
+        )
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "invalid_jsonl",
+                "message": f"Nenhuma das {linhas_lidas} linhas do arquivo pode ser lida.",
+                "linhas_rejeitadas": rejeitadas[:20],
+            },
+        )
 
     logger.info(
         "grade_processada",
         device_id=device_header,
+        linhas=linhas_lidas,
         processados=processados,
         alertas=total_alertas,
         perdidos=perdidos,
+        rejeitadas=len(rejeitadas),
     )
 
+    # O que nao entrou sai junto do resultado. Um upload parcial nao pode ser
+    # indistinguivel de um completo (o mesmo defeito que o relatorio truncado
+    # tinha), e as duas falhas pedem acoes opostas: `perdidos` e transitorio e
+    # se resolve reenviando; `rejeitadas` e malformacao e reenviar repete o erro.
+    partes = [f"{linhas_lidas} linhas lidas", f"{processados} amostras processadas"]
     if perdidos:
-        mensagem = (
-            f"{processados} amostras processadas; {perdidos} nao puderam ser "
-            "armazenadas e devem ser reenviadas."
-        )
-    else:
-        mensagem = f"{processados} amostras processadas com sucesso."
+        partes.append(f"{perdidos} nao armazenadas (reenvie)")
+    if rejeitadas:
+        partes.append(f"{len(rejeitadas)} linhas invalidas descartadas")
+    mensagem = "; ".join(partes) + "."
 
     return ApiResponse(
-        code="partial" if perdidos else "success",
+        code="partial" if (perdidos or rejeitadas) else "success",
         message=mensagem,
         ids={
             "pacientes": dict(contagem_por_paciente),
             "device_id": device_header,
+            "linhas": linhas_lidas,
             "processados": processados,
             "alertas": total_alertas,
             "perdidos": perdidos,
+            "rejeitadas": len(rejeitadas),
+            # Amostra dos numeros de linha para o operador achar o problema no
+            # arquivo, limitada para nao inflar a resposta com um lote todo ruim.
+            "linhas_rejeitadas": rejeitadas[:20],
         },
     )
 

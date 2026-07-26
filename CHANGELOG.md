@@ -38,6 +38,34 @@ e este projeto adota [Semantic Versioning](https://semver.org/lang/pt-BR/).
 - A aba de Histórico ficava sempre vazia após simular: eventos de timeline só
   eram gravados para alertas `aberto`, e a simulação em lote gera apenas
   alertas já fechados.
+- O leitor de upload JSONL (`/api/grade` e `/admin/import_alerts`) decodificava
+  cada bloco de 64 KiB isoladamente: um caractere acentuado partido na fronteira
+  do bloco derrubava o upload inteiro com 500, de forma intermitente porque
+  depende de onde o acento cai. Em português isso atinge qualquer arquivo acima
+  de 64 KiB.
+- Uma linha inválida no meio de um lote em `/api/grade` abortava o upload
+  **depois** de gravar as linhas anteriores, e a resposta era só um erro sem
+  contagem alguma — o cliente não tinha como saber que metade do arquivo havia
+  entrado. Agora a linha ruim é contada e reportada (`rejeitadas`,
+  `linhas_rejeitadas`) e o restante do lote segue; 400 só quando **nenhuma**
+  linha pôde ser lida, que é o caso em que nada ficou gravado.
+- O `flush` ao fim de um upload em lote esvaziava o buffer de reordenação de
+  **todos** os dispositivos, inclusive os que estavam transmitindo ao vivo:
+  amostras eram liberadas antes da janela de jitter fechar e perdiam o buffer
+  que serviria para reordená-las. Agora o flush é restrito aos dispositivos do
+  próprio upload.
+- `/api/grade` recusava `text/plain; charset=utf-8` (o que `curl -F` envia) e
+  `application/x-ndjson` (o media type registrado para JSONL): o `Content-Type`
+  era comparado com os parâmetros do header colados.
+- O filtro de datas da Timeline devolvia o dia **anterior** ao pedido em
+  qualquer fuso a oeste de Greenwich: `new Date('2026-07-26')` é meia-noite
+  **UTC**, e o `setHours(0,0,0,0)` seguinte zerava o dia 25 no horário de
+  Brasília. Filtrar "26/07 a 26/07" trazia o histórico do dia 25 e nenhum
+  evento do dia 26.
+- O botão "Carregar mais eventos" da Timeline comparava com 100 fixo em vez do
+  limite em vigor: depois de um clique (limite 200), uma lista de 150 eventos —
+  já o histórico completo — continuava exibindo o botão, e clicar não mudava
+  nada.
 
 ### Corrigido — segurança
 
