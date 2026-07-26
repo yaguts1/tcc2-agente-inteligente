@@ -33,6 +33,26 @@ logger = structlog.get_logger(__name__)
 router = APIRouter(tags=["ingestao"])
 
 
+def _ts_da_medicao(payload: Dict[str, Any], device_id: str | None) -> datetime:
+    """Quando a amostra foi MEDIDA, em UTC naive (a convencao do banco).
+
+    Existe porque o instante da medicao e o da chegada podem estar horas
+    afastados — o firmware repete indefinidamente enquanto a falha for
+    temporaria — e e o da MEDICAO que decide de quem e a leitura na
+    reconciliacao.
+    """
+    bruto = payload.get("ts_utc")
+    if bruto:
+        try:
+            dt = datetime.fromisoformat(str(bruto).replace("Z", "+00:00"))
+            if dt.tzinfo is not None:
+                dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+            return dt
+        except (ValueError, TypeError):
+            logger.warning("ws_ts_utc_ilegivel", device_id=device_id, ts_utc=str(bruto))
+    return datetime.now(timezone.utc).replace(tzinfo=None)
+
+
 async def _iterar_jsonl(arquivo: UploadFile) -> AsyncIterator[str]:
     buffer = ""
     chunk_size = 64 * 1024
@@ -391,7 +411,20 @@ async def websocket_eventos(websocket: WebSocket):
 
                     # Convert to EventPayload-like dict
                     if "ts_utc" not in payload:
+                        # Carimbar a amostra com a hora de CHEGADA e uma
+                        # aproximacao, nao um dado: o firmware agora repete
+                        # indefinidamente enquanto a falha for temporaria, entao
+                        # uma amostra pode chegar horas depois de medida. Sem
+                        # `ts_utc` nao ha como saber quando ela ocorreu — o
+                        # default fica, porque descartar seria pior, mas
+                        # registrado, porque distorce a linha do tempo do
+                        # paciente.
                         payload["ts_utc"] = datetime.now(timezone.utc).isoformat()
+                        logger.warning(
+                            "ws_evento_sem_ts_utc",
+                            device_id=device_id,
+                            motivo="amostra carimbada com a hora de chegada",
+                        )
                     if "amostra_ms" not in payload:
                         payload["amostra_ms"] = 1000  # default
 
@@ -433,8 +466,22 @@ async def websocket_eventos(websocket: WebSocket):
                         # entregue e a amostra sumia.
                         logger.warning("ws_event_validation_failed", error=str(e))
                         try:
-                            ts_iso = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
-                            ts_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+                            # O timestamp da MEDICAO, nao o da chegada.
+                            #
+                            # Aqui se usava `datetime.now()`, e isso desfazia a
+                            # correcao da reconciliacao: ela resolve o dono da
+                            # leitura pelo `ts_ms` do evento orfao. Com a hora de
+                            # chegada no lugar da hora da medicao, uma amostra
+                            # medida as 02:00 e recebida as 06:00 seria atribuida
+                            # a quem ocupava o leito as 06:00 — exatamente o
+                            # defeito que a resolucao por tempo eliminou.
+                            #
+                            # `payload["ts_utc"]` sempre existe neste ponto (o
+                            # bloco acima o preenche), entao o `now` so aparece
+                            # se nem isso for legivel.
+                            ts_evento = _ts_da_medicao(payload, device_id)
+                            ts_iso = ts_evento.strftime("%Y-%m-%dT%H:%M:%S")
+                            ts_ms = int(ts_evento.replace(tzinfo=timezone.utc).timestamp() * 1000)
                             inserir_device_event(DB_PATH, device_id, ts_iso, ts_ms, payload)
                             persistido = True
                         except Exception:
@@ -452,7 +499,10 @@ async def websocket_eventos(websocket: WebSocket):
 
                 except Exception as e:
                     logger.error("ws_processing_error", error=str(e))
-                    await websocket.send_json({"status": "error", "error": str(e)})
+                    # Codigo estavel, nao o texto da excecao: o firmware decide
+                    # o que fazer a partir dele, e `str(e)` muda a cada refactor
+                    # alem de expor detalhe interno. O motivo real fica no log.
+                    await websocket.send_json({"status": "error", "error": "processing_failed"})
 
             except WebSocketDisconnect:
                 break

@@ -240,11 +240,19 @@ class TestDataFormatting:
     """Testes para formatação de dados."""
     
     def test_format_date_range_no_dates(self):
-        """Teste: Formatar date range sem datas."""
+        """Sem datas, o relatório cobre 24h — e precisa dizer isso.
+
+        Este teste afirmava `'Sem limite' in result`, sacramentando o defeito:
+        o cabeçalho declarava "Período: Sem limite a Sem limite" enquanto os
+        dados vinham de uma janela de 24h. Num documento usado como evidência,
+        uma afirmação falsa sobre o próprio escopo é pior que a ausência de
+        cabeçalho.
+        """
         service = ExportService(':memory:')
         filters = ExportFilters()
         result = service._format_date_range(filters)
-        assert 'Sem limite' in result
+        assert '24 horas' in result
+        assert 'Sem limite' not in result
     
     def test_format_date_range_with_dates(self):
         """Teste: Formatar date range com datas."""
