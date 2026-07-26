@@ -26,12 +26,26 @@ BACKUP_DIR = os.getenv("UPP_BACKUP_DIR", "backups")
 backup_service = BackupService(DB_PATH, backup_dir=BACKUP_DIR)
 
 
+def _sem_caminho(item: dict) -> dict:
+    """Remove o caminho absoluto do arquivo antes de responder.
+
+    `list_backups` e `verificar_todos` carregam `path` com o caminho real no
+    disco do servidor. O `filename` e o unico identificador que o cliente
+    precisa — todas as operacoes sao por nome, dentro do diretorio configurado.
+    Devolver o caminho entrega a estrutura de diretorios do servidor ao
+    navegador, exatamente o que `erro_interno` existe para evitar no resto da
+    API. E admin, mas admin tambem nao precisa disso para operar.
+    """
+    return {chave: valor for chave, valor in item.items() if chave != "path"}
+
+
 @router.post("/admin/backup/create", status_code=status.HTTP_200_OK)
 async def create_backup() -> dict:
     """Cria um backup manual do banco de dados."""
     try:
         backup_path = await asyncio.to_thread(backup_service.create_backup)
-        return {"ok": True, "backup_path": backup_path}
+        # So o nome: ver `_sem_caminho`.
+        return {"ok": True, "filename": os.path.basename(str(backup_path))}
     except Exception as e:
         raise erro_interno("backup_failed", e) from e
 
@@ -40,7 +54,7 @@ async def create_backup() -> dict:
 async def list_backups() -> dict:
     """Lista todos os backups disponíveis."""
     backups = await asyncio.to_thread(backup_service.list_backups)
-    return {"backups": backups, "count": len(backups)}
+    return {"backups": [_sem_caminho(b) for b in backups], "count": len(backups)}
 
 
 @router.get("/admin/backup/status", status_code=status.HTTP_200_OK)
@@ -60,7 +74,10 @@ async def backup_status() -> dict:
 async def verify_backups() -> dict:
     """Abre cada backup e confere se da para restaurar a partir dele."""
     resultados = await asyncio.to_thread(backup_service.verificar_todos)
-    return {"backups": resultados, "invalidos": sum(1 for r in resultados if not r["ok"])}
+    return {
+        "backups": [_sem_caminho(r) for r in resultados],
+        "invalidos": sum(1 for r in resultados if not r["ok"]),
+    }
 
 
 @router.post("/admin/backup/cleanup", status_code=status.HTTP_200_OK)

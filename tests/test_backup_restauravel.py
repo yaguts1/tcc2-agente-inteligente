@@ -221,3 +221,35 @@ def test_falha_do_agendador_nao_e_engolida(tmp_path):
 
     with pytest.raises(BackupInvalido):
         scheduled_backup_task(str(vazio), str(tmp_path / "bkp"))
+
+
+@pytest.mark.asyncio
+async def test_endpoints_de_backup_nao_devolvem_caminho_do_disco(app_isolado, cabecalho_auth):
+    """`path` carrega o caminho real no servidor e nao serve para nada no cliente.
+
+    Todas as operacoes sao por `filename`, dentro do diretorio configurado.
+    Devolver o caminho entrega a estrutura de diretorios ao navegador — o mesmo
+    vazamento que `erro_interno` existe para evitar no resto da API. E rota de
+    admin, mas admin tambem nao precisa disso para operar.
+    """
+    from httpx import ASGITransport, AsyncClient
+
+    transport = ASGITransport(app=app_isolado.app)
+    async with AsyncClient(
+        transport=transport,
+        base_url="http://testserver",
+        headers=cabecalho_auth(username="admin1", role="admin"),
+    ) as client:
+        criado = await client.post("/api/admin/backup/create")
+        assert criado.status_code == 200, criado.text
+        assert "path" not in criado.json()
+        assert criado.json()["filename"].endswith(".db")
+        assert "/" not in criado.json()["filename"] and "\\" not in criado.json()["filename"]
+
+        listagem = await client.get("/api/admin/backup/list")
+        assert all("path" not in b for b in listagem.json()["backups"])
+
+        verificacao = await client.post("/api/admin/backup/verify")
+        assert all("path" not in b for b in verificacao.json()["backups"])
+        # O que o cliente precisa continua vindo.
+        assert all("filename" in b and "ok" in b for b in verificacao.json()["backups"])

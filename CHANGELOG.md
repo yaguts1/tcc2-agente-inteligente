@@ -123,6 +123,35 @@ e este projeto adota [Semantic Versioning](https://semver.org/lang/pt-BR/).
   positivo também não expurga — diante de configuração que não se entende, o
   lado seguro do erro é preservar.
 
+- Os endpoints de backup devolviam o **caminho absoluto** dos arquivos no
+  servidor (`path`), que o cliente não usa para nada — todas as operações são
+  por `filename`. Entregar a estrutura de diretórios ao navegador é o mesmo
+  vazamento que `erro_interno` existe para evitar no resto da API.
+
+### Adicionado — telas de administração
+
+- A página de Admin era exclusivamente reconciliação de eventos órfãos,
+  enquanto **dez rotas de gestão de usuários e de backup existiam sem nenhuma
+  tela**. Agora tem três abas:
+  - **Usuários**: listar, promover/rebaixar, desativar/reativar e redefinir
+    senha. A tela reflete as regras do backend em vez de reimplementá-las —
+    desativar em vez de excluir (excluir levaria junto a autoria registrada na
+    linha do tempo), e o aviso de que toda ação sensível encerra as sessões do
+    alvo.
+  - **Backup**: veredito de cobertura no topo (`saudavel` combina "recente" com
+    "proporcional ao banco vivo"), lista de arquivos, verificação de que cada
+    um realmente restaura, criação sob demanda e limpeza. Um arquivo sem selo é
+    exibido como "não verificado", nunca como íntegro.
+  - **Eventos órfãos**: o painel que já existia, extraído para componente.
+- Troca da própria senha, disponível a qualquer usuário no menu lateral.
+  `POST /usuarios/eu/senha` existia sem tela: trocar a própria senha só era
+  possível por `curl` ou pedindo a um administrador que a redefinisse — o que
+  expõe a senha a um terceiro. Como a troca encerra todas as sessões, o diálogo
+  avisa antes e desconecta depois, em vez de deixar o usuário recebendo 401 sem
+  entender.
+- O item "Admin" do menu passa a aparecer apenas para o papel `admin`
+  (afordância; a autorização continua no backend, pelo JWT).
+
 ### Decisões registradas
 
 - Os filtros por conexão do WebSocket (`?severity=`, `?patient_id=`,
