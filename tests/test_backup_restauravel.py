@@ -149,6 +149,31 @@ def test_backups_no_mesmo_segundo_nao_se_sobrescrevem(servico):
     assert len(servico.list_backups()) == 5
 
 
+def test_estado_denuncia_backup_de_outro_banco(banco, servico, tmp_path):
+    """Integro e recente nao basta — pode ser backup de OUTRO banco.
+
+    Aconteceu de verdade: a suite de testes gravava copias do banco de teste no
+    diretorio real, e a mais nova, valida e recentissima, virava o "ultimo
+    backup bom": 240 KB no lugar de 17 MB. O sistema informaria cobertura total
+    apontando para um banco praticamente vazio.
+    """
+    # Um backup legitimo, e depois um de um banco quase vazio, mais recente.
+    servico.create_backup()
+
+    outro = tmp_path / "outro.db"
+    criar_esquema(str(outro))
+    intruso = BackupService(str(outro), backup_dir=str(servico.backup_dir))
+    intruso.create_backup()
+
+    estado = servico.estado()
+
+    assert estado["validos"] == 2, "os dois arquivos sao SQLite integros"
+    assert estado["proporcional"] is False
+    assert estado["saudavel"] is False, (
+        "reportou cobertura saudavel apontando para um backup de outro banco"
+    )
+
+
 def test_estado_denuncia_ausencia_de_backup(servico):
     """Sem nenhum backup, o estado tem de dizer que NAO esta saudavel."""
     estado = servico.estado()
