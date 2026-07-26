@@ -143,7 +143,14 @@ def test_expurgo_respeita_o_corte(cenario):
     futuro_ms = int(datetime(2999, 1, 1, tzinfo=timezone.utc).timestamp() * 1000)
     removidos = expurgar_anteriores_a(cenario["db"], futuro_ms)
     assert removidos > 0
-    assert consultar(cenario["db"], limit=1000) == []
+
+    # Sobra exatamente o registro DO EXPURGO. Apagar o inicio da cadeia sem
+    # deixar rastro seria indistinguivel de adulteracao — a remocao precisa
+    # ficar documentada dentro da propria trilha que ela modificou.
+    restantes = consultar(cenario["db"], limit=1000)
+    assert len(restantes) == 1
+    assert restantes[0]["metodo"] == "PURGE"
+    assert restantes[0]["detalhe"]["removidas"] == removidos
 
 
 def test_falha_ao_auditar_nao_derruba_a_requisicao(cenario, monkeypatch):

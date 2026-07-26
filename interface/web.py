@@ -113,6 +113,13 @@ async def _lifespan(app: FastAPI):
             ),
         )
 
+    # Mesmo padrao do token de dispositivo: sem a chave, a trilha de auditoria
+    # continua funcionando, mas quem escreve no banco consegue recalcular a
+    # cadeia inteira depois de adultera-la. O aviso precisa aparecer.
+    from interface.auditoria_cadeia import avisar_se_sem_chave
+
+    avisar_se_sem_chave()
+
     # Tasks de background (reconciler de device_events + backup periódico).
     start_reconciler_task(app)
     start_backup_task(app, DB_PATH, BACKUP_DIR)

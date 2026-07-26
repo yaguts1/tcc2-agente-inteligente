@@ -43,3 +43,22 @@ def consultar_auditoria(
         limit=limit,
         offset=offset,
     )
+
+
+@router.get("/auditoria/integridade", status_code=status.HTTP_200_OK)
+def verificar_integridade_endpoint(
+    limit: int | None = Query(None, description="Verifica apenas as N entradas mais recentes"),
+) -> dict:
+    """A trilha foi adulterada?
+
+    Uma trilha de auditoria que ninguem consegue verificar tem o mesmo valor
+    probatorio de nao existir: quem a apresenta como evidencia precisa poder
+    demonstrar que ela nao foi editada depois do fato.
+
+    `integra: false` distingue conteudo alterado (alguem editou um registro) de
+    elo quebrado (alguem apagou, inseriu ou reordenou linhas), e aponta o `id`
+    de cada ocorrencia.
+    """
+    from interface.repositories.auditoria import verificar_integridade
+
+    return verificar_integridade(_db(), limit)
