@@ -18,6 +18,11 @@ import {
 export function OrphanEventsPanel() {
   const [bedStats, setBedStats] = useState<BedStats[]>([]);
   const [totalOrphans, setTotalOrphans] = useState(0);
+  // Órfãos que a reconciliação POR LEITO não alcança (payload sem `cama_id`).
+  // Sem separá-los, o operador reconcilia todos os leitos e o contador não
+  // zera — sem nada na tela dizendo por quê.
+  const [semLeito, setSemLeito] = useState(0);
+  const [amostraTruncada, setAmostraTruncada] = useState(false);
   const [isLoading, setIsLoading] = useState(true);
   const [reconcilingBed, setReconcilingBed] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -27,6 +32,8 @@ export function OrphanEventsPanel() {
       const data = await deviceEventsApi.getStats();
       setBedStats(data.beds);
       setTotalOrphans(data.total_orphans);
+      setSemLeito(data.orfaos_sem_leito ?? 0);
+      setAmostraTruncada(data.amostra_truncada ?? false);
       setError(null);
     } catch (err) {
       if (err instanceof ApiException) {
@@ -124,8 +131,25 @@ export function OrphanEventsPanel() {
           <AlertCircle className="h-4 w-4" />
           <AlertTitle>Eventos Órfãos Detectados</AlertTitle>
           <AlertDescription>
-            Há <strong>{totalOrphans}</strong> eventos de {bedStats.length} leito(s) aguardando reconciliação.
+            Há <strong>{totalOrphans}</strong> evento(s) aguardando reconciliação
+            {bedStats.length > 0 && <>, de {bedStats.length} leito(s)</>}.
             Estes eventos foram recebidos de ESP32s em leitos sem paciente cadastrado.
+            {semLeito > 0 && (
+              <>
+                {' '}
+                <strong>{semLeito}</strong> não trazem leito no payload e{' '}
+                <strong>não são resolvidos pelos botões abaixo</strong> — dependem da
+                reconciliação por dispositivo, que a tarefa de background executa
+                periodicamente.
+              </>
+            )}
+            {amostraTruncada && (
+              <>
+                {' '}
+                O agrupamento por leito abaixo foi calculado sobre uma amostra parcial:
+                há mais eventos do que cabe numa consulta.
+              </>
+            )}
           </AlertDescription>
         </Alert>
       )}

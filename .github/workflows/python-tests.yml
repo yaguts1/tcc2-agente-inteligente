@@ -5,6 +5,11 @@ on:
     branches:
       - main
       - 'feature/**'
+      # `fix/**` ficava de fora: um push numa branch de correção só passava
+      # pela CI quando (e se) alguém abrisse o PR. Como as correções é que
+      # mexem em código já em uso, era justamente onde o retorno rápido faz
+      # mais falta.
+      - 'fix/**'
   pull_request:
     branches:
       - main

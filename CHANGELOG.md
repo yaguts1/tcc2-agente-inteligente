@@ -146,6 +146,18 @@ e este projeto adota [Semantic Versioning](https://semver.org/lang/pt-BR/).
   coberto?" julgar a idade do último backup contra um intervalo que não é o que
   o agendador usa.
 
+- O painel de eventos órfãos exibia um total que os próprios botões dele não
+  conseguiam zerar. `total_orphans` era `len(events)` — a contagem da amostra
+  já limitada a 10.000 — e incluía eventos sem `cama_id` no payload, que não
+  aparecem em leito nenhum. O operador reconciliava todos os leitos, o número
+  não zerava e nada explicava por quê. Agora o total vem de um `COUNT(*)`, os
+  órfãos sem leito são reportados à parte e a tela avisa quando o agrupamento
+  foi calculado sobre amostra parcial.
+- `except Exception: pass` na resolução do paciente do leito fazia a tela
+  exibir "Leito vazio" e instruir a "cadastrar um paciente neste leito" quando
+  o paciente existia e a consulta é que havia falhado — conselho errado por
+  falha silenciosa.
+
 ### Adicionado — telas de administração
 
 - A página de Admin era exclusivamente reconciliação de eventos órfãos,

@@ -533,7 +533,19 @@ export interface BedStats {
 }
 
 export interface DeviceEventsStats {
+  /** TODOS os órfãos pendentes, inclusive os que nenhum leito alcança. */
   total_orphans: number;
+  /** Os que a reconciliação por leito consegue resolver (soma de `beds`). */
+  orfaos_com_leito: number;
+  /**
+   * Órfãos sem `cama_id` no payload. Nenhum botão desta tela os resolve — eles
+   * dependem da reconciliação por dispositivo/tempo. Antes entravam no
+   * `total_orphans` sem aparecer em leito nenhum, então o operador reconciliava
+   * tudo e o número não zerava, sem explicação.
+   */
+  orfaos_sem_leito: number;
+  /** O agrupamento por leito foi calculado sobre uma amostra cortada. */
+  amostra_truncada: boolean;
   beds: BedStats[];
 }
 
