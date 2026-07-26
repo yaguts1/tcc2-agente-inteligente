@@ -13,6 +13,12 @@ services:
       - ALLOWED_ORIGINS=${ALLOWED_ORIGINS:-}
       - UPP_ADMIN_PASS=${UPP_ADMIN_PASS:-}
       - UPP_ADMIN_TOKEN=${UPP_ADMIN_TOKEN:-}
+      # Estavam documentados no .env.example e NAO chegavam ao container: quem
+      # preenchesse o .env acreditaria ter ligado a autenticacao dos ESP32 e a
+      # assinatura da trilha de auditoria, e as duas seguiriam desligadas, com
+      # o aviso de startup passando por ruido.
+      - UPP_DEVICE_TOKEN=${UPP_DEVICE_TOKEN:-}
+      - UPP_AUDIT_KEY=${UPP_AUDIT_KEY:-}
     ports:
       - "8000:8000"
     volumes:

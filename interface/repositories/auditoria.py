@@ -15,6 +15,7 @@ from typing import Any
 
 import structlog
 
+from interface import auditoria_cadeia as cadeia
 from interface.db_core import connect
 from interface.tempo import agora_utc_naive
 
@@ -45,27 +46,57 @@ def registrar(
     # LOCAL, o que deslocaria o ts_ms pelo offset do fuso (o mesmo defeito que
     # ja corrompeu a correlacao sensor-paciente). Marcar como UTC antes.
     ts_ms = int(agora.replace(tzinfo=timezone.utc).timestamp() * 1000)
+    registro = {
+        "ts": agora.strftime("%Y-%m-%dT%H:%M:%S"),
+        "ts_ms": ts_ms,
+        "usuario": usuario,
+        "papel": papel,
+        "acao": f"{metodo} {rota}",
+        "metodo": metodo,
+        "rota": rota,
+        "paciente_id": paciente_id,
+        "status": int(status),
+        "negado": 1 if status in (401, 403) else 0,
+        "ip": ip,
+        "duracao_ms": duracao_ms,
+        "detalhe": json.dumps(detalhe, ensure_ascii=False) if detalhe else None,
+    }
     try:
         with connect(db_path) as conn:
+            # BEGIN IMMEDIATE pega o lock de escrita ANTES de ler o ultimo elo.
+            # Sem isso, duas requisicoes concorrentes leriam o mesmo elo anterior
+            # e gravariam entradas irmas em vez de encadeadas — a verificacao
+            # acusaria adulteracao onde houve apenas concorrencia, e um alarme
+            # falso numa trilha de auditoria destroi a confianca nela tao bem
+            # quanto nao ter trilha.
+            conn.execute("BEGIN IMMEDIATE")
+            ultimo = conn.execute(
+                "SELECT hash FROM auditoria WHERE hash IS NOT NULL ORDER BY id DESC LIMIT 1"
+            ).fetchone()
+            hash_anterior = ultimo["hash"] if ultimo else cadeia.GENESE
+            registro_hash = cadeia.calcular(registro, hash_anterior)
+
             conn.execute(
                 "INSERT INTO auditoria"
                 " (ts, ts_ms, usuario, papel, acao, metodo, rota, paciente_id,"
-                "  status, negado, ip, duracao_ms, detalhe)"
-                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
+                "  status, negado, ip, duracao_ms, detalhe, hash_anterior, hash)"
+                " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
                 (
-                    agora.strftime("%Y-%m-%dT%H:%M:%S"),
-                    ts_ms,
-                    usuario,
-                    papel,
-                    f"{metodo} {rota}",
-                    metodo,
-                    rota,
-                    paciente_id,
-                    int(status),
-                    1 if status in (401, 403) else 0,
-                    ip,
-                    duracao_ms,
-                    json.dumps(detalhe, ensure_ascii=False) if detalhe else None,
+                    registro["ts"],
+                    registro["ts_ms"],
+                    registro["usuario"],
+                    registro["papel"],
+                    registro["acao"],
+                    registro["metodo"],
+                    registro["rota"],
+                    registro["paciente_id"],
+                    registro["status"],
+                    registro["negado"],
+                    registro["ip"],
+                    registro["duracao_ms"],
+                    registro["detalhe"],
+                    hash_anterior,
+                    registro_hash,
                 ),
             )
     except Exception:
@@ -138,13 +169,51 @@ def contar(db_path: str, **filtros: Any) -> int:
         return int(conn.execute("SELECT COUNT(*) FROM auditoria").fetchone()[0])
 
 
+def verificar_integridade(db_path: str, limit: int | None = None) -> dict:
+    """Percorre a cadeia e diz se a trilha foi adulterada.
+
+    Le em ordem de `id` crescente, que e a ordem em que a cadeia foi montada.
+    `limit` restringe as entradas MAIS RECENTES (util para uma checagem rapida
+    numa trilha grande); sem ele, verifica tudo.
+    """
+    sql = (
+        "SELECT id, ts, ts_ms, usuario, papel, acao, metodo, rota, paciente_id,"
+        " status, negado, ip, duracao_ms, detalhe, hash_anterior, hash FROM auditoria"
+    )
+    with connect(db_path) as conn:
+        if limit:
+            linhas = conn.execute(
+                f"SELECT * FROM ({sql} ORDER BY id DESC LIMIT ?) ORDER BY id ASC",
+                (int(limit),),
+            ).fetchall()
+        else:
+            linhas = conn.execute(sql + " ORDER BY id ASC").fetchall()
+
+    return cadeia.verificar([dict(linha) for linha in linhas])
+
+
 def expurgar_anteriores_a(db_path: str, ts_ms: int) -> int:
     """Remove entradas anteriores ao instante dado.
 
     A LGPD pede que o dado nao seja mantido alem do necessario (Art. 15/16), mas
     a retencao adequada depende de politica da instituicao — por isso e uma
     operacao explicita, e nao um expurgo automatico com prazo arbitrario.
+
+    O expurgo apaga o inicio da cadeia, o que e indistinguivel de uma
+    adulteracao se ninguem registrar que aconteceu. Por isso ele proprio vira
+    uma entrada da trilha: a remocao fica documentada DENTRO do que ela
+    modificou, e quem verificar depois ve quantas linhas sairam e ate quando.
     """
     with connect(db_path) as conn:
         cur = conn.execute("DELETE FROM auditoria WHERE ts_ms < ?", (int(ts_ms),))
-        return int(cur.rowcount or 0)
+        removidas = int(cur.rowcount or 0)
+
+    if removidas:
+        registrar(
+            db_path,
+            metodo="PURGE",
+            rota="/auditoria",
+            status=200,
+            detalhe={"removidas": removidas, "anteriores_a_ms": int(ts_ms)},
+        )
+    return removidas
