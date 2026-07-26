@@ -18,6 +18,13 @@ interface AlertsContextType {
   isLoading: boolean;
   error: string | null;
   isOffline: boolean;
+  /**
+   * Quantos alertas o servidor tinha, quando isso é maior do que coube na
+   * resposta. `null` quando a lista está completa. Existe para a tela poder
+   * dizer que está mostrando parte — filtrar em memória sobre uma lista
+   * truncada esconderia paciente atrasado sem nenhum sinal.
+   */
+  totalTruncadoEm: number | null;
   fetchAlerts: () => Promise<void>;
   acknowledgeAlert: (id: string) => Promise<void>;
   completeAlert: (id: string) => Promise<void>;
@@ -45,6 +52,7 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
   const [isLoading, setIsLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isOffline, setIsOffline] = useState(false);
+  const [totalTruncadoEm, setTotalTruncadoEm] = useState<number | null>(null);
 
   const { isConnected: wsConnected, subscribe } = useWebSocketContext();
 
@@ -53,8 +61,9 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
     if (alerts.length === 0) setIsLoading(true);
     
     try {
-      const data = await alertsApi.getAlerts();
-      setAlerts(data);
+      const pagina = await alertsApi.getAlerts();
+      setAlerts(pagina.itens);
+      setTotalTruncadoEm(pagina.truncado ? pagina.total : null);
       setError(null);
       setIsOffline(false);
     } catch (err) {
@@ -265,6 +274,7 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
         isLoading,
         error,
         isOffline,
+        totalTruncadoEm,
         fetchAlerts,
         acknowledgeAlert,
         completeAlert,

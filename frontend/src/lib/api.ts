@@ -62,9 +62,15 @@ async function handleResponse<T>(response: Response): Promise<T> {
   return response.json();
 }
 
+type RequestOptions = RequestInit & {
+  responseType?: 'json' | 'blob';
+  /** Recebe os cabeçalhos da resposta antes do corpo ser lido. */
+  onHeaders?: (headers: Headers) => void;
+};
+
 async function request<T>(
   url: string,
-  options: RequestInit & { responseType?: 'json' | 'blob' } = {}
+  options: RequestOptions = {}
 ): Promise<T> {
   // DEBUG: log requests to help diagnose why calls to /api/* might not reach backend
   try {
@@ -109,7 +115,7 @@ async function request<T>(
     }
   }
 
-  const { responseType, ...fetchOptions } = options;
+  const { responseType, onHeaders, ...fetchOptions } = options;
 
   const response = await fetch(finalUrl, {
     // rely on same-origin behavior and Vite proxy in dev; use same-origin
@@ -119,6 +125,8 @@ async function request<T>(
     ...fetchOptions,
   });
 
+  onHeaders?.(response.headers);
+
   if (responseType === 'blob') {
     if (!response.ok) {
       throw new ApiException(response.statusText || 'Erro no download', response.status);
@@ -127,6 +135,27 @@ async function request<T>(
   }
 
   return handleResponse<T>(response);
+}
+
+/**
+ * Como `request`, mas devolve também os cabeçalhos da resposta.
+ *
+ * Existe para metadados de paginação (`X-Total-Count`): o corpo continua sendo
+ * o array puro — que é o contrato de `/frontend/alerts` — e o total, que a
+ * lista sozinha não consegue expressar, viaja no cabeçalho.
+ */
+async function requestComHeaders<T>(
+  url: string,
+  options: RequestOptions = {}
+): Promise<{ dados: T; headers: Headers }> {
+  let headers = new Headers();
+  const dados = await request<T>(url, {
+    ...options,
+    onHeaders: (h) => {
+      headers = h;
+    },
+  });
+  return { dados, headers };
 }
 
 // Auth API
@@ -227,12 +256,41 @@ export interface BatchResult {
   errors: Array<{ alert_id: string; error: string }>;
 }
 
+/**
+ * Teto de alertas pedidos numa carga do dashboard.
+ *
+ * O dashboard filtra em MEMÓRIA (FilterBar), então o que não vier na resposta
+ * não existe para o filtro. Com o default do backend (100) uma enfermaria
+ * movimentada esconderia alertas sem nenhum sinal na tela. 500 cobre com folga
+ * uma unidade real; se ainda assim estourar, `truncado` acende o aviso em vez
+ * de a lista mentir por omissão.
+ */
+const TETO_DE_ALERTAS = 500;
+
+export interface PaginaDeAlertas {
+  itens: Alert[];
+  /** Quantos casam com os filtros no servidor, antes do corte por `limit`. */
+  total: number;
+  /** `true` quando o servidor tinha mais do que coube na resposta. */
+  truncado: boolean;
+}
+
 export const alertsApi = {
-  getAlerts: (horas?: number) => {
-    const url = horas
-      ? `/api/frontend/alerts?horas=${horas}`
-      : '/api/frontend/alerts';
-    return request<Alert[]>(url);
+  getAlerts: async (horas?: number): Promise<PaginaDeAlertas> => {
+    const params = new URLSearchParams({ limit: String(TETO_DE_ALERTAS) });
+    if (horas) params.set('horas', String(horas));
+
+    const { dados, headers } = await requestComHeaders<Alert[]>(
+      `/api/frontend/alerts?${params.toString()}`
+    );
+    // Sem o header (versão antiga do backend) assume-se o tamanho da lista:
+    // não inventa truncamento que não se pode comprovar.
+    const total = Number(headers.get('X-Total-Count') ?? dados.length);
+    return {
+      itens: dados,
+      total: Number.isFinite(total) ? total : dados.length,
+      truncado: Number.isFinite(total) && total > dados.length,
+    };
   },
 
   acknowledge: (id: string) =>
@@ -522,6 +580,39 @@ export interface DashboardStats {
 
 export const statsApi = {
   getStats: () => request<DashboardStats>('/api/stats'),
+};
+
+/**
+ * Situação de monitoramento de um paciente com leito atribuído.
+ *
+ * `/api/stats` já traz a CONTAGEM de pacientes sem dados, e o dashboard exibe
+ * o aviso. O que faltava era o detalhe: quem. Sem ele, o aviso diz "3
+ * pacientes sem monitoramento — verifique o sensor" e não há como descobrir
+ * quais leitos checar sem ir ao log do servidor.
+ */
+export interface StatusMonitoramento {
+  paciente_id: string;
+  nome: string | null;
+  cama_id: string | null;
+  ultima_leitura: string | null;
+  minutos_sem_dados: number | null;
+  monitorado: boolean;
+  /** Distingue "o sensor parou" de "nunca chegou leitura" (erro de instalação
+   *  ou de vínculo device↔leito, cuja ação corretiva é outra). */
+  nunca_recebeu_dados: boolean;
+}
+
+export interface MonitoramentoResponse {
+  limite_min: number;
+  total_com_leito: number;
+  monitorados: number;
+  sem_monitoramento: number;
+  pacientes_sem_monitoramento: StatusMonitoramento[];
+  pacientes: StatusMonitoramento[];
+}
+
+export const monitoramentoApi = {
+  getStatus: () => request<MonitoramentoResponse>('/api/monitoramento'),
 };
 
 // Export API

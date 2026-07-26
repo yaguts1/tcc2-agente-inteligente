@@ -7,7 +7,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta, timezone
-from typing import List, Literal
+from typing import List, Literal, NamedTuple
 
 import structlog
 
@@ -52,6 +52,19 @@ _OPERACOES = {
 }
 
 
+class PaginaDeAlertas(NamedTuple):
+    """Uma página de alertas e QUANTOS existem no total com aqueles filtros.
+
+    O `total` existe porque a lista sozinha mente por omissão: 100 alertas
+    devolvidos com `limit=100` são indistinguíveis de "há exatamente 100". O
+    dashboard filtra em memória sobre o que recebeu, então um corte invisível
+    esconde paciente atrasado sem nada na tela indicar que houve corte.
+    """
+
+    itens: list[dict]
+    total: int
+
+
 async def listar_alertas_frontend(
     horas: int | None = 24,
     risk_level: str | None = None,
@@ -60,12 +73,27 @@ async def listar_alertas_frontend(
     limit: int = 100,
     offset: int = 0,
 ) -> list[dict]:
-    """Busca alertas e retorna no formato consumido pelo frontend React,
-    com cache de 30s por combinação de filtros."""
+    """Apenas os itens da página. Ver `listar_alertas_frontend_paginado`."""
+    pagina = await listar_alertas_frontend_paginado(
+        horas, risk_level, status_filter, room, limit, offset
+    )
+    return pagina.itens
+
+
+async def listar_alertas_frontend_paginado(
+    horas: int | None = 24,
+    risk_level: str | None = None,
+    status_filter: str | None = None,
+    room: str | None = None,
+    limit: int = 100,
+    offset: int = 0,
+) -> PaginaDeAlertas:
+    """Busca alertas no formato consumido pelo frontend React, com o total
+    correspondente aos filtros e cache de 30s por combinação."""
     cache_key = f"alerts:{horas}:{risk_level}:{status_filter}:{room}:{limit}:{offset}"
     cached_result = await api_cache.get(cache_key)
     if cached_result is not None:
-        return cached_result
+        return PaginaDeAlertas(itens=cached_result["itens"], total=cached_result["total"])
 
     # Estrutura em 3 queries de custo fixo, independentemente do numero de
     # alertas. Antes eram duas consultas POR ALERTA (obter_ficha_paciente e
@@ -107,6 +135,13 @@ async def listar_alertas_frontend(
             c for c in candidatos
             if alvo in _quarto_e_leito(c[0].get("paciente_id"))[1].lower()
         ]
+
+    # Quantos alertas casam com os filtros, independentemente da pagina. E o
+    # numero que torna o corte VISIVEL: sem ele, uma lista de 100 alertas e
+    # indistinguivel de "existem exatamente 100" — e o dashboard filtra em
+    # memoria sobre o que recebeu, entao um corte silencioso esconde paciente
+    # atrasado do enfermeiro sem nenhum sinal na tela.
+    total = len(candidatos)
 
     # 3) Pagina ANTES de buscar a timeline: so o que vai ser devolvido custa I/O.
     pagina = candidatos[offset: offset + limit]
@@ -165,8 +200,8 @@ async def listar_alertas_frontend(
             }
         )
 
-    await api_cache.set(cache_key, results, ttl_seconds=30)
-    return results
+    await api_cache.set(cache_key, {"itens": results, "total": total}, ttl_seconds=30)
+    return PaginaDeAlertas(itens=results, total=total)
 
 
 def _montar_payload_broadcast(alert_id: str, paciente_id: str, ws_status: str) -> dict:

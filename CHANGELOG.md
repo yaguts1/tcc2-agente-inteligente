@@ -67,6 +67,41 @@ e este projeto adota [Semantic Versioning](https://semver.org/lang/pt-BR/).
   já o histórico completo — continuava exibindo o botão, e clicar não mudava
   nada.
 
+- O botão "Excluir" da tela de Pacientes chamava `DELETE /api/pacientes/{id}`,
+  rota que nunca existiu: respondia **405**, o usuário via "Erro ao remover
+  paciente" e o paciente continuava na lista. `PatientRepository.delete` e
+  `dao.remover_paciente` já estavam escritos e sem nenhum chamador. A cascata
+  também estava incompleta — deixava `alertas` para trás, e o alerta órfão
+  voltava ao dashboard rotulado com o ID cru do paciente, sem quarto.
+- A ação em lote de alertas fazia `Promise.all` com uma requisição por alerta,
+  ignorando `/frontend/alerts/batch/*`. Como `Promise.all` rejeita no primeiro
+  erro e o 409 `transicao_invalida` é esperado, bastava um alerta já
+  reconhecido por outra pessoa para o enfermeiro ver "erro" — enquanto os
+  demais já tinham sido gravados, sem nada na tela dizendo quais.
+- `GET /frontend/alerts` cortava em `limit` sem dizer: o dashboard filtra em
+  memória sobre o que recebeu, então um paciente atrasado podia ficar fora da
+  tela sem sinal algum. Agora o total vai no cabeçalho `X-Total-Count` e a tela
+  avisa quando está exibindo parte.
+
+### Adicionado — visibilidade
+
+- O aviso de monitoramento interrompido no dashboard passa a listar **quais**
+  pacientes estão sem dados, com leito e minutos em silêncio, separando "nunca
+  recebeu leitura" (erro de instalação ou de vínculo device↔leito) de "o sensor
+  parou". A informação já existia em `/api/monitoramento` e nenhuma tela a
+  consumia — o aviso dizia "3 pacientes sem monitoramento, verifique o sensor"
+  sem dizer qual leito conferir.
+
+### Decisões registradas
+
+- Os filtros por conexão do WebSocket (`?severity=`, `?patient_id=`,
+  `?alert_types=`) continuam **sem uso pelo frontend, de propósito**: o React
+  abre uma única conexão compartilhada entre o dashboard e a tela de Histórico,
+  e filtrar ali silenciaria os outros consumidores. A capacidade fica para uma
+  eventual tela por leito, que deve abrir uma segunda conexão. Documentado no
+  endpoint e no `useWebSocket`, com testes cobrindo a conexão sem filtro (a que
+  a aplicação usa) e a integridade dos campos que o filtro testa.
+
 ### Corrigido — segurança
 
 - `UPP_ADMIN_PASS` autenticava **qualquer** nome de usuário: o ramo só roda
