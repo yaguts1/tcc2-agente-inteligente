@@ -102,6 +102,19 @@ e este projeto adota [Semantic Versioning](https://semver.org/lang/pt-BR/).
   cortada em silêncio é resposta incompleta a uma pergunta legal. Agora traz
   `X-Total-Count`.
 
+### Adicionado — contrato de API versionado
+
+- `openapi/openapi.json` passa a ser versionado (48 rotas, 22 schemas), para
+  quem precisa integrar sem subir o sistema: gerar cliente, ou revisar mudança
+  de contrato no diff de um PR, que antes era invisível.
+  - Publicado **sem** o `APP_PREFIX`. O prefixo é detalhe de implantação (em
+    produção a app sobe sob `/TCC`); sem fixá-lo, o arquivo dependeria do
+    ambiente de quem rodou o comando.
+  - `tests/test_openapi_versionado.py` falha se o arquivo divergir do código,
+    apontando as rotas que entraram ou saíram. Sem essa conferência, o spec
+    congelaria no dia em que foi gerado e passaria a descrever uma API que já
+    mudou — em contrato, mais caro que não ter arquivo nenhum.
+
 ### Adicionado — réplica externa de backup
 
 - Réplica dos backups para **fora da VM**, por `scripts/replicar_backups.sh`

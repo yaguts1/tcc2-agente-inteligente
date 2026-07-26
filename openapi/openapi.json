@@ -1,0 +1,3513 @@
+{
+  "components": {
+    "schemas": {
+      "AgendaCreate": {
+        "description": "Criação de agenda.",
+        "properties": {
+          "data_fim": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "YYYY-MM-DD",
+            "title": "Data Fim"
+          },
+          "data_inicio": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "YYYY-MM-DD",
+            "title": "Data Inicio"
+          },
+          "descricao": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Descricao"
+          },
+          "dias_semana": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "[0-6] para Seg-Dom",
+            "title": "Dias Semana"
+          },
+          "hora_fim": {
+            "default": "23:59",
+            "title": "Hora Fim",
+            "type": "string"
+          },
+          "hora_inicio": {
+            "default": "00:00",
+            "title": "Hora Inicio",
+            "type": "string"
+          },
+          "modo": {
+            "default": "suprimir",
+            "description": "suprimir|reduzir|monitorar",
+            "title": "Modo",
+            "type": "string"
+          },
+          "reducao_janela_min": {
+            "anyOf": [
+              {
+                "maximum": 60.0,
+                "minimum": 5.0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reducao Janela Min"
+          },
+          "tipo": {
+            "maxLength": 50,
+            "minLength": 1,
+            "title": "Tipo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tipo"
+        ],
+        "title": "AgendaCreate",
+        "type": "object"
+      },
+      "AgendaResponse": {
+        "description": "Resposta de agenda.",
+        "properties": {
+          "ativo": {
+            "title": "Ativo",
+            "type": "boolean"
+          },
+          "created_at": {
+            "title": "Created At",
+            "type": "string"
+          },
+          "data_fim": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Fim"
+          },
+          "data_inicio": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Inicio"
+          },
+          "descricao": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Descricao"
+          },
+          "dias_semana": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dias Semana"
+          },
+          "hora_fim": {
+            "title": "Hora Fim",
+            "type": "string"
+          },
+          "hora_inicio": {
+            "title": "Hora Inicio",
+            "type": "string"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "modo": {
+            "title": "Modo",
+            "type": "string"
+          },
+          "paciente_id": {
+            "title": "Paciente Id",
+            "type": "string"
+          },
+          "reducao_janela_min": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reducao Janela Min"
+          },
+          "tipo": {
+            "title": "Tipo",
+            "type": "string"
+          },
+          "updated_at": {
+            "title": "Updated At",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "paciente_id",
+          "tipo",
+          "descricao",
+          "dias_semana",
+          "hora_inicio",
+          "hora_fim",
+          "data_inicio",
+          "data_fim",
+          "modo",
+          "reducao_janela_min",
+          "ativo",
+          "created_at",
+          "updated_at"
+        ],
+        "title": "AgendaResponse",
+        "type": "object"
+      },
+      "AgendaUpdate": {
+        "description": "Atualização de agenda (campos opcionais).\n\nOs mesmos validadores do cadastro: sem eles dava para criar uma agenda\nvalida e depois deixa-la inerte por um PATCH — `modo=\"supprimir\"` (com o\nerro de digitacao) e aceito, nao casa com nenhum modo conhecido e a\nsupressao simplesmente para de acontecer, sem erro em lugar nenhum.",
+        "properties": {
+          "ativo": {
+            "anyOf": [
+              {
+                "type": "boolean"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ativo"
+          },
+          "data_fim": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Fim"
+          },
+          "data_inicio": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Data Inicio"
+          },
+          "descricao": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Descricao"
+          },
+          "dias_semana": {
+            "anyOf": [
+              {
+                "items": {
+                  "type": "integer"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Dias Semana"
+          },
+          "hora_fim": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hora Fim"
+          },
+          "hora_inicio": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Hora Inicio"
+          },
+          "modo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modo"
+          },
+          "reducao_janela_min": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Reducao Janela Min"
+          },
+          "tipo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Tipo"
+          }
+        },
+        "title": "AgendaUpdate",
+        "type": "object"
+      },
+      "AlterarAtivo": {
+        "properties": {
+          "ativo": {
+            "title": "Ativo",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ativo"
+        ],
+        "title": "AlterarAtivo",
+        "type": "object"
+      },
+      "AlterarPapel": {
+        "properties": {
+          "role": {
+            "description": "admin ou staff",
+            "title": "Role",
+            "type": "string"
+          }
+        },
+        "required": [
+          "role"
+        ],
+        "title": "AlterarPapel",
+        "type": "object"
+      },
+      "ApiResponse": {
+        "properties": {
+          "code": {
+            "title": "Code",
+            "type": "string"
+          },
+          "ids": {
+            "additionalProperties": true,
+            "title": "Ids",
+            "type": "object"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          }
+        },
+        "required": [
+          "code",
+          "message",
+          "ids"
+        ],
+        "title": "ApiResponse",
+        "type": "object"
+      },
+      "BatchAlertRequest": {
+        "description": "Request body for batch alert operations.",
+        "properties": {
+          "alert_ids": {
+            "items": {
+              "type": "string"
+            },
+            "title": "Alert Ids",
+            "type": "array"
+          }
+        },
+        "required": [
+          "alert_ids"
+        ],
+        "title": "BatchAlertRequest",
+        "type": "object"
+      },
+      "Body_api_admin_import_alerts_api_admin_import_alerts_post": {
+        "properties": {
+          "arquivo": {
+            "anyOf": [
+              {
+                "format": "binary",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Arquivo"
+          },
+          "body": {
+            "anyOf": [
+              {
+                "items": {
+                  "additionalProperties": true,
+                  "type": "object"
+                },
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Body"
+          }
+        },
+        "title": "Body_api_admin_import_alerts_api_admin_import_alerts_post",
+        "type": "object"
+      },
+      "Body_receber_grade_api_grade_post": {
+        "properties": {
+          "arquivo": {
+            "format": "binary",
+            "title": "Arquivo",
+            "type": "string"
+          }
+        },
+        "required": [
+          "arquivo"
+        ],
+        "title": "Body_receber_grade_api_grade_post",
+        "type": "object"
+      },
+      "DefinirSenha": {
+        "properties": {
+          "nova_senha": {
+            "title": "Nova Senha",
+            "type": "string"
+          }
+        },
+        "required": [
+          "nova_senha"
+        ],
+        "title": "DefinirSenha",
+        "type": "object"
+      },
+      "DeviceRegisterRequest": {
+        "properties": {
+          "device_id": {
+            "title": "Device Id",
+            "type": "string"
+          },
+          "meta": {
+            "anyOf": [
+              {
+                "additionalProperties": true,
+                "type": "object"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Meta"
+          }
+        },
+        "required": [
+          "device_id"
+        ],
+        "title": "DeviceRegisterRequest",
+        "type": "object"
+      },
+      "FrontendAlert": {
+        "additionalProperties": true,
+        "properties": {
+          "bed": {
+            "type": "string"
+          },
+          "id": {
+            "type": "string"
+          },
+          "lastRepositioning": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "nextRepositioning": {
+            "format": "date-time",
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "patientName": {
+            "type": "string"
+          },
+          "riskLevel": {
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ],
+            "type": "string"
+          },
+          "room": {
+            "type": "string"
+          },
+          "status": {
+            "enum": [
+              "pending",
+              "acknowledged",
+              "completed"
+            ],
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "patientName",
+          "riskLevel",
+          "status"
+        ],
+        "type": "object"
+      },
+      "FrontendCreatePatient": {
+        "properties": {
+          "bed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bed"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "notes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Notes"
+          },
+          "repositioningInterval": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repositioninginterval"
+          },
+          "riskLevel": {
+            "title": "Risklevel",
+            "type": "string"
+          },
+          "room": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room"
+          }
+        },
+        "required": [
+          "name",
+          "riskLevel"
+        ],
+        "title": "FrontendCreatePatient",
+        "type": "object"
+      },
+      "HTTPValidationError": {
+        "properties": {
+          "detail": {
+            "items": {
+              "$ref": "#/components/schemas/ValidationError"
+            },
+            "title": "Detail",
+            "type": "array"
+          }
+        },
+        "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "PacienteConfigResponse": {
+        "properties": {
+          "cama_id": {
+            "title": "Cama Id",
+            "type": "string"
+          },
+          "nome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nome"
+          },
+          "observacoes": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observacoes"
+          },
+          "paciente_id": {
+            "title": "Paciente Id",
+            "type": "string"
+          },
+          "perfil": {
+            "title": "Perfil",
+            "type": "string"
+          },
+          "rotinas": {
+            "items": {
+              "$ref": "#/components/schemas/RotinaConfig"
+            },
+            "title": "Rotinas",
+            "type": "array"
+          },
+          "updated_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updated At"
+          }
+        },
+        "required": [
+          "paciente_id",
+          "cama_id",
+          "perfil",
+          "rotinas"
+        ],
+        "title": "PacienteConfigResponse",
+        "type": "object"
+      },
+      "RegisterRequest": {
+        "properties": {
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "password": {
+            "title": "Password",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "password"
+        ],
+        "title": "RegisterRequest",
+        "type": "object"
+      },
+      "RotinaConfig": {
+        "properties": {
+          "ativo": {
+            "title": "Ativo",
+            "type": "boolean"
+          },
+          "descricao": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Descricao"
+          },
+          "duracao_min": {
+            "title": "Duracao Min",
+            "type": "integer"
+          },
+          "inicio": {
+            "title": "Inicio",
+            "type": "string"
+          },
+          "label": {
+            "title": "Label",
+            "type": "string"
+          },
+          "sort_order": {
+            "title": "Sort Order",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "label",
+          "inicio",
+          "duracao_min",
+          "ativo",
+          "sort_order"
+        ],
+        "title": "RotinaConfig",
+        "type": "object"
+      },
+      "SimulationRequest": {
+        "properties": {
+          "duracao_horas": {
+            "title": "Duracao Horas",
+            "type": "integer"
+          },
+          "perfil": {
+            "default": "medio",
+            "title": "Perfil",
+            "type": "string"
+          },
+          "seed": {
+            "default": 42,
+            "title": "Seed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "duracao_horas"
+        ],
+        "title": "SimulationRequest",
+        "type": "object"
+      },
+      "SimulationResult": {
+        "properties": {
+          "alertas": {
+            "title": "Alertas",
+            "type": "integer"
+          },
+          "amostras": {
+            "default": 0,
+            "title": "Amostras",
+            "type": "integer"
+          },
+          "duracao": {
+            "title": "Duracao",
+            "type": "number"
+          },
+          "eventos": {
+            "title": "Eventos",
+            "type": "integer"
+          },
+          "message": {
+            "title": "Message",
+            "type": "string"
+          },
+          "success": {
+            "title": "Success",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "success",
+          "eventos",
+          "alertas",
+          "duracao",
+          "message"
+        ],
+        "title": "SimulationResult",
+        "type": "object"
+      },
+      "SuppressionCheckResponse": {
+        "description": "Resposta da verificação de supressão.",
+        "properties": {
+          "agendas_ativas": {
+            "items": {
+              "additionalProperties": true,
+              "type": "object"
+            },
+            "title": "Agendas Ativas",
+            "type": "array"
+          },
+          "em_periodo_suprimido": {
+            "title": "Em Periodo Suprimido",
+            "type": "boolean"
+          },
+          "modo_resultado": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Modo Resultado"
+          }
+        },
+        "required": [
+          "em_periodo_suprimido",
+          "modo_resultado",
+          "agendas_ativas"
+        ],
+        "title": "SuppressionCheckResponse",
+        "type": "object"
+      },
+      "TrocarSenha": {
+        "properties": {
+          "nova_senha": {
+            "title": "Nova Senha",
+            "type": "string"
+          },
+          "senha_atual": {
+            "minLength": 1,
+            "title": "Senha Atual",
+            "type": "string"
+          }
+        },
+        "required": [
+          "senha_atual",
+          "nova_senha"
+        ],
+        "title": "TrocarSenha",
+        "type": "object"
+      },
+      "ValidationError": {
+        "properties": {
+          "loc": {
+            "items": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "integer"
+                }
+              ]
+            },
+            "title": "Location",
+            "type": "array"
+          },
+          "msg": {
+            "title": "Message",
+            "type": "string"
+          },
+          "type": {
+            "title": "Error Type",
+            "type": "string"
+          }
+        },
+        "required": [
+          "loc",
+          "msg",
+          "type"
+        ],
+        "title": "ValidationError",
+        "type": "object"
+      }
+    }
+  },
+  "info": {
+    "title": "Monitor de Alertas UPP",
+    "version": "0.1.0"
+  },
+  "openapi": "3.1.0",
+  "paths": {
+    "/api/admin/backup/cleanup": {
+      "post": {
+        "description": "Remove backups mais antigos que keep_days dias.",
+        "operationId": "cleanup_backups_api_admin_backup_cleanup_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "keep_days",
+            "required": false,
+            "schema": {
+              "default": 7,
+              "title": "Keep Days",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Cleanup Backups Api Admin Backup Cleanup Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Cleanup Backups",
+        "tags": [
+          "backup"
+        ]
+      }
+    },
+    "/api/admin/backup/create": {
+      "post": {
+        "description": "Cria um backup manual do banco de dados.",
+        "operationId": "create_backup_api_admin_backup_create_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Create Backup Api Admin Backup Create Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Create Backup",
+        "tags": [
+          "backup"
+        ]
+      }
+    },
+    "/api/admin/backup/list": {
+      "get": {
+        "description": "Lista todos os backups disponíveis.",
+        "operationId": "list_backups_api_admin_backup_list_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response List Backups Api Admin Backup List Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "List Backups",
+        "tags": [
+          "backup"
+        ]
+      }
+    },
+    "/api/admin/backup/status": {
+      "get": {
+        "description": "Existe um backup recente que realmente restaura?\n\nSem isto, a unica evidencia de que o backup funciona e uma linha de log que\nninguem le. O agendador podia estar falhando havia semanas sem que nada na\naplicacao ficasse diferente de uma instalacao saudavel — e a descoberta\nchegaria no dia da restauracao.",
+        "operationId": "backup_status_api_admin_backup_status_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Backup Status Api Admin Backup Status Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Backup Status",
+        "tags": [
+          "backup"
+        ]
+      }
+    },
+    "/api/admin/backup/verify": {
+      "post": {
+        "description": "Abre cada backup e confere se da para restaurar a partir dele.",
+        "operationId": "verify_backups_api_admin_backup_verify_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Verify Backups Api Admin Backup Verify Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Verify Backups",
+        "tags": [
+          "backup"
+        ]
+      }
+    },
+    "/api/admin/import_alerts": {
+      "post": {
+        "description": "Admin endpoint to import alerts in bulk.",
+        "operationId": "api_admin_import_alerts_api_admin_import_alerts_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "x_admin_token",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "X Admin Token"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_api_admin_import_alerts_api_admin_import_alerts_post"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Api Admin Import Alerts Api Admin Import Alerts Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Admin Import Alerts",
+        "tags": [
+          "admin"
+        ]
+      }
+    },
+    "/api/alerts/export/csv": {
+      "get": {
+        "description": "Exporta alertas em formato CSV.\n\nQuery Parameters:\n- start_date: Data inicial no formato YYYY-MM-DD\n- end_date: Data final no formato YYYY-MM-DD\n- status: Status do alerta (pending, acknowledged, completed)\n- patient_id: ID do paciente\n- limit: Limite de registros (máximo 100000)\n\nReturns:\n- CSV file with alerts data\n\nAutenticação exigida via get_current_user (JWT em Bearer ou cookie\naccess_token). Exporta dados clínicos de pacientes — nunca deixar sem auth.",
+        "operationId": "export_alerts_csv_api_alerts_export_csv_get",
+        "parameters": [
+          {
+            "description": "Data inicial (YYYY-MM-DD)",
+            "in": "query",
+            "name": "start_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Data inicial (YYYY-MM-DD)",
+              "title": "Start Date"
+            }
+          },
+          {
+            "description": "Data final (YYYY-MM-DD)",
+            "in": "query",
+            "name": "end_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Data final (YYYY-MM-DD)",
+              "title": "End Date"
+            }
+          },
+          {
+            "description": "Status: pending, acknowledged, completed",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Status: pending, acknowledged, completed",
+              "title": "Status"
+            }
+          },
+          {
+            "description": "ID do paciente",
+            "in": "query",
+            "name": "patient_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ID do paciente",
+              "title": "Patient Id"
+            }
+          },
+          {
+            "description": "Limite de registros",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 10000,
+              "description": "Limite de registros",
+              "maximum": 100000,
+              "minimum": 1,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Alerts Csv",
+        "tags": [
+          "alerts"
+        ]
+      }
+    },
+    "/api/alerts/export/pdf": {
+      "get": {
+        "description": "Exporta alertas em formato PDF.\n\nQuery Parameters:\n- start_date: Data inicial no formato YYYY-MM-DD\n- end_date: Data final no formato YYYY-MM-DD\n- status: Status do alerta (pending, acknowledged, completed)\n- patient_id: ID do paciente\n\nReturns:\n- PDF file with formatted alerts report\n\nAutenticação exigida via get_current_user (JWT em Bearer ou cookie\naccess_token). Exporta dados clínicos de pacientes — nunca deixar sem auth.",
+        "operationId": "export_alerts_pdf_api_alerts_export_pdf_get",
+        "parameters": [
+          {
+            "description": "Data inicial (YYYY-MM-DD)",
+            "in": "query",
+            "name": "start_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Data inicial (YYYY-MM-DD)",
+              "title": "Start Date"
+            }
+          },
+          {
+            "description": "Data final (YYYY-MM-DD)",
+            "in": "query",
+            "name": "end_date",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Data final (YYYY-MM-DD)",
+              "title": "End Date"
+            }
+          },
+          {
+            "description": "Status: pending, acknowledged, completed",
+            "in": "query",
+            "name": "status",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Status: pending, acknowledged, completed",
+              "title": "Status"
+            }
+          },
+          {
+            "description": "ID do paciente",
+            "in": "query",
+            "name": "patient_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "ID do paciente",
+              "title": "Patient Id"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Export Alerts Pdf",
+        "tags": [
+          "alerts"
+        ]
+      }
+    },
+    "/api/auditoria": {
+      "get": {
+        "description": "Consulta a trilha.\n\nCabecalho `X-Total-Count`: quantas entradas casam com os filtros, antes do\ncorte por `limit`. Numa trilha usada para responder \"quem acessou os dados\ndeste titular?\" (LGPD Art. 18), uma resposta cortada em silencio produz\nresposta INCOMPLETA a uma pergunta legal — e nada na resposta indicava que\nhavia mais.",
+        "operationId": "consultar_auditoria_api_auditoria_get",
+        "parameters": [
+          {
+            "description": "Quem acessou este paciente",
+            "in": "query",
+            "name": "paciente_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Quem acessou este paciente",
+              "title": "Paciente Id"
+            }
+          },
+          {
+            "description": "O que este usuario fez",
+            "in": "query",
+            "name": "usuario",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "O que este usuario fez",
+              "title": "Usuario"
+            }
+          },
+          {
+            "description": "Somente tentativas recusadas (401/403)",
+            "in": "query",
+            "name": "apenas_negados",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Somente tentativas recusadas (401/403)",
+              "title": "Apenas Negados",
+              "type": "boolean"
+            }
+          },
+          {
+            "in": "query",
+            "name": "desde_ms",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Desde Ms"
+            }
+          },
+          {
+            "in": "query",
+            "name": "ate_ms",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Ate Ms"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 200,
+              "maximum": 1000,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "minimum": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Consultar Auditoria Api Auditoria Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Consultar Auditoria",
+        "tags": [
+          "auditoria"
+        ]
+      }
+    },
+    "/api/auditoria/expurgar": {
+      "post": {
+        "description": "Expurga entradas antigas da trilha, conforme a politica de retencao.\n\n`expurgar_anteriores_a` existia pronto e sem NENHUMA forma de ser\nexecutado: nao havia endpoint, comando nem agendamento. A propria docstring\ndele diz que o expurgo deve ser \"uma operacao explicita, e nao um expurgo\nautomatico com prazo arbitrario\" — mas explicito sem interface e apenas\ninalcancavel. Este endpoint e a interface que faltava.\n\n`confirmar=false` (o padrao) devolve so a PREVIA: quantas entradas sairiam.\nApagar trilha de auditoria e irreversivel e destroi registro de acesso a\ndado clinico; exigir um segundo passo deliberado evita que um parametro\nerrado numa URL leve anos de trilha junto.\n\nPara retencao continua, ver AUDITORIA_RETENCAO_DIAS\n(interface/lifespan_tasks.py), que agenda o mesmo expurgo diariamente.",
+        "operationId": "expurgar_auditoria_api_auditoria_expurgar_post",
+        "parameters": [
+          {
+            "description": "Remove entradas anteriores a este instante (epoch ms, UTC)",
+            "in": "query",
+            "name": "antes_de_ms",
+            "required": true,
+            "schema": {
+              "description": "Remove entradas anteriores a este instante (epoch ms, UTC)",
+              "title": "Antes De Ms",
+              "type": "integer"
+            }
+          },
+          {
+            "description": "Precisa ser true para executar; sem isto responde apenas a previa",
+            "in": "query",
+            "name": "confirmar",
+            "required": false,
+            "schema": {
+              "default": false,
+              "description": "Precisa ser true para executar; sem isto responde apenas a previa",
+              "title": "Confirmar",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Expurgar Auditoria Api Auditoria Expurgar Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Expurgar Auditoria",
+        "tags": [
+          "auditoria"
+        ]
+      }
+    },
+    "/api/auditoria/integridade": {
+      "get": {
+        "description": "A trilha foi adulterada?\n\nUma trilha de auditoria que ninguem consegue verificar tem o mesmo valor\nprobatorio de nao existir: quem a apresenta como evidencia precisa poder\ndemonstrar que ela nao foi editada depois do fato.\n\n`integra: false` distingue conteudo alterado (alguem editou um registro) de\nelo quebrado (alguem apagou, inseriu ou reordenou linhas), e aponta o `id`\nde cada ocorrencia.",
+        "operationId": "verificar_integridade_endpoint_api_auditoria_integridade_get",
+        "parameters": [
+          {
+            "description": "Verifica apenas as N entradas mais recentes",
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "description": "Verifica apenas as N entradas mais recentes",
+              "title": "Limit"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Verificar Integridade Endpoint Api Auditoria Integridade Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verificar Integridade Endpoint",
+        "tags": [
+          "auditoria"
+        ]
+      }
+    },
+    "/api/auth/login": {
+      "post": {
+        "operationId": "api_login_api_auth_login_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Api Login Api Auth Login Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Login",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/logout": {
+      "post": {
+        "description": "Encerra a sessao de verdade.\n\nAntes apenas apagava os cookies: quem tivesse copiado o token (ou usasse o\nheader Authorization) continuava autenticado pelas 8h restantes. Sair do\nsistema num computador compartilhado nao tirava o acesso de ninguem.\n\nAgora o `jti` do token vai para a denylist, entao aquela sessao morre\nimediatamente. As demais sessoes do usuario seguem valendo — sair num\ndispositivo nao deve desconectar os outros.",
+        "operationId": "api_logout_api_auth_logout_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Api Logout Api Auth Logout Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Logout",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/me": {
+      "get": {
+        "operationId": "api_me_api_auth_me_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Api Me Api Auth Me Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Me",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/auth/register": {
+      "post": {
+        "operationId": "api_register_api_auth_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Api Register Api Auth Register Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Register",
+        "tags": [
+          "auth"
+        ]
+      }
+    },
+    "/api/device_events": {
+      "get": {
+        "operationId": "api_list_device_events_api_device_events_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "device_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Device Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Api List Device Events Api Device Events Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api List Device Events",
+        "tags": [
+          "devices"
+        ]
+      }
+    },
+    "/api/device_events/reconcile": {
+      "post": {
+        "description": "Attempt to reconcile stored raw device events into patient events.",
+        "operationId": "api_reconcile_device_events_api_device_events_reconcile_post",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "device_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Device Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Api Reconcile Device Events Api Device Events Reconcile Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Reconcile Device Events",
+        "tags": [
+          "ingestao"
+        ]
+      }
+    },
+    "/api/device_events/reconcile_bed/{cama_id}": {
+      "post": {
+        "description": "Reconcile all orphan events for a specific bed (cama_id) to the current patient.",
+        "operationId": "api_reconcile_bed_events_api_device_events_reconcile_bed__cama_id__post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cama_id",
+            "required": true,
+            "schema": {
+              "title": "Cama Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 1000,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Api Reconcile Bed Events Api Device Events Reconcile Bed  Cama Id  Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Reconcile Bed Events",
+        "tags": [
+          "ingestao"
+        ]
+      }
+    },
+    "/api/device_events/stats": {
+      "get": {
+        "description": "Estatisticas dos eventos orfaos, agrupadas por leito (cama_id).\n\nReturns:\n{\n    \"total_orphans\": int,       # TODOS os orfaos pendentes\n    \"orfaos_com_leito\": int,    # os que a reconciliacao por leito alcanca\n    \"orfaos_sem_leito\": int,    # os que nenhum botao desta tela resolve\n    \"amostra_truncada\": bool,\n    \"beds\": [ { cama_id, count, first_event, last_event, current_patient } ]\n}\n\n`total_orphans` era `len(events)` — a contagem da amostra JA limitada, e\nincluindo eventos cujo payload nao tem `cama_id`. Duas consequencias na\ntela de admin, que exibe esse numero como \"N eventos aguardando\nreconciliacao\":\n\n  * eventos sem `cama_id` entravam na conta e nao aparecem em leito nenhum,\n    entao o operador reconciliava TODOS os leitos e o numero nao zerava,\n    sem nada explicando por que;\n  * acima do teto da amostra o total parava de crescer — justo num painel\n    cuja funcao e diagnosticar acumulo.",
+        "operationId": "api_device_events_stats_api_device_events_stats_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Api Device Events Stats Api Device Events Stats Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api Device Events Stats",
+        "tags": [
+          "devices"
+        ]
+      }
+    },
+    "/api/devices": {
+      "get": {
+        "operationId": "api_list_devices_api_devices_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Api List Devices Api Devices Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Api List Devices",
+        "tags": [
+          "devices"
+        ]
+      }
+    },
+    "/api/devices/register": {
+      "post": {
+        "operationId": "api_register_device_api_devices_register_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DeviceRegisterRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Api Register Device Api Devices Register Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Api Register Device",
+        "tags": [
+          "devices"
+        ]
+      }
+    },
+    "/api/eventos": {
+      "post": {
+        "operationId": "receber_evento_api_eventos_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "additionalProperties": true,
+                "title": "Payload",
+                "type": "object"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Receber Evento",
+        "tags": [
+          "ingestao"
+        ]
+      }
+    },
+    "/api/frontend/alerts": {
+      "get": {
+        "description": "Return alerts in a shape convenient for the React frontend with optional filters.\n\nQuery Parameters:\n- horas: int (default 24) - Time window in hours\n- riskLevel: 'high'|'medium'|'low' - Filter by risk level\n- status_filter: 'pending'|'acknowledged'|'completed' - Filter by status\n- room: str - Filter by room number (fuzzy match)\n- limit: int (default 100) - Pagination limit\n- offset: int (default 0) - Pagination offset\n\nEach alert contains: id, patientName, room, bed, lastRepositioning (ISO),\nnextRepositioning (ISO), riskLevel (high|medium|low), status (pending|acknowledged|completed)\n\nCabecalho `X-Total-Count`: quantos alertas casam com os filtros, ANTES do\ncorte por `limit`. O corpo continua sendo o array puro (o contrato que o\nfrontend e os testes usam), mas sem esse numero a resposta omite em\nsilencio: uma lista de 100 com `limit=100` e indistinguivel de \"existem\nexatamente 100\", e o dashboard filtra em memoria sobre o que recebeu — um\npaciente atrasado ficaria fora da tela sem nenhum sinal.",
+        "operationId": "frontend_alerts_api_frontend_alerts_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "horas",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "default": 24,
+              "title": "Horas"
+            }
+          },
+          {
+            "in": "query",
+            "name": "riskLevel",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Risklevel"
+            }
+          },
+          {
+            "in": "query",
+            "name": "status_filter",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Status Filter"
+            }
+          },
+          {
+            "in": "query",
+            "name": "room",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Room"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "offset",
+            "required": false,
+            "schema": {
+              "default": 0,
+              "title": "Offset",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/FrontendAlert"
+                  },
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Frontend Alerts",
+        "tags": [
+          "alerts"
+        ]
+      }
+    },
+    "/api/frontend/alerts/batch/acknowledge": {
+      "post": {
+        "description": "Acknowledge multiple alerts at once.",
+        "operationId": "batch_acknowledge_api_frontend_alerts_batch_acknowledge_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchAlertRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Batch Acknowledge Api Frontend Alerts Batch Acknowledge Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Batch Acknowledge",
+        "tags": [
+          "alerts"
+        ]
+      }
+    },
+    "/api/frontend/alerts/batch/complete": {
+      "post": {
+        "description": "Complete multiple alerts at once.",
+        "operationId": "batch_complete_api_frontend_alerts_batch_complete_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BatchAlertRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Batch Complete Api Frontend Alerts Batch Complete Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Batch Complete",
+        "tags": [
+          "alerts"
+        ]
+      }
+    },
+    "/api/frontend/alerts/{alert_id}/acknowledge": {
+      "post": {
+        "description": "Reconhece um alerta e registra evento na timeline.",
+        "operationId": "frontend_acknowledge_api_frontend_alerts__alert_id__acknowledge_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alert_id",
+            "required": true,
+            "schema": {
+              "title": "Alert Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Frontend Acknowledge Api Frontend Alerts  Alert Id  Acknowledge Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Frontend Acknowledge",
+        "tags": [
+          "alerts"
+        ]
+      }
+    },
+    "/api/frontend/alerts/{alert_id}/complete": {
+      "post": {
+        "description": "Completa/fecha um alerta e registra evento na timeline.",
+        "operationId": "frontend_complete_api_frontend_alerts__alert_id__complete_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "alert_id",
+            "required": true,
+            "schema": {
+              "title": "Alert Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Frontend Complete Api Frontend Alerts  Alert Id  Complete Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Frontend Complete",
+        "tags": [
+          "alerts"
+        ]
+      }
+    },
+    "/api/grade": {
+      "post": {
+        "operationId": "receber_grade_api_grade_post",
+        "requestBody": {
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "$ref": "#/components/schemas/Body_receber_grade_api_grade_post"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ApiResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Receber Grade",
+        "tags": [
+          "ingestao"
+        ]
+      }
+    },
+    "/api/health": {
+      "get": {
+        "description": "Comprehensive health check endpoint.\nReturns service status, database connectivity, WebSocket connections, version, and uptime.",
+        "operationId": "health_check_api_health_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Health Check Api Health Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Health Check",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/api/monitoramento": {
+      "get": {
+        "description": "Quais pacientes estão (ou não) com dados chegando.\n\nResponde à pergunta que o dashboard não conseguia responder: \"não há\nalertas porque está tudo bem, ou porque parei de receber dados?\".\n\n`nunca_recebeu_dados` separa \"o sensor parou\" de \"nunca chegou leitura\nnenhuma\" — a segunda costuma ser erro de instalação ou de vínculo\ndevice↔leito, e a ação corretiva é diferente.",
+        "operationId": "status_monitoramento_api_monitoramento_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Status Monitoramento Api Monitoramento Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Status Monitoramento",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/api/pacientes": {
+      "get": {
+        "description": "Listar todos os pacientes.",
+        "operationId": "listar_pacientes_endpoint_api_pacientes_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Listar Pacientes Endpoint Api Pacientes Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Listar Pacientes Endpoint",
+        "tags": [
+          "pacientes"
+        ]
+      },
+      "post": {
+        "description": "Criar um novo paciente.",
+        "operationId": "criar_paciente_endpoint_api_pacientes_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FrontendCreatePatient"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Criar Paciente Endpoint Api Pacientes Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Criar Paciente Endpoint",
+        "tags": [
+          "pacientes"
+        ]
+      }
+    },
+    "/api/pacientes/cama/{cama_id}": {
+      "get": {
+        "operationId": "obter_paciente_por_cama_endpoint_api_pacientes_cama__cama_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "cama_id",
+            "required": true,
+            "schema": {
+              "title": "Cama Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PacienteConfigResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Obter Paciente Por Cama Endpoint",
+        "tags": [
+          "pacientes"
+        ]
+      }
+    },
+    "/api/pacientes/{paciente_id}": {
+      "delete": {
+        "description": "Remove um paciente e todo o rastro clinico dele.\n\nA rota nao existia. O `PatientRepository.delete` e o `dao.remover_paciente`\nja estavam escritos e sem nenhum chamador, e a tela de Pacientes tinha o\nbotao \"Excluir\" com dialogo de confirmacao chamando `DELETE /api/pacientes/\n{id}` — que respondia 405. O usuario confirmava a exclusao, via \"Erro ao\nremover paciente\" e o paciente continuava na lista.\n\nRestrito a admin, pelo mesmo motivo de `/simular`: e uma acao irreversivel\nsobre o historico clinico de uma pessoa. O acesso ja entra na trilha de\nauditoria pelo middleware (a rota casa com `/api/pacientes`), entao fica\nregistrado QUEM removeu e QUANDO.",
+        "operationId": "remover_paciente_endpoint_api_pacientes__paciente_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "paciente_id",
+            "required": true,
+            "schema": {
+              "title": "Paciente Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Remover Paciente Endpoint Api Pacientes  Paciente Id  Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Remover Paciente Endpoint",
+        "tags": [
+          "pacientes"
+        ]
+      },
+      "get": {
+        "description": "Obter um paciente pelo ID.",
+        "operationId": "obter_paciente_endpoint_api_pacientes__paciente_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "paciente_id",
+            "required": true,
+            "schema": {
+              "title": "Paciente Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Obter Paciente Endpoint Api Pacientes  Paciente Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Obter Paciente Endpoint",
+        "tags": [
+          "pacientes"
+        ]
+      },
+      "patch": {
+        "description": "Atualizar um paciente existente.",
+        "operationId": "atualizar_paciente_endpoint_api_pacientes__paciente_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "paciente_id",
+            "required": true,
+            "schema": {
+              "title": "Paciente Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FrontendCreatePatient"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Atualizar Paciente Endpoint Api Pacientes  Paciente Id  Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Atualizar Paciente Endpoint",
+        "tags": [
+          "pacientes"
+        ]
+      }
+    },
+    "/api/pacientes/{paciente_id}/agenda": {
+      "get": {
+        "description": "Lista agendas de um paciente.",
+        "operationId": "listar_agendas_api_pacientes__paciente_id__agenda_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "paciente_id",
+            "required": true,
+            "schema": {
+              "title": "Paciente Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "Apenas agendas ativas",
+            "in": "query",
+            "name": "ativo",
+            "required": false,
+            "schema": {
+              "default": true,
+              "description": "Apenas agendas ativas",
+              "title": "Ativo",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/AgendaResponse"
+                  },
+                  "title": "Response Listar Agendas Api Pacientes  Paciente Id  Agenda Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Listar Agendas",
+        "tags": [
+          "agenda"
+        ]
+      },
+      "post": {
+        "description": "Cria uma nova agenda de supressão.",
+        "operationId": "criar_agenda_api_pacientes__paciente_id__agenda_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "paciente_id",
+            "required": true,
+            "schema": {
+              "title": "Paciente Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgendaCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgendaResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Criar Agenda",
+        "tags": [
+          "agenda"
+        ]
+      }
+    },
+    "/api/pacientes/{paciente_id}/agenda/check": {
+      "get": {
+        "description": "Verifica se um timestamp está em período suprimido.\n\nQuery Params:\n    timestamp: ISO format (ex: 2025-10-27T12:30:00)",
+        "operationId": "verificar_supressao_api_pacientes__paciente_id__agenda_check_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "paciente_id",
+            "required": true,
+            "schema": {
+              "title": "Paciente Id",
+              "type": "string"
+            }
+          },
+          {
+            "description": "ISO format timestamp YYYY-MM-DDTHH:MM:SS",
+            "in": "query",
+            "name": "timestamp",
+            "required": true,
+            "schema": {
+              "description": "ISO format timestamp YYYY-MM-DDTHH:MM:SS",
+              "title": "Timestamp",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SuppressionCheckResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Verificar Supressao",
+        "tags": [
+          "agenda"
+        ]
+      }
+    },
+    "/api/pacientes/{paciente_id}/agenda/{agenda_id}": {
+      "delete": {
+        "description": "Deleta uma agenda.",
+        "operationId": "deletar_agenda_api_pacientes__paciente_id__agenda__agenda_id__delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "paciente_id",
+            "required": true,
+            "schema": {
+              "title": "Paciente Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "agenda_id",
+            "required": true,
+            "schema": {
+              "title": "Agenda Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Deletar Agenda",
+        "tags": [
+          "agenda"
+        ]
+      },
+      "get": {
+        "description": "Obtém uma agenda específica.",
+        "operationId": "obter_agenda_api_pacientes__paciente_id__agenda__agenda_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "paciente_id",
+            "required": true,
+            "schema": {
+              "title": "Paciente Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "agenda_id",
+            "required": true,
+            "schema": {
+              "title": "Agenda Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgendaResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Obter Agenda",
+        "tags": [
+          "agenda"
+        ]
+      },
+      "patch": {
+        "description": "Atualiza uma agenda.",
+        "operationId": "atualizar_agenda_api_pacientes__paciente_id__agenda__agenda_id__patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "paciente_id",
+            "required": true,
+            "schema": {
+              "title": "Paciente Id",
+              "type": "string"
+            }
+          },
+          {
+            "in": "path",
+            "name": "agenda_id",
+            "required": true,
+            "schema": {
+              "title": "Agenda Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AgendaUpdate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AgendaResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Atualizar Agenda",
+        "tags": [
+          "agenda"
+        ]
+      }
+    },
+    "/api/pacientes/{paciente_id}/simular": {
+      "post": {
+        "description": "Simular dados históricos para um paciente.\n\nRestrito a admin: grava eventos, grade e ALERTAS sintéticos no mesmo banco\ndos dados reais. Num ambiente de produção, dado simulado misturado ao\nhistórico clínico do paciente é indistinguível do que veio do sensor.",
+        "operationId": "simular_paciente_endpoint_api_pacientes__paciente_id__simular_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "paciente_id",
+            "required": true,
+            "schema": {
+              "title": "Paciente Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/SimulationRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SimulationResult"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Simular Paciente Endpoint",
+        "tags": [
+          "pacientes"
+        ]
+      }
+    },
+    "/api/perfis-risco": {
+      "get": {
+        "description": "Intervalo de reposicionamento de cada perfil de risco.\n\nExiste para o formulário mostrar o intervalo correto ANTES de salvar, sem\nmanter uma cópia da tabela no frontend. Já houve dois mapas divergentes\n(motor 60/90/120 min vs. tela 2/3/4 h, o dobro) informando coisas\ndiferentes sobre o mesmo paciente; um terceiro no JavaScript repetiria o\nproblema. A fonte é a configuração que o motor de alertas usa.",
+        "operationId": "listar_perfis_risco_api_perfis_risco_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Listar Perfis Risco Api Perfis Risco Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Listar Perfis Risco",
+        "tags": [
+          "pacientes"
+        ]
+      }
+    },
+    "/api/stats": {
+      "get": {
+        "description": "Retorna estatísticas do dashboard para o frontend.\n\n✅ CORRIGIDO: Usa janela temporal CONSISTENTE de 24h para todas as métricas\n\nAntes: activeAlerts=7 dias, acknowledgedAlerts=7 dias, completedToday=24h\n       Causava taxa de conclusão inconsistente (misturava períodos diferentes)\n\nAgora: TODAS as métricas usam 24h (últimas 24 horas)\n       Taxa de conclusão = fechados_24h / (abertos_24h + reconhecidos_24h + fechados_24h)\n\nRetorna: activeAlerts, acknowledgedAlerts, completedToday, totalPatients, completionRate",
+        "operationId": "get_stats_api_stats_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Get Stats Api Stats Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Get Stats",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/api/timeline": {
+      "get": {
+        "description": "Retorna eventos da timeline com filtros opcionais.\nEnriquece os eventos com o nome do paciente.",
+        "operationId": "get_timeline_api_timeline_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "paciente_id",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Paciente Id"
+            }
+          },
+          {
+            "in": "query",
+            "name": "tipo",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "string"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Tipo"
+            }
+          },
+          {
+            "in": "query",
+            "name": "start_ms",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Start Ms"
+            }
+          },
+          {
+            "in": "query",
+            "name": "end_ms",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "End Ms"
+            }
+          },
+          {
+            "in": "query",
+            "name": "limit",
+            "required": false,
+            "schema": {
+              "default": 100,
+              "title": "Limit",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Get Timeline Api Timeline Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Get Timeline",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/api/usuarios": {
+      "get": {
+        "description": "Lista os usuarios (sem hash de senha).",
+        "operationId": "listar_usuarios_api_usuarios_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Listar Usuarios Api Usuarios Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Listar Usuarios",
+        "tags": [
+          "usuarios"
+        ]
+      }
+    },
+    "/api/usuarios/eu/senha": {
+      "post": {
+        "description": "Troca da propria senha, exigindo a senha atual.\n\nExigir a atual impede que alguem com uma sessao aberta esquecida assuma a\nconta trocando a credencial.",
+        "operationId": "trocar_propria_senha_api_usuarios_eu_senha_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrocarSenha"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Trocar Propria Senha Api Usuarios Eu Senha Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Trocar Propria Senha",
+        "tags": [
+          "usuarios"
+        ]
+      }
+    },
+    "/api/usuarios/{username}/ativo": {
+      "patch": {
+        "operationId": "alterar_ativo_api_usuarios__username__ativo_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "username",
+            "required": true,
+            "schema": {
+              "title": "Username",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlterarAtivo"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Alterar Ativo Api Usuarios  Username  Ativo Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Alterar Ativo",
+        "tags": [
+          "usuarios"
+        ]
+      }
+    },
+    "/api/usuarios/{username}/papel": {
+      "patch": {
+        "operationId": "alterar_papel_api_usuarios__username__papel_patch",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "username",
+            "required": true,
+            "schema": {
+              "title": "Username",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AlterarPapel"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Alterar Papel Api Usuarios  Username  Papel Patch",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Alterar Papel",
+        "tags": [
+          "usuarios"
+        ]
+      }
+    },
+    "/api/usuarios/{username}/senha": {
+      "post": {
+        "description": "Reset de senha por administrador (esquecimento, comprometimento).",
+        "operationId": "definir_senha_de_usuario_api_usuarios__username__senha_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "username",
+            "required": true,
+            "schema": {
+              "title": "Username",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DefinirSenha"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Definir Senha De Usuario Api Usuarios  Username  Senha Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Definir Senha De Usuario",
+        "tags": [
+          "usuarios"
+        ]
+      }
+    },
+    "/api/validate-repositioning/{paciente_id}": {
+      "get": {
+        "description": "Valida o contrato Backend/Frontend para repouso.\n\nValida:\n1. Último repouso (ultimo_repouso) < Próximo repouso (proximo_repouso)\n2. Próximo repouso (proximo_repouso) > Agora (deve estar no futuro)\n3. Intervalo entre repouso é consistente com perfil\n\nRetorna: {\n    \"valid\": bool,\n    \"errors\": [str],\n    \"ultimo_repouso\": ISO string,\n    \"proximo_repouso\": ISO string,\n    \"intervalo_horas\": float,\n    \"perfil\": str,\n    \"agora\": ISO string\n}",
+        "operationId": "validate_repositioning_contract_api_validate_repositioning__paciente_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "paciente_id",
+            "required": true,
+            "schema": {
+              "title": "Paciente Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Validate Repositioning Contract Api Validate Repositioning  Paciente Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Validate Repositioning Contract",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
+    "/healthz": {
+      "get": {
+        "operationId": "global_health_check_healthz_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": {
+                    "type": "string"
+                  },
+                  "title": "Response Global Health Check Healthz Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Global Health Check"
+      }
+    },
+    "/metrics": {
+      "get": {
+        "operationId": "metrics_endpoint_metrics_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {}
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Metrics Endpoint"
+      }
+    }
+  }
+}

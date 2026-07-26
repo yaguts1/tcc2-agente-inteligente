@@ -398,6 +398,23 @@ npm run dev
 | **API Docs (ReDoc)** | http://localhost:8000/redoc |
 | **Métricas (Prometheus)** | http://localhost:8000/metrics |
 
+O contrato da API também é versionado em **`openapi/openapi.json`**, para quem
+precisa integrar sem subir o sistema (gerar cliente, revisar mudança de contrato
+num diff de PR). Ele é publicado **sem** o `APP_PREFIX`: o prefixo é detalhe de
+implantação — em produção a app sobe sob `/TCC` — e quem consome concatena o
+seu.
+
+Depois de mexer em rota ou schema, regenere:
+
+```bash
+python -m openapi.generate_openapi
+```
+
+`tests/test_openapi_versionado.py` falha se o arquivo divergir do código, com a
+lista de rotas que entraram ou saíram. Sem essa conferência o arquivo congelaria
+no dia em que foi gerado e passaria a descrever uma API que já mudou — em
+contrato, isso custa mais caro que não ter arquivo nenhum.
+
 ### Credenciais
 
 No primeiro acesso, criar conta através da interface de registro.
