@@ -120,6 +120,36 @@ async def iterar_linhas_jsonl(arquivo: UploadFile) -> AsyncIterator[str]:
         yield restante
 
 
+# Tamanho minimo de senha, para a aplicacao inteira.
+#
+# O numero ja existia — em DOIS lugares, e nao no que importa. `/usuarios/eu/senha`
+# e `/usuarios/{u}/senha` exigiam 8 caracteres, mas `/auth/register` aceitava
+# qualquer senha nao vazia. Ou seja: o sistema recusava trocar para "a" e
+# permitia CRIAR a conta com "a" — e a primeira conta da instalacao e
+# justamente a de administrador. A politica valia so onde ja havia credencial,
+# e nao no caminho que a define.
+SENHA_MIN_LEN = 8
+
+
+def exigir_senha_forte(senha: str) -> None:
+    """Recusa senha abaixo da politica minima.
+
+    Uma unica fonte para os tres caminhos que definem senha (cadastro, troca
+    pelo proprio usuario e reset por administrador), para que nao voltem a
+    divergir. Devolve 400 com mensagem legivel em vez do 422 de validacao do
+    pydantic: esta mensagem chega ao formulario de cadastro, e "Erro 422" nao
+    diz a ninguem o que corrigir.
+    """
+    if len(senha or "") < SENHA_MIN_LEN:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail={
+                "code": "senha_fraca",
+                "message": f"A senha precisa ter ao menos {SENHA_MIN_LEN} caracteres.",
+            },
+        )
+
+
 def erro_interno(code: str, exc: Exception, **contexto: Any) -> HTTPException:
     """Erro 500 sem vazar o detalhe da exceção para o cliente.
 

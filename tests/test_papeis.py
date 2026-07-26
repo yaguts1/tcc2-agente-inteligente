@@ -22,13 +22,13 @@ def contas(app_isolado):
     """Cria o admin (bootstrap) e um staff, devolvendo client e tokens."""
     client = TestClient(app_isolado.app)
 
-    r_admin = client.post("/api/auth/register", json={"username": "dona", "password": "pw"})
+    r_admin = client.post("/api/auth/register", json={"username": "dona", "password": "senha-de-teste"})
     assert r_admin.status_code == 201, r_admin.text
     token_admin = r_admin.json()["token"]
 
     r_staff = client.post(
         "/api/auth/register",
-        json={"username": "enfermeira", "password": "pw"},
+        json={"username": "enfermeira", "password": "senha-de-teste"},
         headers={"Authorization": f"Bearer {token_admin}"},
     )
     assert r_staff.status_code == 201, r_staff.text

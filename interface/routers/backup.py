@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, status
 from interface.api_shared import _check_api_rate_limit
 from interface.dependencies import exigir_papel
 
-from servicos.backup import BackupService
+from servicos.backup import BackupService, intervalo_de_backup_horas
 from interface.api_shared import DB_PATH, erro_interno
 
 # Endpoints administrativos de backup. Estavam totalmente abertos: um
@@ -66,8 +66,7 @@ async def backup_status() -> dict:
     aplicacao ficasse diferente de uma instalacao saudavel — e a descoberta
     chegaria no dia da restauracao.
     """
-    intervalo = int(os.getenv("BACKUP_INTERVAL_HOURS", "24"))
-    return await asyncio.to_thread(backup_service.estado, intervalo)
+    return await asyncio.to_thread(backup_service.estado, intervalo_de_backup_horas())
 
 
 @router.post("/admin/backup/verify", status_code=status.HTTP_200_OK)

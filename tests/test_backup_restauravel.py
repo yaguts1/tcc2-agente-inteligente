@@ -253,3 +253,50 @@ async def test_endpoints_de_backup_nao_devolvem_caminho_do_disco(app_isolado, ca
         assert all("path" not in b for b in verificacao.json()["backups"])
         # O que o cliente precisa continua vindo.
         assert all("filename" in b and "ok" in b for b in verificacao.json()["backups"])
+
+
+class TestIntervaloDeBackup:
+    """O intervalo era lido em DOIS lugares, com tratamentos diferentes.
+
+    O agendador caia no default diante de um valor ilegivel; o endpoint de
+    status estourava 500. Pior que a robustez: divergindo, o veredito "estou
+    coberto?" passaria a julgar a idade do ultimo backup contra um intervalo
+    que nao e o que o agendador de fato usa.
+    """
+
+    def test_valor_valido(self, monkeypatch):
+        from servicos.backup import intervalo_de_backup_horas
+
+        monkeypatch.setenv("BACKUP_INTERVAL_HOURS", "6")
+        assert intervalo_de_backup_horas() == 6
+
+    def test_valor_ilegivel_cai_no_padrao_em_vez_de_estourar(self, monkeypatch):
+        from servicos.backup import intervalo_de_backup_horas
+
+        monkeypatch.setenv("BACKUP_INTERVAL_HOURS", "seis")
+        assert intervalo_de_backup_horas() == 24
+
+    def test_zero_vira_uma_hora(self, monkeypatch):
+        # Intervalo 0 faria o agendador rodar em laco fechado.
+        from servicos.backup import intervalo_de_backup_horas
+
+        monkeypatch.setenv("BACKUP_INTERVAL_HOURS", "0")
+        assert intervalo_de_backup_horas() == 1
+
+    @pytest.mark.asyncio
+    async def test_status_nao_estoura_com_configuracao_ilegivel(
+        self, app_isolado, cabecalho_auth, monkeypatch
+    ):
+        from httpx import ASGITransport, AsyncClient
+
+        monkeypatch.setenv("BACKUP_INTERVAL_HOURS", "vinte e quatro")
+        transport = ASGITransport(app=app_isolado.app)
+        async with AsyncClient(
+            transport=transport,
+            base_url="http://testserver",
+            headers=cabecalho_auth(username="admin1", role="admin"),
+        ) as client:
+            resp = await client.get("/api/admin/backup/status")
+
+        assert resp.status_code == 200, resp.text
+        assert "saudavel" in resp.json()

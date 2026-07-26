@@ -22,7 +22,7 @@ from interface.repositories.sessoes import (
 @pytest.fixture
 def conta(app_isolado):
     client = TestClient(app_isolado.app)
-    resp = client.post("/api/auth/register", json={"username": "ana", "password": "pw"})
+    resp = client.post("/api/auth/register", json={"username": "ana", "password": "senha-de-teste"})
     assert resp.status_code == 201, resp.text
     client.cookies.clear()
     return {
@@ -34,7 +34,7 @@ def conta(app_isolado):
 
 def _logar(conta) -> dict:
     conta["client"].cookies.clear()
-    r = conta["client"].post("/api/auth/login", json={"username": "ana", "password": "pw"})
+    r = conta["client"].post("/api/auth/login", json={"username": "ana", "password": "senha-de-teste"})
     assert r.status_code == 200, r.text
     conta["client"].cookies.clear()
     return {"Authorization": f"Bearer {r.json()['token']}"}
@@ -97,7 +97,7 @@ def test_conta_desativada_nao_consegue_logar(conta):
     with sqlite3.connect(conta["db"]) as cx:
         cx.execute("UPDATE users SET ativo = 0 WHERE username = 'ana'")
 
-    r = c.post("/api/auth/login", json={"username": "ana", "password": "pw"})
+    r = c.post("/api/auth/login", json={"username": "ana", "password": "senha-de-teste"})
     assert r.status_code == 403
     assert r.json()["detail"]["code"] == "conta_desativada"
 

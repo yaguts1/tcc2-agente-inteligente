@@ -12,6 +12,7 @@ seguranca em que as pessoas confiam e que falha calado e pior que a ausencia
 dele, porque desloca a atencao para longe do risco.
 """
 
+import os
 import shutil
 import sqlite3
 from contextlib import closing
@@ -33,6 +34,27 @@ TABELAS_ESSENCIAIS = ("pacientes", "grade", "eventos", "alertas")
 # Quantos backups mais recentes nunca sao apagados, por mais velhos que sejam.
 # `cleanup_old_backups(keep_days=0)` removia TODOS — inclusive o unico bom.
 MANTER_MINIMO = 3
+
+
+def intervalo_de_backup_horas() -> int:
+    """De quantas em quantas horas o backup roda (BACKUP_INTERVAL_HOURS).
+
+    Fonte unica porque o valor era lido em DOIS lugares, com tratamentos
+    diferentes: o agendador (`lifespan_tasks`) e o endpoint de status, que
+    julga se o ultimo backup e recente. Divergindo, o veredito "estou coberto?"
+    passaria a ser dado contra um intervalo que nao e o que o agendador usa —
+    e o endpoint ainda estourava 500 com um valor ilegivel, enquanto o
+    agendador caia no default.
+    """
+    try:
+        return max(1, int(os.getenv("BACKUP_INTERVAL_HOURS", "24")))
+    except ValueError:
+        logger.warning(
+            "backup_interval_invalido",
+            valor=os.getenv("BACKUP_INTERVAL_HOURS"),
+            usando=24,
+        )
+        return 24
 
 
 class BackupInvalido(RuntimeError):

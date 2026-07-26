@@ -686,6 +686,17 @@ export const exportAlertsToPDF = async (params: ExportParams): Promise<void> => 
 // indefinidamente.
 // ---------------------------------------------------------------------------
 
+/**
+ * Tamanho mínimo de senha. Espelha `SENHA_MIN_LEN` do backend
+ * (interface/api_shared.py), que é quem de fato recusa.
+ *
+ * Havia TRÊS respostas diferentes para "qual é a senha mínima": o formulário
+ * de cadastro exigia 6, o endpoint de cadastro não exigia nada e os endpoints
+ * de troca exigiam 8. Quem cadastrava com 6 passava — e depois era impedido de
+ * trocar para uma senha do mesmo tamanho.
+ */
+export const SENHA_MIN_LEN = 8;
+
 export type PapelUsuario = 'admin' | 'staff';
 
 export interface Usuario {

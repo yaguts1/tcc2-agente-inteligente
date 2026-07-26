@@ -14,7 +14,7 @@ import structlog
 from fastapi import FastAPI
 
 from interface.api import reconcile_device_events
-from servicos.backup import scheduled_backup_task
+from servicos.backup import intervalo_de_backup_horas, scheduled_backup_task
 
 logger = structlog.get_logger(__name__)
 
@@ -131,10 +131,7 @@ async def stop_reconciler_task(app: FastAPI) -> None:
 
 def start_backup_task(app: FastAPI, db_path: str, backup_dir: str) -> asyncio.Task:
     """Inicia o loop que cria e limpa backups do banco periodicamente."""
-    try:
-        interval_hours = max(1, int(os.getenv("BACKUP_INTERVAL_HOURS", "24")))
-    except Exception:
-        interval_hours = 24
+    interval_hours = intervalo_de_backup_horas()
 
     async def _loop() -> None:
         logger.info("backup_scheduler_started", interval_hours=interval_hours, backup_dir=backup_dir)

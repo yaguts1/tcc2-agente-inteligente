@@ -15,7 +15,7 @@
  *  - a instalação nunca fica sem admin ativo (409 `ultimo_admin`).
  */
 import { useEffect, useState } from 'react';
-import { usuariosApi, Usuario, PapelUsuario, ApiException } from '../../lib/api';
+import { usuariosApi, Usuario, PapelUsuario, ApiException, SENHA_MIN_LEN } from '../../lib/api';
 import { getStoredUser } from '../../lib/storage';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -37,8 +37,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '../ui/alert-dialog';
-
-const SENHA_MIN = 8;
 
 export function UsersPanel() {
   const [usuarios, setUsuarios] = useState<Usuario[]>([]);
@@ -263,11 +261,11 @@ export function UsersPanel() {
               type="password"
               value={novaSenha}
               onChange={(e) => setNovaSenha(e.target.value)}
-              placeholder={`Mínimo de ${SENHA_MIN} caracteres`}
+              placeholder={`Mínimo de ${SENHA_MIN_LEN} caracteres`}
               autoComplete="new-password"
             />
-            {novaSenha.length > 0 && novaSenha.length < SENHA_MIN && (
-              <p className="text-sm text-danger">A senha precisa ter ao menos {SENHA_MIN} caracteres.</p>
+            {novaSenha.length > 0 && novaSenha.length < SENHA_MIN_LEN && (
+              <p className="text-sm text-danger">A senha precisa ter ao menos {SENHA_MIN_LEN} caracteres.</p>
             )}
           </div>
           <AlertDialogFooter>
@@ -277,7 +275,7 @@ export function UsersPanel() {
                 e.preventDefault();
                 confirmarResetDeSenha();
               }}
-              disabled={novaSenha.length < SENHA_MIN}
+              disabled={novaSenha.length < SENHA_MIN_LEN}
             >
               Redefinir
             </AlertDialogAction>

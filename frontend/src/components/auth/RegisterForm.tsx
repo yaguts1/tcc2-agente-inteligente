@@ -5,6 +5,7 @@ import { Label } from '../ui/label';
 import { Spinner } from '../shared/Spinner';
 import { Alert, AlertDescription } from '../ui/alert';
 import { AlertCircle } from 'lucide-react';
+import { SENHA_MIN_LEN } from '../../lib/api';
 
 interface RegisterFormProps {
   onSubmit: (username: string, password: string, displayName: string) => Promise<void>;
@@ -34,8 +35,8 @@ export function RegisterForm({
       return;
     }
 
-    if (password.length < 6) {
-      setValidationError('A senha deve ter pelo menos 6 caracteres');
+    if (password.length < SENHA_MIN_LEN) {
+      setValidationError(`A senha deve ter pelo menos ${SENHA_MIN_LEN} caracteres`);
       return;
     }
 
@@ -88,7 +89,7 @@ export function RegisterForm({
         <Input
           id="password"
           type="password"
-          placeholder="Crie uma senha (mín. 6 caracteres)"
+          placeholder={`Crie uma senha (mín. ${SENHA_MIN_LEN} caracteres)`}
           value={password}
           onChange={(e) => setPassword(e.target.value)}
           disabled={isLoading}

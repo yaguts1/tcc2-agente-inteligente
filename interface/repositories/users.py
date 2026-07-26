@@ -5,6 +5,15 @@ import sqlite3
 from typing import Optional, Dict
 from interface.db_core import connect, utc_now_iso
 
+class UltimoAdmin(RuntimeError):
+    """A operacao deixaria a instalacao sem nenhum administrador ativo.
+
+    Rebaixar ou desativar o ultimo admin torna backup, importacao e gestao de
+    usuarios permanentemente inacessiveis — nao ha por onde recuperar pela
+    aplicacao.
+    """
+
+
 class UserRepository:
     def __init__(self, db_path: str):
         self.db_path = db_path
@@ -99,10 +108,40 @@ class UserRepository:
             self._ensure_users_role_column(conn)
             return int(conn.execute(sql, params).fetchone()[0])
 
+    def _restariam_admins(self, conn: sqlite3.Connection, exceto: str) -> bool:
+        """Sobra algum admin ativo se `exceto` deixar de contar? (dentro da transacao)"""
+        total = conn.execute(
+            "SELECT COUNT(*) FROM users WHERE role = 'admin' AND ativo = 1 AND username != ?",
+            (exceto,),
+        ).fetchone()[0]
+        return int(total) > 0
+
     def definir_papel(self, username: str, role: str) -> None:
+        """Altera o papel, recusando o que deixaria a instalacao sem admin.
+
+        A checagem mora AQUI, na mesma transacao do UPDATE, e nao no router.
+        Antes eram duas conexoes separadas: o router contava os admins, e so
+        depois — noutra conexao — gravava. Duas requisicoes simultaneas
+        rebaixando admins diferentes viam, cada uma, o outro ainda como admin,
+        e as duas passavam. O resultado e o estado que o modulo declara
+        impossivel: zero administradores, com backup, importacao e gestao de
+        usuarios permanentemente inacessiveis.
+
+        `BEGIN IMMEDIATE` pega o lock de escrita antes do SELECT, entao a
+        contagem e o UPDATE enxergam o mesmo estado.
+        """
         if role not in self.PAPEIS_VALIDOS:
             raise ValueError(f"papel invalido: {role}")
         with connect(self.db_path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if role != "admin" and not self._restariam_admins(conn, username):
+                # So bloqueia se o alvo for de fato o ultimo admin ativo; para
+                # quem ja e staff, `_restariam_admins` conta os admins todos.
+                atual = conn.execute(
+                    "SELECT role, ativo FROM users WHERE username = ?", (username,)
+                ).fetchone()
+                if atual is not None and atual["role"] == "admin" and atual["ativo"]:
+                    raise UltimoAdmin("Nao e possivel rebaixar o ultimo administrador ativo.")
             cur = conn.execute(
                 "UPDATE users SET role = ? WHERE username = ?", (role, username)
             )
@@ -110,7 +149,19 @@ class UserRepository:
                 raise LookupError("usuario nao encontrado")
 
     def definir_ativo(self, username: str, ativo: bool) -> None:
+        """Ativa/desativa, recusando o que deixaria a instalacao sem admin.
+
+        Mesma razao de `definir_papel`: o invariante e verificado na transacao
+        que o aplica.
+        """
         with connect(self.db_path) as conn:
+            conn.execute("BEGIN IMMEDIATE")
+            if not ativo and not self._restariam_admins(conn, username):
+                atual = conn.execute(
+                    "SELECT role, ativo FROM users WHERE username = ?", (username,)
+                ).fetchone()
+                if atual is not None and atual["role"] == "admin" and atual["ativo"]:
+                    raise UltimoAdmin("Nao e possivel desativar o ultimo administrador ativo.")
             cur = conn.execute(
                 "UPDATE users SET ativo = ? WHERE username = ?",
                 (1 if ativo else 0, username),
