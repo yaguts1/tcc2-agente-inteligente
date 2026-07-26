@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, Bell, Calendar } from 'lucide-react';
-import { statsApi, DashboardStats, patientsApi, ApiException, Alert } from '../../lib/api';
+import { statsApi, DashboardStats, patientsApi, ApiException, Alert, monitoramentoApi, StatusMonitoramento } from '../../lib/api';
 import { AlertFilters } from '../../hooks/useAlertFilters';
 import { useAlerts } from '../../contexts/AlertsContext';
 import { FilterBar } from '../alerts/FilterBar';
@@ -18,6 +18,7 @@ export function DashboardPage() {
     isLoading: alertsLoading, 
     error: alertsError, 
     isOffline: alertsOffline, 
+    totalTruncadoEm,
     fetchAlerts, 
     acknowledgeAlert, 
     completeAlert,
@@ -26,6 +27,10 @@ export function DashboardPage() {
   } = useAlerts();
 
   const [stats, setStats] = useState<DashboardStats | null>(null);
+  // QUAIS pacientes estão sem dados. `/api/stats` só traz a contagem, e o aviso
+  // que dizia "3 pacientes sem monitoramento" não dava como saber quais leitos
+  // conferir — a informação existia em /api/monitoramento e ninguém pedia.
+  const [semMonitoramento, setSemMonitoramento] = useState<StatusMonitoramento[]>([]);
   const [isLoadingStats, setIsLoadingStats] = useState(true);
   const [statsError, setStatsError] = useState<string | null>(null);
   const [patients, setPatients] = useState<Array<{ id: string; name: string }>>([]);
@@ -104,13 +109,18 @@ export function DashboardPage() {
   const fetchDashboardData = useCallback(async () => {
     setIsLoadingStats(true);
     try {
-      const [statsData, patientsData] = await Promise.all([
+      const [statsData, patientsData, monitoramento] = await Promise.all([
         statsApi.getStats(),
         patientsApi.getPatients(),
+        // Falha aqui é benigna: o aviso agregado (vindo de /stats) continua
+        // aparecendo, só sem a lista de quem. Deixar o dashboard inteiro cair
+        // por causa do detalhe seria pior do que perder o detalhe.
+        monitoramentoApi.getStatus().catch(() => null),
       ]);
-      
+
       setStats(statsData);
       setPatients(patientsData.map((p) => ({ id: p.id, name: p.name })));
+      setSemMonitoramento(monitoramento?.pacientes_sem_monitoramento ?? []);
       setStatsError(null);
     } catch (err) {
       if (err instanceof ApiException) {
@@ -242,7 +252,52 @@ export function DashboardPage() {
               alertas <strong>não</strong> significa que está tudo bem — verifique o sensor,
               a rede do leito e a ingestão.
             </p>
+            {/*
+              Quem, e não só quantos. O aviso mandava "verificar o sensor" sem
+              dizer de qual leito: a lista existia em /api/monitoramento e
+              nenhuma tela pedia. `nunca_recebeu_dados` aparece separado porque
+              a ação corretiva é outra — não é sensor que parou, é instalação
+              ou vínculo device↔leito que nunca funcionou.
+            */}
+            {semMonitoramento.length > 0 && (
+              <ul className="mt-2 space-y-1 text-sm text-foreground">
+                {semMonitoramento.map((p) => (
+                  <li key={p.paciente_id}>
+                    <span className="font-medium">{p.nome || p.paciente_id}</span>
+                    {p.cama_id && <span className="text-muted-foreground"> — leito {p.cama_id}</span>}
+                    <span className="text-muted-foreground">
+                      {p.nunca_recebeu_dados
+                        ? ' — nunca recebeu leitura (verifique a instalação e o vínculo do dispositivo)'
+                        : p.minutos_sem_dados != null
+                          ? ` — sem dados há ${p.minutos_sem_dados} min`
+                          : ' — sem leitura recente'}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            )}
           </div>
+        </div>
+      )}
+
+      {/*
+        Lista de alertas cortada pelo teto da requisição.
+        O filtro da tela roda em MEMÓRIA sobre o que chegou, então o que foi
+        cortado não existe para a busca — e um paciente atrasado ficaria fora
+        sem nenhum sinal. Mesmo princípio do relatório truncado: a omissão
+        pode até ser aceitável, invisível não.
+      */}
+      {totalTruncadoEm !== null && (
+        <div
+          role="alert"
+          className="flex items-start gap-3 rounded-lg border border-warning bg-warning-light p-4"
+        >
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-warning" aria-hidden="true" />
+          <p className="text-sm text-foreground">
+            Exibindo {alerts.length} de <strong>{totalTruncadoEm}</strong> alertas da janela.
+            Os filtros abaixo se aplicam apenas aos exibidos — restrinja o período para ver
+            o restante.
+          </p>
         </div>
       )}
 

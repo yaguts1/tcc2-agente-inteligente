@@ -16,6 +16,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { AlertsProvider, useAlerts } from './AlertsContext';
 import { ApiException } from '../lib/api';
+import type { Alert, PaginaDeAlertas } from '../lib/api';
 
 vi.mock('../lib/api', async () => {
   const real = await vi.importActual<typeof import('../lib/api')>('../lib/api');
@@ -78,11 +79,20 @@ function Sonda() {
   );
 }
 
+
+// A API devolve a página (itens + total) para que o truncamento seja visível.
+// Nos testes o total é sempre o tamanho da lista: nada truncado.
+const pagina = (itens: Alert[]): PaginaDeAlertas => ({
+  itens,
+  total: itens.length,
+  truncado: false,
+});
+
 const renderizar = (children: ReactNode = <Sonda />) =>
   render(<AlertsProvider>{children}</AlertsProvider>);
 
 beforeEach(() => {
-  vi.mocked(alertsApi.getAlerts).mockResolvedValue([alertaExemplo]);
+  vi.mocked(alertsApi.getAlerts).mockResolvedValue(pagina([alertaExemplo]));
   vi.mocked(alertsApi.acknowledge).mockResolvedValue(undefined as never);
   vi.mocked(alertsApi.complete).mockResolvedValue(undefined as never);
 });
@@ -114,7 +124,7 @@ describe('falha ao buscar alertas', () => {
   it('não apresenta lista vazia como se fosse "nenhum alerta"', async () => {
     // Primeira carga funciona; a seguinte falha (backend caiu no meio do uso).
     vi.mocked(alertsApi.getAlerts)
-      .mockResolvedValueOnce([alertaExemplo])
+      .mockResolvedValueOnce(pagina([alertaExemplo]))
       .mockRejectedValue(new ApiException('falhou', 500));
 
     renderizar();

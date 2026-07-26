@@ -8,6 +8,7 @@ from __future__ import annotations
 from datetime import datetime
 
 import pytest
+from fastapi import Response
 
 import interface.api as api_mod
 import interface.api_shared as api_shared
@@ -46,7 +47,10 @@ async def test_frontend_alerts_shape_matches_contract(tmp_path, monkeypatch):
     assert inserir_alertas(str(db_path), [alert]) == 1
 
     # call the route function directly (it's async)
-    results = await api_mod.frontend_alerts(horas=24)
+    # `Response` real: o handler grava nele o X-Total-Count, que torna o
+    # corte por `limit` visivel para o cliente.
+    resposta = Response()
+    results = await api_mod.frontend_alerts(resposta, horas=24)
     assert isinstance(results, list)
     assert len(results) >= 1
     r = results[0]

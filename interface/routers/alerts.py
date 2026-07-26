@@ -3,7 +3,7 @@ from __future__ import annotations
 from typing import Optional
 
 import structlog
-from fastapi import APIRouter, Depends, HTTPException, Request, status, Query, WebSocket, WebSocketDisconnect
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 
 from interface.api_shared import DB_PATH, _check_batch_rate_limit
@@ -11,7 +11,7 @@ from interface.schemas import BatchAlertRequest
 from interface.ws_manager_optimized import ws_manager_optimized, WebSocketFilter
 from interface.dependencies import get_current_user
 from interface.services.alerts_service import (
-    listar_alertas_frontend,
+    listar_alertas_frontend_paginado,
     reconhecer_alerta,
     completar_alerta,
     processar_lote,
@@ -26,6 +26,7 @@ router = APIRouter(tags=["alerts"])
 
 @router.get("/frontend/alerts", status_code=status.HTTP_200_OK)
 async def frontend_alerts(
+    response: Response,
     horas: int | None = 24,
     riskLevel: str | None = None,
     status_filter: str | None = None,
@@ -46,8 +47,19 @@ async def frontend_alerts(
 
     Each alert contains: id, patientName, room, bed, lastRepositioning (ISO),
     nextRepositioning (ISO), riskLevel (high|medium|low), status (pending|acknowledged|completed)
+
+    Cabecalho `X-Total-Count`: quantos alertas casam com os filtros, ANTES do
+    corte por `limit`. O corpo continua sendo o array puro (o contrato que o
+    frontend e os testes usam), mas sem esse numero a resposta omite em
+    silencio: uma lista de 100 com `limit=100` e indistinguivel de "existem
+    exatamente 100", e o dashboard filtra em memoria sobre o que recebeu — um
+    paciente atrasado ficaria fora da tela sem nenhum sinal.
     """
-    return await listar_alertas_frontend(horas, riskLevel, status_filter, room, limit, offset)
+    pagina = await listar_alertas_frontend_paginado(
+        horas, riskLevel, status_filter, room, limit, offset
+    )
+    response.headers["X-Total-Count"] = str(pagina.total)
+    return pagina.itens
 
 
 @router.post("/frontend/alerts/batch/acknowledge", status_code=status.HTTP_200_OK)
@@ -266,6 +278,26 @@ async def websocket_alerts(
 
     Example:
         ws://localhost:8000/api/ws/alerts?severity=high,critical&patient_id=PAC-0001
+
+    NAO USADO PELO FRONTEND, E DE PROPOSITO
+    ---------------------------------------
+    O React abre UMA conexao (frontend/src/contexts/WebSocketContext.tsx),
+    compartilhada por todos os consumidores: o dashboard, que precisa de todos
+    os alertas, e a tela de Historico, que recarrega a timeline a cada
+    mensagem. O filtro aqui e POR CONEXAO — aplica-lo naquela conexao unica
+    silenciaria os demais consumidores, entao a nao-utilizacao e a decisao
+    correta, e nao um esquecimento.
+
+    A capacidade fica porque e o que uma futura tela por paciente (ou um painel
+    de leito) precisaria, e porque o custo de manter e um `if`. Quem for
+    liga-la: abra uma SEGUNDA conexao para o consumidor filtrado, sem mexer na
+    compartilhada.
+
+    Cuidado ao mexer nos payloads: `_montar_payload_broadcast` e
+    `_montar_payload_alerta_novo` precisam continuar carregando `severity`,
+    `patient_id` e `alert_type`, porque e contra esses campos que
+    `WebSocketFilter.matches()` decide. Ja houve o caso de o payload nao os
+    ter, e todo cliente com filtro ficava sem receber nada.
     """
     # Parse filters
     severities = severity.split(",") if severity else None

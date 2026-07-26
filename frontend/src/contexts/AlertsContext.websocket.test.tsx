@@ -47,6 +47,7 @@ vi.mock('./WebSocketContext', () => ({
 vi.mock('sonner', () => ({ toast: { success: vi.fn(), error: vi.fn() } }));
 
 import { alertsApi } from '../lib/api';
+import type { Alert, PaginaDeAlertas } from '../lib/api';
 
 const alerta = (id: string) => ({
   id,
@@ -63,6 +64,15 @@ function Sonda() {
   const { alerts } = useAlerts();
   return <div data-testid="ids">{alerts.map((a) => a.id).join(',')}</div>;
 }
+
+
+// A API devolve a página (itens + total) para que o truncamento seja visível.
+// Nos testes o total é sempre o tamanho da lista: nada truncado.
+const pagina = (itens: Alert[]): PaginaDeAlertas => ({
+  itens,
+  total: itens.length,
+  truncado: false,
+});
 
 const renderizar = () =>
   render(
@@ -86,16 +96,16 @@ describe('alerta novo com o WebSocket conectado', () => {
     // (A primeira versão deste teste usava mockResolvedValueOnce e passava
     // contra o código com defeito: um refetch vindo de outro caminho trazia o
     // segundo alerta sozinho, então o teste não provava o que afirmava.)
-    vi.mocked(alertsApi.getAlerts).mockResolvedValue([alerta('PAC-1__t1')]);
+    vi.mocked(alertsApi.getAlerts).mockResolvedValue(pagina([alerta('PAC-1__t1')]));
 
     renderizar();
     await waitFor(() => expect(screen.getByTestId('ids')).toHaveTextContent('PAC-1__t1'));
     expect(screen.getByTestId('ids')).not.toHaveTextContent('PAC-2__t2');
 
-    vi.mocked(alertsApi.getAlerts).mockResolvedValue([
+    vi.mocked(alertsApi.getAlerts).mockResolvedValue(pagina([
       alerta('PAC-1__t1'),
       alerta('PAC-2__t2'),
-    ]);
+    ]));
 
     // O motor abriu um alerta para outro paciente.
     publicar?.({ type: 'alert_new', alert_id: 'PAC-2__t2', status: 'pending' });
@@ -110,7 +120,7 @@ describe('alerta novo com o WebSocket conectado', () => {
     // para que o defeito de um vire atraso, e não ausência.
     vi.useFakeTimers();
     try {
-      vi.mocked(alertsApi.getAlerts).mockResolvedValue([alerta('PAC-1__t1')]);
+      vi.mocked(alertsApi.getAlerts).mockResolvedValue(pagina([alerta('PAC-1__t1')]));
       renderizar();
 
       await vi.waitFor(() => expect(alertsApi.getAlerts).toHaveBeenCalled());
@@ -127,7 +137,7 @@ describe('alerta novo com o WebSocket conectado', () => {
   });
 
   it('continua atualizando o status pelo alert_update', async () => {
-    vi.mocked(alertsApi.getAlerts).mockResolvedValue([alerta('PAC-1__t1')]);
+    vi.mocked(alertsApi.getAlerts).mockResolvedValue(pagina([alerta('PAC-1__t1')]));
     renderizar();
     await waitFor(() => expect(screen.getByTestId('ids')).toHaveTextContent('PAC-1__t1'));
 
