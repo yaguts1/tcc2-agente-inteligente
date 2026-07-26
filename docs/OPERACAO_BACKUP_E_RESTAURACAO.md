@@ -39,6 +39,14 @@ passa, o arquivo é apagado e a operação falha.** Um backup ruim no diretório
 pior que nenhum: ele aparece na listagem e passa uma impressão de cobertura que
 não existe.
 
+O arquivo gerado é fechado em `journal_mode=DELETE`, ou seja, é **um arquivo
+autocontido** — sem `-wal`/`-shm` ao lado. Isso importa porque o backup existe
+para ser copiado para fora e restaurado: com o modo WAL herdado do banco vivo,
+a própria verificação criava sidecars, a limpeza os deixava órfãos no disco e a
+réplica externa os levava junto. Instalações anteriores a esta correção ainda
+têm sidecars ao lado dos backups antigos; eles saem sozinhos quando a retenção
+remover os arquivos correspondentes.
+
 ## Conferir se a cobertura está de pé
 
 ```bash

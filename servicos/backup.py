@@ -116,6 +116,18 @@ def estado_replicacao(backup_dir: str | Path) -> dict:
         base["erro"] = base["erro"] or "recibo sem data valida"
         return base
 
+    # Recibo com data no FUTURO nao prova nada sobre agora.
+    #
+    # Com o relogio do host adiantado, um recibo datado de 2030 ficaria
+    # "recente" para sempre — a replicacao poderia parar e a tela seguiria
+    # dizendo que a copia externa esta de pe. E o modo de falha que esta
+    # funcao existe para eliminar, entao nao pode ser reintroduzido por uma
+    # comparacao ingenua de datas. Uma folga pequena absorve dessincronia
+    # normal entre host e container.
+    if base["idade_horas"] < -0.5:
+        base["erro"] = "recibo com data no futuro (relogio do host?)"
+        return base
+
     # Mesma tolerancia de meio intervalo usada para o backup local: um ciclo que
     # atrasa alguns minutos nao e incidente, um ciclo que nao aconteceu e.
     base["saudavel"] = bool(base["ok"]) and base["idade_horas"] <= intervalo * 1.5
@@ -241,6 +253,21 @@ class BackupService:
                 source_conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
                 with backup_conn:
                     source_conn.backup(backup_conn)
+                # O backup herda o `journal_mode=WAL` do banco vivo, e um banco
+                # em WAL aberto SO PARA LEITURA precisa do `-shm` — entao a
+                # propria verificacao criava `backup_*.db-shm` (32 KB) e
+                # `-wal` ao lado de cada arquivo. Isso importa por tres razoes:
+                #
+                #  * `cleanup_old_backups` apaga `backup_*.db` e deixaria os
+                #    dois orfaos no disco para sempre;
+                #  * a replica externa levaria os sidecars junto, sem serventia;
+                #  * restaurar copiando so o `.db` e correto, mas um `-wal` ao
+                #    lado do destino seria replicado pelo SQLite na abertura —
+                #    hoje eles estao vazios, e nao se deve depender disso.
+                #
+                # Em `delete`, o artefato e UM arquivo autocontido: e o que se
+                # quer de algo feito para ser copiado para fora e restaurado.
+                backup_conn.execute("PRAGMA journal_mode=DELETE")
         except Exception as e:
             logger.error("backup_failed", error=str(e), path=self.db_path)
             backup_path.unlink(missing_ok=True)
@@ -289,6 +316,15 @@ class BackupService:
                     continue
                 if backup_file.stat().st_mtime < cutoff_time:
                     backup_file.unlink()
+                    # Sidecars de WAL deixados por instalacoes anteriores a
+                    # `PRAGMA journal_mode=DELETE` no create_backup. O glob so
+                    # casa `backup_*.db`, entao sem isto eles sobreviveriam ao
+                    # arquivo que descrevem — lixo permanente no diretorio que
+                    # a replica externa ainda por cima copiaria.
+                    for sufixo in ("-wal", "-shm"):
+                        sidecar = backup_file.with_name(backup_file.name + sufixo)
+                        if sidecar.exists():
+                            sidecar.unlink()
                     removed_count += 1
                     logger.info("backup_removed", filename=backup_file.name)
 

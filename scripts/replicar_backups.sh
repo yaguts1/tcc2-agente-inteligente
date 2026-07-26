@@ -84,6 +84,13 @@ docker compose -f "$COMPOSE_DIR/docker-compose.yml" \
 # O recibo da execução anterior vem junto; não faz sentido replicá-lo.
 rm -f "$staging/$RECIBO_NOME"
 
+# Sidecars de WAL (`-wal`/`-shm`) deixados por instalações antigas, antes de o
+# create_backup fechar o arquivo em `journal_mode=DELETE`. Não são backup e não
+# devem ir para fora: além do tráfego inútil, um `-wal` ao lado do `.db` no
+# destino seria replicado pelo SQLite na hora de restaurar — o que faria a base
+# restaurada divergir do arquivo que foi verificado.
+find "$staging" \( -name 'backup_*.db-wal' -o -name 'backup_*.db-shm' \) -exec rm -f {} +
+
 arquivos=$(find "$staging" -name 'backup_*.db' | wc -l | tr -d ' ')
 [ "$arquivos" -gt 0 ] || falhar "nenhum backup encontrado em $DIR_BACKUPS_CONTAINER"
 

@@ -120,6 +120,18 @@ e este projeto adota [Semantic Versioning](https://semver.org/lang/pt-BR/).
     configurada **sem alarme**: alarmar pelo que a instituição não configurou
     treina a equipe a ignorar o vermelho.
 
+- O backup herdava `journal_mode=WAL` do banco vivo, e a **própria verificação**
+  criava um `-shm` (32 KB) e um `-wal` ao lado de cada arquivo — encontrado
+  inspecionando o container em execução, que tinha 10 backups e 20 sidecars.
+  Consequências: `cleanup_old_backups` apaga só `backup_*.db` e deixaria os
+  sidecars órfãos no disco para sempre; a réplica externa os copiaria junto; e
+  um `-wal` ao lado do `.db` no destino seria replicado pelo SQLite ao
+  restaurar. Agora o backup é fechado em `journal_mode=DELETE` — um arquivo
+  autocontido — e a limpeza remove sidecars remanescentes junto com o arquivo.
+- Recibo de replicação com data no **futuro** (relógio do host adiantado) seria
+  tratado como recente para sempre: a replicação poderia morrer e a tela
+  seguiria dizendo que a cópia externa estava de pé.
+
 ### Corrigido — configuração que não chegava ao container
 
 - **Onze variáveis documentadas no `.env.example` e lidas pelo código nunca

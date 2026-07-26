@@ -11,6 +11,7 @@ provado.
 """
 
 import sqlite3
+from contextlib import closing
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -494,3 +495,114 @@ class TestReplicacaoExterna:
 
         assert estado["saudavel"] is False
         assert estado["erro"] == "rsync nao encontrado no host"
+
+    def test_recibo_com_data_no_futuro_nao_conta_como_cobertura(self, tmp_path, monkeypatch):
+        """Relogio do host adiantado nao pode gerar cobertura eterna.
+
+        Apareceu ao exercitar o fluxo contra o container: um recibo alguns
+        segundos a frente resultava em `idade_horas` negativa. Levado ao
+        extremo, um recibo datado de 2030 ficaria "recente" para sempre e a
+        replicacao poderia morrer sem que a tela mudasse — o modo de falha que
+        esta funcao existe para eliminar.
+        """
+        from servicos.backup import estado_replicacao
+
+        monkeypatch.setenv("BACKUP_REPLICACAO_INTERVALO_HORAS", "24")
+        futuro = datetime.now(timezone.utc) + timedelta(days=365)
+        self._recibo(tmp_path, terminado_em=futuro.strftime("%Y-%m-%dT%H:%M:%SZ"))
+
+        estado = estado_replicacao(tmp_path)
+
+        assert estado["saudavel"] is False
+        assert "futuro" in estado["erro"]
+
+    def test_dessincronia_pequena_entre_host_e_container_e_tolerada(self, tmp_path, monkeypatch):
+        """Poucos segundos de diferenca sao normais e nao podem virar alarme."""
+        from servicos.backup import estado_replicacao
+
+        monkeypatch.setenv("BACKUP_REPLICACAO_INTERVALO_HORAS", "24")
+        quase_agora = datetime.now(timezone.utc) + timedelta(seconds=20)
+        self._recibo(tmp_path, terminado_em=quase_agora.strftime("%Y-%m-%dT%H:%M:%SZ"))
+
+        assert estado_replicacao(tmp_path)["saudavel"] is True
+
+
+class TestArtefatoAutocontido:
+    """Um backup precisa ser UM arquivo, sem sidecars de WAL.
+
+    Descoberto inspecionando o container em execucao: o diretorio tinha 10
+    backups e 20 arquivos `-shm`/`-wal` ao lado. Nao era o backup que os
+    criava — nascia limpo — era a VERIFICACAO: o arquivo herda
+    `journal_mode=WAL` do banco vivo, e um banco WAL aberto so para leitura
+    exige o `-shm`.
+    """
+
+    def _servico(self, tmp_path):
+        from servicos.backup import BackupService
+
+        db = tmp_path / "dados.db"
+        criar_esquema(str(db))
+        return BackupService(str(db), backup_dir=str(tmp_path / "backups"))
+
+    def test_backup_nasce_em_modo_delete(self, tmp_path):
+        """Em `delete` o artefato e autocontido — que e o que se quer de algo
+        feito para ser copiado para fora e restaurado."""
+        import sqlite3 as sq
+
+        servico = self._servico(tmp_path)
+        caminho = servico.create_backup()
+
+        with closing(sq.connect(caminho)) as conn:
+            assert conn.execute("PRAGMA journal_mode").fetchone()[0] == "delete"
+
+    def test_verificar_nao_deixa_sidecar(self, tmp_path):
+        """Era exatamente aqui que os 32 KB por backup apareciam."""
+        from pathlib import Path
+
+        servico = self._servico(tmp_path)
+        servico.create_backup()
+
+        servico.verificar_todos()
+
+        dir_backups = Path(tmp_path / "backups")
+        sidecars = list(dir_backups.glob("*-wal")) + list(dir_backups.glob("*-shm"))
+        assert sidecars == [], f"verificacao deixou sidecars: {[s.name for s in sidecars]}"
+
+    def test_backup_em_modo_delete_ainda_restaura(self, tmp_path):
+        """Trocar o journal_mode nao pode custar a propriedade que importa."""
+        servico = self._servico(tmp_path)
+        caminho = servico.create_backup()
+
+        from servicos.backup import verificar_arquivo
+
+        assert verificar_arquivo(caminho).ok
+
+    def test_limpeza_leva_os_sidecars_junto(self, tmp_path):
+        """Instalacoes anteriores a correcao tem sidecars no disco.
+
+        `cleanup_old_backups` casa `backup_*.db`, entao sem tratamento
+        explicito o `-wal` e o `-shm` sobreviveriam ao arquivo que descrevem —
+        lixo permanente que a replica externa ainda copiaria.
+        """
+        import os
+        import time
+        from pathlib import Path
+
+        servico = self._servico(tmp_path)
+        dir_backups = Path(tmp_path / "backups")
+        # 4 backups: o piso `MANTER_MINIMO` protege 3, entao 1 pode sair.
+        for _ in range(4):
+            servico.create_backup()
+            time.sleep(1.05)  # o nome tem resolucao de segundo
+
+        antigo = sorted(dir_backups.glob("backup_*.db"))[0]
+        for sufixo in ("-wal", "-shm"):
+            antigo.with_name(antigo.name + sufixo).write_bytes(b"")
+        velho = time.time() - 30 * 86400
+        os.utime(antigo, (velho, velho))
+
+        assert servico.cleanup_old_backups(keep_days=7) == 1
+
+        assert not antigo.exists()
+        assert not antigo.with_name(antigo.name + "-wal").exists()
+        assert not antigo.with_name(antigo.name + "-shm").exists()
