@@ -14,7 +14,7 @@
  *    deixar o usuário clicando e recebendo 401 sem entender.
  */
 import { useState } from 'react';
-import { usuariosApi, ApiException } from '../../lib/api';
+import { usuariosApi, ApiException, SENHA_MIN_LEN } from '../../lib/api';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
@@ -30,8 +30,6 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from '../ui/alert-dialog';
-
-const SENHA_MIN = 8;
 
 interface TrocarSenhaDialogProps {
   aberto: boolean;
@@ -50,10 +48,10 @@ export function TrocarSenhaDialog({
   const [confirmacao, setConfirmacao] = useState('');
   const [enviando, setEnviando] = useState(false);
 
-  const curta = novaSenha.length > 0 && novaSenha.length < SENHA_MIN;
+  const curta = novaSenha.length > 0 && novaSenha.length < SENHA_MIN_LEN;
   const naoConfere = confirmacao.length > 0 && confirmacao !== novaSenha;
   const podeEnviar =
-    senhaAtual.length > 0 && novaSenha.length >= SENHA_MIN && confirmacao === novaSenha;
+    senhaAtual.length > 0 && novaSenha.length >= SENHA_MIN_LEN && confirmacao === novaSenha;
 
   const limpar = () => {
     setSenhaAtual('');
@@ -116,11 +114,11 @@ export function TrocarSenhaDialog({
               autoComplete="new-password"
               value={novaSenha}
               onChange={(e) => setNovaSenha(e.target.value)}
-              placeholder={`Mínimo de ${SENHA_MIN} caracteres`}
+              placeholder={`Mínimo de ${SENHA_MIN_LEN} caracteres`}
             />
             {curta && (
               <p className="text-sm text-danger">
-                A senha precisa ter ao menos {SENHA_MIN} caracteres.
+                A senha precisa ter ao menos {SENHA_MIN_LEN} caracteres.
               </p>
             )}
           </div>

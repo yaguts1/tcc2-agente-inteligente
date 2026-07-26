@@ -128,6 +128,24 @@ e este projeto adota [Semantic Versioning](https://semver.org/lang/pt-BR/).
   por `filename`. Entregar a estrutura de diretórios ao navegador é o mesmo
   vazamento que `erro_interno` existe para evitar no resto da API.
 
+- **A política de senha não valia no cadastro.** `/usuarios/eu/senha` e
+  `/usuarios/{u}/senha` exigiam 8 caracteres, `/auth/register` não exigia nada
+  e o formulário do frontend pedia 6 — três respostas diferentes para a mesma
+  pergunta. Dava para criar a conta com `"a"` e só então ser impedido de trocar
+  para `"a"`; como o primeiro usuário da instalação vira **admin**, era a conta
+  administrativa que nascia sem exigência alguma. Agora os três caminhos saem
+  de uma fonte só (`exigir_senha_forte` / `SENHA_MIN_LEN`).
+- O invariante "a instalação nunca fica sem admin ativo" era conferido no
+  router, numa consulta separada do `UPDATE`. Duas requisições simultâneas
+  rebaixando administradores diferentes viam, cada uma, o outro ainda como
+  admin — e as duas passavam. A checagem passou para dentro da transação que a
+  aplica (`BEGIN IMMEDIATE`, em `UserRepository`).
+- `BACKUP_INTERVAL_HOURS` era lido em dois lugares com tratamentos diferentes:
+  o agendador caía no padrão diante de um valor ilegível e o endpoint de status
+  respondia 500. Pior que a robustez, divergindo eles fariam o veredito "estou
+  coberto?" julgar a idade do último backup contra um intervalo que não é o que
+  o agendador usa.
+
 ### Adicionado — telas de administração
 
 - A página de Admin era exclusivamente reconciliação de eventos órfãos,

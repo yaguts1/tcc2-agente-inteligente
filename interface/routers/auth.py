@@ -10,7 +10,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, status, Response
 from passlib.hash import bcrypt
 
 from interface.repositories.users import UserRepository
-from interface.api_shared import _check_auth_rate_limit, DB_PATH
+from interface.api_shared import _check_auth_rate_limit, exigir_senha_forte, DB_PATH
 from interface.schemas import RegisterRequest
 from interface.auth_utils import ACCESS_TOKEN_EXPIRE_SECONDS, create_access_token, em_producao
 from interface.dependencies import _payload_do_jwt, get_current_user, usuario_de_jwt
@@ -177,6 +177,12 @@ def api_register(request: Request, req: RegisterRequest, _: None = Depends(_chec
     display = None if req.display_name is None else str(req.display_name).strip() or None
     if not username or not password:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={"code": "invalid_request", "message": "username e password necessarios"})
+
+    # A politica de senha valia ao TROCAR e nao ao CRIAR: dava para cadastrar
+    # com "a" e so entao ser impedido de trocar para "a". Como o primeiro
+    # usuario da instalacao vira admin, era a conta administrativa que nascia
+    # sem exigencia nenhuma.
+    exigir_senha_forte(password)
 
     _autorizar_cadastro(request)
 

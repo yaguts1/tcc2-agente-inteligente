@@ -32,13 +32,13 @@ def test_register_and_login_success(make_app):
     app = make_app()
     with TestClient(app) as client:
         # register
-        r = client.post("/api/auth/register", json={"username": "alice", "password": "secret"})
+        r = client.post("/api/auth/register", json={"username": "alice", "password": "senha-secreta"})
         assert r.status_code == 201, r.text
         assert r.json().get("username") == "alice"
 
         # login should succeed (we'll log out first to ensure independent flow)
         client.post("/api/auth/logout")
-        r2 = client.post("/api/auth/login", json={"username": "alice", "password": "secret"})
+        r2 = client.post("/api/auth/login", json={"username": "alice", "password": "senha-secreta"})
         assert r2.status_code == 200
         assert r2.json().get("username") == "alice"
 
@@ -46,10 +46,10 @@ def test_register_and_login_success(make_app):
 def test_register_duplicate(make_app):
     app = make_app()
     with TestClient(app) as client:
-        r = client.post("/api/auth/register", json={"username": "bob", "password": "pw"})
+        r = client.post("/api/auth/register", json={"username": "bob", "password": "senha-de-teste"})
         assert r.status_code == 201
         # Reusa a sessao criada no cadastro acima (o cadastro ja nao e aberto).
-        r2 = client.post("/api/auth/register", json={"username": "bob", "password": "pw2"})
+        r2 = client.post("/api/auth/register", json={"username": "bob", "password": "senha-de-teste-2"})
         assert r2.status_code == 400
 
 
@@ -59,12 +59,12 @@ def test_primeiro_cadastro_e_liberado_depois_exige_credencial(make_app):
     da instalacao); a partir dai exige sessao ou token de convite."""
     app = make_app()
     with TestClient(app) as bootstrap:
-        r = bootstrap.post("/api/auth/register", json={"username": "primeiro", "password": "pw"})
+        r = bootstrap.post("/api/auth/register", json={"username": "primeiro", "password": "senha-de-teste"})
         assert r.status_code == 201, "primeiro cadastro deveria ser liberado"
 
     # Cliente novo, sem cookie de sessao.
     with TestClient(app) as anonimo:
-        r = anonimo.post("/api/auth/register", json={"username": "invasor", "password": "pw"})
+        r = anonimo.post("/api/auth/register", json={"username": "invasor", "password": "senha-de-teste"})
         assert r.status_code == 403, f"cadastro anonimo foi aceito: {r.text}"
         assert r.json()["detail"]["code"] == "cadastro_restrito"
 
@@ -73,12 +73,12 @@ def test_cadastro_aceita_token_de_convite(make_app, monkeypatch):
     monkeypatch.setenv("UPP_REGISTER_TOKEN", "convite-secreto")
     app = make_app()
     with TestClient(app) as c:
-        assert c.post("/api/auth/register", json={"username": "primeiro", "password": "pw"}).status_code == 201
+        assert c.post("/api/auth/register", json={"username": "primeiro", "password": "senha-de-teste"}).status_code == 201
 
     with TestClient(app) as anonimo:
         r = anonimo.post(
             "/api/auth/register",
-            json={"username": "convidado", "password": "pw"},
+            json={"username": "convidado", "password": "senha-de-teste"},
             headers={"X-Register-Token": "convite-secreto"},
         )
         assert r.status_code == 201, f"token de convite valido foi recusado: {r.text}"
@@ -86,7 +86,7 @@ def test_cadastro_aceita_token_de_convite(make_app, monkeypatch):
     with TestClient(app) as anonimo:
         r = anonimo.post(
             "/api/auth/register",
-            json={"username": "outro", "password": "pw"},
+            json={"username": "outro", "password": "senha-de-teste"},
             headers={"X-Register-Token": "errado"},
         )
         assert r.status_code == 403
@@ -145,7 +145,7 @@ def test_cookie_de_sessao_tem_samesite(make_app):
     estado fica exposto a CSRF."""
     app = make_app()
     with TestClient(app) as client:
-        r = client.post("/api/auth/register", json={"username": "dave", "password": "pw"})
+        r = client.post("/api/auth/register", json={"username": "dave", "password": "senha-de-teste"})
         assert r.status_code == 201
         set_cookie = r.headers.get("set-cookie", "")
         assert "access_token" in set_cookie
@@ -164,7 +164,7 @@ def test_cookie_secure_segue_o_protocolo_da_requisicao(make_app):
     """
     app = make_app()
     with TestClient(app) as client:
-        r = client.post("/api/auth/register", json={"username": "erin", "password": "pw"})
+        r = client.post("/api/auth/register", json={"username": "erin", "password": "senha-de-teste"})
         assert r.status_code == 201
         assert "secure" not in r.headers.get("set-cookie", "").lower(), (
             "cookie marcado como Secure numa requisicao HTTP — o browser o descartaria"
@@ -173,7 +173,7 @@ def test_cookie_secure_segue_o_protocolo_da_requisicao(make_app):
         # Atras do Caddy (TLS terminado no proxy) o header indica HTTPS.
         r2 = client.post(
             "/api/auth/login",
-            json={"username": "erin", "password": "pw"},
+            json={"username": "erin", "password": "senha-de-teste"},
             headers={"X-Forwarded-Proto": "https"},
         )
         assert r2.status_code == 200

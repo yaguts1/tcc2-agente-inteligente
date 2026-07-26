@@ -181,3 +181,86 @@ def test_reset_de_senha_por_admin(equipe):
     assert c.post(
         "/api/auth/login", json={"username": "tecnico", "password": "definida-pelo-admin"}
     ).status_code == 200
+
+
+class TestInvarianteDoUltimoAdmin:
+    """"Nunca sem admin" e invariante do dado, e agora e garantido como tal.
+
+    A checagem morava no router, numa consulta separada do UPDATE. Duas
+    requisicoes simultaneas rebaixando admins DIFERENTES viam, cada uma, o
+    outro ainda como admin — e as duas passavam, produzindo exatamente o estado
+    que o modulo declara impossivel. Agora a contagem e a escrita acontecem na
+    mesma transacao (`BEGIN IMMEDIATE`).
+    """
+
+    def _repo(self, db_path):
+        from interface.repositories.users import UserRepository
+
+        return UserRepository(db_path)
+
+    def test_rebaixar_o_ultimo_admin_e_recusado(self, app_isolado):
+        from interface.repositories.users import UltimoAdmin
+
+        repo = self._repo(app_isolado.db_path)
+        repo.create("unico", "hash", role="admin")
+
+        with pytest.raises(UltimoAdmin):
+            repo.definir_papel("unico", "staff")
+
+        assert repo.get_by_username("unico")["role"] == "admin"
+
+    def test_desativar_o_ultimo_admin_e_recusado(self, app_isolado):
+        from interface.repositories.users import UltimoAdmin
+
+        repo = self._repo(app_isolado.db_path)
+        repo.create("unico", "hash", role="admin")
+
+        with pytest.raises(UltimoAdmin):
+            repo.definir_ativo("unico", False)
+
+        assert repo.get_by_username("unico")["ativo"] == 1
+
+    def test_com_dois_admins_rebaixar_um_e_permitido(self, app_isolado):
+        repo = self._repo(app_isolado.db_path)
+        repo.create("a1", "hash", role="admin")
+        repo.create("a2", "hash", role="admin")
+
+        repo.definir_papel("a1", "staff")
+
+        assert repo.get_by_username("a1")["role"] == "staff"
+
+    def test_rebaixar_quem_ja_e_staff_nao_e_bloqueado(self, app_isolado):
+        """O bloqueio e sobre o ULTIMO ADMIN, nao sobre "ha um admin so".
+
+        Com um unico admin e um staff, mexer no staff nao ameaca o invariante —
+        recusar aqui impediria operacao legitima.
+        """
+        repo = self._repo(app_isolado.db_path)
+        repo.create("chefe", "hash", role="admin")
+        repo.create("comum", "hash", role="staff")
+
+        repo.definir_papel("comum", "staff")
+        repo.definir_ativo("comum", False)
+
+        assert repo.get_by_username("comum")["ativo"] == 0
+
+    def test_promover_nunca_e_bloqueado(self, app_isolado):
+        repo = self._repo(app_isolado.db_path)
+        repo.create("chefe", "hash", role="admin")
+        repo.create("comum", "hash", role="staff")
+
+        repo.definir_papel("comum", "admin")
+
+        assert repo.get_by_username("comum")["role"] == "admin"
+
+    def test_um_admin_inativo_nao_conta_como_ultimo_admin(self, app_isolado):
+        """Admin desativado nao consegue administrar; nao pode sustentar o invariante."""
+        from interface.repositories.users import UltimoAdmin
+
+        repo = self._repo(app_isolado.db_path)
+        repo.create("ativo", "hash", role="admin")
+        repo.create("afastado", "hash", role="admin")
+        repo.definir_ativo("afastado", False)
+
+        with pytest.raises(UltimoAdmin):
+            repo.definir_papel("ativo", "staff")

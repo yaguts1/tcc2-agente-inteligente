@@ -26,11 +26,11 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from passlib.hash import bcrypt
 from pydantic import BaseModel, Field
 
-from interface.api_shared import erro_interno
+from interface.api_shared import erro_interno, exigir_senha_forte
 from interface.api_shared import _check_api_rate_limit
 from interface.dependencies import exigir_papel, get_current_user
 from interface.repositories.sessoes import revogar_sessoes_do_usuario
-from interface.repositories.users import UserRepository
+from interface.repositories.users import UltimoAdmin, UserRepository
 
 logger = structlog.get_logger(__name__)
 
@@ -72,13 +72,17 @@ class AlterarAtivo(BaseModel):
     ativo: bool
 
 
+# O tamanho minimo NAO fica no schema: ele e o mesmo de `/auth/register` e
+# precisa sair de uma unica fonte (`exigir_senha_forte`), senao os tres
+# caminhos que definem senha voltam a divergir — foi assim que o cadastro ficou
+# sem exigencia nenhuma enquanto a troca exigia 8.
 class TrocarSenha(BaseModel):
     senha_atual: str = Field(..., min_length=1)
-    nova_senha: str = Field(..., min_length=8)
+    nova_senha: str
 
 
 class DefinirSenha(BaseModel):
-    nova_senha: str = Field(..., min_length=8)
+    nova_senha: str
 
 
 @router.get("/usuarios", status_code=status.HTTP_200_OK)
@@ -89,16 +93,16 @@ def listar_usuarios() -> list[dict]:
 
 @router.patch("/usuarios/{username}/papel", status_code=status.HTTP_200_OK)
 def alterar_papel(username: str, payload: AlterarPapel, admin: str = Depends(get_current_user)) -> dict:
-    if payload.role == "staff" and _repo().contar_admins_ativos(exceto=username) == 0:
-        raise HTTPException(
-            status.HTTP_409_CONFLICT,
-            detail={
-                "code": "ultimo_admin",
-                "message": "Nao e possivel rebaixar o ultimo administrador ativo.",
-            },
-        )
+    # A garantia de "nunca sem admin" vive no repositorio, na mesma transacao
+    # do UPDATE. Aqui ela era conferida numa consulta separada, e duas
+    # requisicoes simultaneas rebaixando admins diferentes passavam as duas.
     try:
         _repo().definir_papel(username, payload.role)
+    except UltimoAdmin as exc:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail={"code": "ultimo_admin", "message": str(exc)},
+        ) from exc
     except LookupError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"code": "usuario_nao_encontrado"})
     except ValueError as exc:
@@ -116,25 +120,24 @@ def alterar_papel(username: str, payload: AlterarPapel, admin: str = Depends(get
 
 @router.patch("/usuarios/{username}/ativo", status_code=status.HTTP_200_OK)
 def alterar_ativo(username: str, payload: AlterarAtivo, admin: str = Depends(get_current_user)) -> dict:
-    if not payload.ativo:
-        if username == admin:
-            raise HTTPException(
-                status.HTTP_409_CONFLICT,
-                detail={
-                    "code": "autodesativacao",
-                    "message": "Voce nao pode desativar a propria conta.",
-                },
-            )
-        if _repo().contar_admins_ativos(exceto=username) == 0:
-            raise HTTPException(
-                status.HTTP_409_CONFLICT,
-                detail={
-                    "code": "ultimo_admin",
-                    "message": "Nao e possivel desativar o ultimo administrador ativo.",
-                },
-            )
+    # Autodesativacao continua aqui: depende de QUEM esta chamando, que o
+    # repositorio nao conhece. Ja o "ultimo admin" e invariante do dado e mora
+    # na transacao que o aplica.
+    if not payload.ativo and username == admin:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail={
+                "code": "autodesativacao",
+                "message": "Voce nao pode desativar a propria conta.",
+            },
+        )
     try:
         _repo().definir_ativo(username, payload.ativo)
+    except UltimoAdmin as exc:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail={"code": "ultimo_admin", "message": str(exc)},
+        ) from exc
     except LookupError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"code": "usuario_nao_encontrado"})
 
@@ -149,6 +152,7 @@ async def definir_senha_de_usuario(
     username: str, payload: DefinirSenha, admin: str = Depends(get_current_user)
 ) -> dict:
     """Reset de senha por administrador (esquecimento, comprometimento)."""
+    exigir_senha_forte(payload.nova_senha)
     try:
         senha_hash = await asyncio.to_thread(bcrypt.hash, payload.nova_senha)
         await asyncio.to_thread(_repo().definir_senha, username, senha_hash)
@@ -169,6 +173,8 @@ async def trocar_propria_senha(payload: TrocarSenha, usuario: str = Depends(get_
     Exigir a atual impede que alguem com uma sessao aberta esquecida assuma a
     conta trocando a credencial.
     """
+    exigir_senha_forte(payload.nova_senha)
+
     registro = _repo().get_by_username(usuario)
     if registro is None or not registro.get("password_hash"):
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"code": "usuario_nao_encontrado"})

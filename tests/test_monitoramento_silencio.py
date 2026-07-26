@@ -75,7 +75,7 @@ def test_paciente_sem_leito_nao_gera_ruido(app_isolado):
     """Quem nao esta num leito nao deveria estar sendo monitorado; reporta-lo
     ensinaria a equipe a ignorar o aviso."""
     client = TestClient(app_isolado.app)
-    r = client.post("/api/auth/register", json={"username": "chefe", "password": "pw"})
+    r = client.post("/api/auth/register", json={"username": "chefe", "password": "senha-de-teste"})
     auth = {"Authorization": f"Bearer {r.json()['token']}"}
     client.cookies.clear()
     client.post(
