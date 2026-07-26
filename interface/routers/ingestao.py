@@ -446,7 +446,29 @@ async def websocket_eventos(websocket: WebSocket):
                     continue
 
                 # Process event
-                seq = payload.get("seq")
+                # `pop`, e nao `get`: `seq` e metadado de CORRELACAO do
+                # protocolo, nao parte da amostra. `EventPayload` tem
+                # `extra="forbid"`, entao deixa-lo no dicionario reprovava a
+                # validacao inteira.
+                #
+                # O efeito era um beco sem saida para o firmware, confirmado
+                # contra o servidor rodando:
+                #
+                #   * sem `seq`, a amostra era processada corretamente mas o
+                #     ACK nunca saia (o envio e guardado pelo `if seq is not
+                #     None` la embaixo) — o dispositivo nao tinha como saber se
+                #     a leitura chegou;
+                #   * com `seq`, a validacao falhava com `extra_forbidden`, a
+                #     amostra caia no caminho degradado de evento ORFAO e o
+                #     servidor respondia "ok" — um ACK que dizia "entregue"
+                #     quando o que houve foi "guardei cru para reconciliar
+                #     depois".
+                #
+                # Nao havia combinacao em que o firmware recebesse ACK e a
+                # amostra fosse processada. Era por isso que o firmware
+                # WebSocket contava ACK no envio: nao havia ACK de verdade
+                # para esperar.
+                seq = payload.pop("seq", None)
 
                 # Normalize and process
                 try:

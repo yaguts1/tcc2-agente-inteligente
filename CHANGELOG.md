@@ -102,6 +102,35 @@ e este projeto adota [Semantic Versioning](https://semver.org/lang/pt-BR/).
   cortada em silêncio é resposta incompleta a uma pergunta legal. Agora traz
   `X-Total-Count`.
 
+### Corrigido — firmware ESP32
+
+- **O sketch não compilava.** `esp32_replay.ino` e `esp32_replay_websocket.ino`
+  conviviam na mesma pasta e o Arduino concatena todos os `.ino` do sketch num
+  único arquivo: os dois definiam `setup()`, `loop()` e mais onze funções. Quem
+  abrisse recebia uma parede de erros de redefinição. Agora é **um** `.ino`,
+  com a lógica comum em `replay_comum.h` e o transporte escolhido em
+  `config.h` (`#define USAR_WEBSOCKET`).
+- A duplicação (~90% do código) tinha derivado, e a variante **WebSocket — a
+  que o LEIA-ME recomendava** — estava atrás da HTTP em cinco correções:
+  - o checkpoint gravava a posição **lida** em vez da **entregue**: depois de
+    um reboot o replay retomava depois do evento que nunca chegou, perdendo em
+    silêncio justamente a amostra que falhou;
+  - no estado `REENVIAR` nunca voltava para `ENVIANDO`, então o backoff era
+    calculado e jamais esperado — a primeira oscilação de rede queimava as
+    cinco tentativas em poucas dezenas de milissegundos e encerrava o replay;
+  - `tentativasMax = 5` em vez de infinito, o que já havia sido corrigido na
+    HTTP porque um reinício de servidor acima de ~16 s parava o replay de vez;
+  - contava ACK e avançava o checkpoint **no envio**, não na confirmação;
+  - não distinguia recusa definitiva (422) de falha temporária.
+- **O ACK do WebSocket nunca funcionou, dos dois lados.** Confirmado contra o
+  servidor em execução: sem `seq` no payload a amostra era processada mas
+  nenhum ACK era enviado (`if seq is not None` guarda o envio); com `seq`, o
+  `EventPayload` (`extra="forbid"`) reprovava, a amostra caía no caminho de
+  evento **órfão** e o servidor respondia `"ok"` — um ACK dizendo "entregue"
+  para algo apenas guardado cru. Não havia combinação em que o firmware
+  recebesse ACK e a amostra fosse processada. `seq` é metadado de correlação e
+  passou a ser removido do payload antes da validação.
+
 ### Adicionado — contrato de API versionado
 
 - `openapi/openapi.json` passa a ser versionado (48 rotas, 22 schemas), para

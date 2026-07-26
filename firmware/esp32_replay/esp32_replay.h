@@ -25,6 +25,14 @@ enum class ResultadoEnvio {
   ACK = 0,      // 2xx — entregue
   TRANSIENTE,   // rede caiu, 5xx, 408, 429 — tentar de novo
   PERMANENTE,   // demais 4xx — o servidor recusa este conteúdo, insistir não muda
+  // O envio saiu e a resposta ainda não chegou.
+  //
+  // Existe por causa do WebSocket: `sendTXT()` retorna assim que entrega o
+  // quadro ao socket, e o ACK do servidor chega depois, por callback. Sem este
+  // estado o firmware trataria "mandei" como "chegou" — foi o que a variante
+  // WebSocket fazia, contando ACK e avançando o checkpoint no envio. Sobre
+  // HTTP nunca aparece: a resposta vem no retorno do POST.
+  PENDENTE,
 };
 
 // -------------------------------
@@ -109,5 +117,35 @@ void interromperReplay();
 void processarReplay();
 void tratarComandoSerial();
 void tratarComandoOta(const String &comando);
+
+// ---------------------------------------------------------------------------
+// Interface de transporte
+// ---------------------------------------------------------------------------
+// Tudo que difere entre enviar por HTTP e por WebSocket cabe nestas cinco
+// funções. O resto — leitura do arquivo, checkpoint, backoff, máquina de
+// estados — é igual e passou a existir uma vez só, em `replay_comum.h`.
+//
+// Antes eram dois sketches inteiros, `.ino` lado a lado, com ~90% de código
+// repetido. As duas cópias derivaram: correções feitas numa não chegaram na
+// outra, e a que o LEIA-ME recomendava era a que tinha ficado para trás.
+// Implementação em `transporte_http.h` / `transporte_ws.h`.
+
+// Prepara o canal (HTTP: nada a fazer; WS: abre a conexão e autentica).
+// `false` = ainda não dá para enviar, tentar de novo no próximo ciclo.
+bool transporteIniciar();
+
+// Chamado a cada volta do loop, para o transporte cuidar do que precisa
+// (o WebSocket precisa ceder tempo à sua própria máquina de estados).
+void transporteManter();
+
+// Resolve `paciente_id` a partir da cama, consultando o backend.
+bool transporteObterPaciente();
+
+// Coloca o evento no ar. `false` = nem foi possível tentar.
+bool transporteEnviar(const EventoReplay &evento);
+
+// Desfecho do último envio. `PENDENTE` enquanto a resposta não chegou —
+// só o WebSocket devolve isso; o HTTP já sabe no retorno do POST.
+ResultadoEnvio transporteDesfecho();
 
 #endif  // ESP32_REPLAY_H

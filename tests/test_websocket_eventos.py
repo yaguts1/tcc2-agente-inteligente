@@ -207,3 +207,72 @@ async def test_websocket_nao_confirma_evento_que_nao_foi_persistido():
 
 if __name__ == "__main__":
     pytest.main([__file__, "-v"])
+
+
+def test_seq_correlaciona_o_ack_sem_reprovar_a_amostra(app_isolado):
+    """`seq` e metadado de protocolo, nao parte da amostra.
+
+    Antes desta correcao nao havia combinacao boa para o firmware, e isso foi
+    confirmado contra o servidor rodando em container:
+
+      * sem `seq`, a amostra era processada mas NENHUM ACK saia — o `if seq is
+        not None` guarda o envio, entao o dispositivo nunca sabia se a leitura
+        chegou;
+      * com `seq`, `EventPayload` (extra="forbid") reprovava com
+        `extra_forbidden`, a amostra caia no caminho de evento ORFAO e o
+        servidor respondia "ok" — um ACK dizendo "entregue" para algo que so
+        tinha sido guardado cru.
+
+    Era por isso que o firmware WebSocket contabilizava ACK no proprio envio:
+    nao havia ACK de verdade para esperar.
+    """
+    with TestClient(app_isolado.app) as client:
+        with client.websocket_connect("/api/ws/eventos") as ws:
+            ws.send_json({"device_id": "ESP-SEQ", "cama_id": "C-SEQ"})
+            assert ws.receive_json()["status"] == "connected"
+
+            ws.send_json({
+                "device_id": "ESP-SEQ",
+                "paciente_id": "PAC-SEQ",
+                "cama_id": "C-SEQ",
+                "postura": "supino",
+                "confianca": 0.9,
+                "amostra_ms": 300000,
+                "ts_utc": "2026-08-01T10:00:00Z",
+                "seq": 7,
+            })
+            ack = ws.receive_json()
+
+    assert ack == {"status": "ok", "seq": 7}, "o ACK precisa devolver o seq para correlacao"
+
+
+def test_amostra_com_seq_e_processada_e_nao_vira_orfa(app_isolado):
+    """O ACK "ok" tem que significar processado, e nao "guardei cru"."""
+    import sqlite3
+
+    with TestClient(app_isolado.app) as client:
+        with client.websocket_connect("/api/ws/eventos") as ws:
+            ws.send_json({"device_id": "ESP-SEQ2", "cama_id": "C-SEQ2"})
+            ws.receive_json()
+            ws.send_json({
+                "device_id": "ESP-SEQ2",
+                "paciente_id": "PAC-SEQ2",
+                "cama_id": "C-SEQ2",
+                "postura": "lateral_direito",
+                "confianca": 0.9,
+                "amostra_ms": 300000,
+                "ts_utc": "2026-08-01T11:00:00Z",
+                "seq": 99,
+            })
+            assert ws.receive_json()["status"] == "ok"
+
+    with sqlite3.connect(app_isolado.db_path) as conn:
+        na_grade = conn.execute(
+            "SELECT COUNT(*) FROM grade WHERE paciente_id = 'PAC-SEQ2'"
+        ).fetchone()[0]
+        orfaos = conn.execute(
+            "SELECT COUNT(*) FROM device_events WHERE device_id = 'ESP-SEQ2'"
+        ).fetchone()[0]
+
+    assert na_grade == 1, "a amostra deveria ter sido processada"
+    assert orfaos == 0, "com `seq` fora da validacao, nao ha por que cair no caminho orfao"

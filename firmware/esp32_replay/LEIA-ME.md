@@ -2,11 +2,35 @@
 
 ## 📁 Estrutura
 
-- **esp32_replay.ino** - Versão HTTP (POST para /api/eventos)
-- **esp32_replay_websocket.ino** - ✅ **VERSÃO RECOMENDADA** (WebSocket /ws/eventos)
-- **esp32_replay.h** - Header com estruturas e configurações
+- **esp32_replay.ino** - O sketch (setup/loop + máquina de estados)
+- **esp32_replay.h** - Tipos e a interface de transporte
+- **replay_comum.h** - Lógica compartilhada: arquivo, checkpoint, backoff, Wi-Fi
+- **transporte_http.h** - Envio por HTTP (POST em `/api/eventos`)
+- **transporte_ws.h** - Envio por WebSocket (`/api/ws/eventos`)
 - **data/eventos.jsonl** - Dados de exemplo (históricos)
 - **data/eventos_now.jsonl** - Dados de exemplo (tempo atual)
+
+### Escolher o transporte
+
+Em `config.h`:
+
+```cpp
+#define USAR_WEBSOCKET   // comente para usar HTTP
+```
+
+> **Antes eram dois sketches** — `esp32_replay.ino` e
+> `esp32_replay_websocket.ino` — lado a lado, com ~90% de código repetido.
+> Isso **não compilava**: o Arduino concatena todos os `.ino` da pasta num
+> único arquivo, e os dois definiam `setup()`, `loop()` e mais onze funções.
+> Quem abrisse o sketch recebia uma parede de erros de redefinição.
+>
+> Pior que o build: as duas cópias derivaram. A variante WebSocket, que este
+> LEIA-ME recomendava, tinha ficado para trás em cinco correções já feitas na
+> HTTP — entre elas gravar no checkpoint a posição **lida** em vez da
+> **entregue** (perda silenciosa de amostra depois de um reboot) e nunca voltar
+> ao estado `ENVIANDO` depois de uma falha, o que queimava todas as tentativas
+> em poucas dezenas de milissegundos e encerrava o replay na primeira
+> oscilação de rede.
 
 ## 🚀 Como Usar
 

@@ -7,7 +7,19 @@
 //   2. Edite `config.h` com os valores da sua rede.
 //
 // `config.h` é git-ignored — NUNCA comite credenciais reais no repositório.
-// (Os sketches .ino incluem "config.h", não este arquivo de exemplo.)
+// (O sketch inclui "config.h", não este arquivo de exemplo.)
+
+// -----------------------------------------------------------------------
+// Transporte
+// -----------------------------------------------------------------------
+// Descomente para enviar por WebSocket (conexão persistente, /api/ws/eventos).
+// Comentado, o firmware usa HTTP (um POST por evento, /api/eventos).
+//
+// Antes isto era a escolha de QUAL ARQUIVO .ino manter na pasta — os dois
+// existiam lado a lado e, como o Arduino concatena todos os .ino do sketch,
+// nenhum dos dois compilava sem apagar o outro.
+//
+// #define USAR_WEBSOCKET
 
 #define WIFI_SSID   "SUA_REDE_WIFI"
 #define WIFI_SENHA  "SUA_SENHA_WIFI"
