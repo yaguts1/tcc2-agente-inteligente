@@ -142,7 +142,12 @@ def start_backup_task(app: FastAPI, db_path: str, backup_dir: str) -> asyncio.Ta
         # frequencia que o intervalo (24h por padrao) nunca chegava a fazer
         # backup nenhum — e foi exatamente o que se observou: o diretorio
         # estava vazio com o agendador "ativo" desde sempre.
-        primeira = True
+        #
+        # BACKUP_ON_START=0 desliga so o ciclo inicial (o periodico segue): serve
+        # para processos de vida curta que instanciam a app sem serem a
+        # instalacao de verdade — a suite de testes e o caso obvio, que sem isso
+        # gravava dezenas de copias do banco de teste no diretorio real.
+        primeira = os.getenv("BACKUP_ON_START", "1").strip().lower() not in ("0", "false", "no")
         while True:
             if not primeira:
                 try:

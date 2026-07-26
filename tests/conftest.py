@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import importlib
 import os
+import tempfile
 from types import SimpleNamespace
 
 import pytest
@@ -37,6 +38,15 @@ import pytest
 # `tests/test_app_prefix.py` recarrega a app explicitamente para cobrir /TCC.
 os.environ["APP_PREFIX"] = ""
 os.environ["ENVIRONMENT"] = "development"
+
+# O agendador de backup roda um ciclo na SUBIDA da app (senao uma instalacao
+# reiniciada com mais frequencia que o intervalo nunca faria backup). Sem isto,
+# cada teste que instancia a app grava um backup no diretorio real: a suite
+# entupia /data/backups com dezenas de copias do banco de TESTE, e — pior — a
+# copia mais recente e "valida" passava a ser um banco vazio de teste, que e
+# justamente o que /admin/backup/status apontaria como o backup bom.
+os.environ["UPP_BACKUP_DIR"] = tempfile.mkdtemp(prefix="upp-backups-teste-")
+os.environ["BACKUP_ON_START"] = "0"
 
 # Ordem de dependencia: api_shared primeiro (resolve DB_PATH no import),
 # routers depois, e por fim api/web, que agregam tudo.

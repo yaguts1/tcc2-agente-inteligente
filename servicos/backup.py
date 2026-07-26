@@ -244,6 +244,30 @@ class BackupService:
         # Tolerancia de meio intervalo: um ciclo que atrasa alguns minutos nao e
         # um incidente, um ciclo que nao aconteceu e.
         limite = intervalo_esperado_horas * 1.5
+        recente = bool(mais_recente) and mais_recente["age_hours"] <= limite
+
+        # Integro e recente nao basta: um backup pode passar em tudo isso e ainda
+        # ser de OUTRO banco. Aconteceu — a suite de testes gravava copias do
+        # banco de teste aqui, e a mais nova, valida e recentissima, virava o
+        # "ultimo backup bom": 240 KB no lugar de 17 MB. O sistema informaria
+        # cobertura total apontando para um banco praticamente vazio.
+        #
+        # O corte e deliberadamente baixo (10%) para nao acusar o crescimento
+        # normal entre um ciclo e outro — a pergunta aqui e "isto e o mesmo
+        # banco?", nao "isto esta perfeitamente atualizado?".
+        proporcional = True
+        atual = verificar_arquivo(self.db_path)
+        if mais_recente and atual and atual.linhas and mais_recente.get("linhas"):
+            vivas = sum(atual.linhas.values())
+            copiadas = sum(mais_recente["linhas"].values())
+            if vivas > 0 and copiadas < vivas * 0.10:
+                proporcional = False
+                logger.warning(
+                    "backup_desproporcional",
+                    filename=mais_recente["filename"],
+                    linhas_backup=copiadas,
+                    linhas_banco=vivas,
+                )
 
         return {
             "total": len(backups),
@@ -251,7 +275,8 @@ class BackupService:
             "invalidos": [b["filename"] for b in backups if not b["ok"]],
             "ultimo_valido": mais_recente["filename"] if mais_recente else None,
             "idade_horas": mais_recente["age_hours"] if mais_recente else None,
-            "saudavel": bool(mais_recente) and mais_recente["age_hours"] <= limite,
+            "proporcional": proporcional,
+            "saudavel": recente and proporcional,
         }
 
     def restore_backup(self, backup_filename: str, target_path: str | None = None) -> bool:

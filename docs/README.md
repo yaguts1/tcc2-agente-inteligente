@@ -13,6 +13,7 @@ registre-o nesta tabela.**
 | [GUIA_DEMONSTRACAO.md](GUIA_DEMONSTRACAO.md) | Roteiro de demonstração do sistema |
 | [esp32_spiffs_upload.md](esp32_spiffs_upload.md) | Gravação de arquivos no SPIFFS do ESP32 |
 | [AUDITORIA_LGPD.md](AUDITORIA_LGPD.md) | Trilha de auditoria: o que é registrado e como consultar |
+| [OPERACAO_BACKUP_E_RESTAURACAO.md](OPERACAO_BACKUP_E_RESTAURACAO.md) | Procedimento de backup e restauração, para quem administra o servidor |
 
 Na raiz do repositório: [`README.md`](../README.md),
 [`ARQUITETURA_DIAGRAMA.md`](../ARQUITETURA_DIAGRAMA.md),
