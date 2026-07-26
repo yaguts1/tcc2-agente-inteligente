@@ -2,7 +2,7 @@ import sys
 import time
 import requests
 import argparse
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 import pandas as pd
 
@@ -10,6 +10,13 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from dados_simulados.gerador import gerar_sessao_simulada, PerfilPaciente
+from scripts.envio_resiliente import Contadores, PoliticaRetry, Resultado, entregar
+
+# Duracao que cada amostra representa. O backend usa `amostra_ms` como DURACAO
+# (`fim = inicio + amostra_ms`, ver interface/services/ingestao_service.py), e
+# este script mandava o epoch em milissegundos: cada evento gravado ficava com
+# `fim` uns 55 anos no futuro.
+AMOSTRA_MS = 60_000
 
 def main():
     parser = argparse.ArgumentParser(description="Simula um dispositivo ESP32 enviando dados para a API.")
@@ -28,7 +35,11 @@ def main():
     
     # 1. Gerar sessão futura
     print("Gerando dados de simulação...")
-    inicio = datetime.now()
+    # UTC naive, que é o que o banco armazena (ver interface/tempo.py). Com
+    # datetime.now() os timestamps saíam no fuso da máquina e as amostras
+    # entravam 3h deslocadas — o mesmo defeito que corrompia a correlação
+    # sensor->paciente do lado do servidor.
+    inicio = datetime.now(timezone.utc).replace(tzinfo=None)
     df_grade, _ = gerar_sessao_simulada(
         duracao_horas=args.duration,
         passo_min=1,  # 1 minuto de resolução para ficar mais fluido
@@ -38,12 +49,15 @@ def main():
     
     print(f"Gerados {len(df_grade)} pontos de dados.")
     
+    politica = PoliticaRetry()
+    contadores = Contadores()
+
     # 2. Loop de envio
     for _, row in df_grade.iterrows():
         ts_simulado = pd.to_datetime(row["timestamp"])
-        
+
         # Calcular delay necessário
-        agora = datetime.now()
+        agora = datetime.now(timezone.utc).replace(tzinfo=None)
         tempo_decorrido_real = (agora - inicio).total_seconds()
         tempo_decorrido_simulado = (ts_simulado - inicio).total_seconds()
         
@@ -59,18 +73,36 @@ def main():
             "cama_id": args.cama,
             "postura": row["postura"],
             "confianca": row.get("confianca", 0.95),
-            "amostra_ms": int(ts_simulado.timestamp() * 1000),
+            "amostra_ms": AMOSTRA_MS,
             "ts_utc": ts_simulado.isoformat()
         }
-        
-        try:
-            resp = requests.post(f"{args.url}/api/eventos", json=payload, headers={"X-Device-Id": args.device})
-            if resp.status_code == 200:
-                print(f"[{datetime.now().strftime('%H:%M:%S')}] Enviado: {row['postura']} (Conf: {payload['confianca']})")
-            else:
-                print(f"ERRO {resp.status_code}: {resp.text}")
-        except Exception as e:
-            print(f"ERRO de conexão: {e}")
+
+        def enviar():
+            """Devolve o status HTTP, ou None se nem chegou a haver resposta."""
+            try:
+                resp = requests.post(
+                    f"{args.url}/api/eventos",
+                    json=payload,
+                    headers={"X-Device-Id": args.device},
+                    timeout=10,
+                )
+                return resp.status_code
+            except requests.RequestException as e:
+                print(f"ERRO de conexão: {e}")
+                return None
+
+        # Antes, uma falha era impressa e a amostra seguia perdida — o
+        # simulador de bancada nao exercitava a unica coisa que importa quando
+        # a rede oscila. Agora vale a mesma politica do firmware.
+        resultado = entregar(enviar, politica, contadores)
+        if resultado is Resultado.ACK:
+            hora = datetime.now().strftime("%H:%M:%S")
+            print(f"[{hora}] Enviado: {row['postura']} (Conf: {payload['confianca']})")
+
+    print(
+        f"\nFim: {contadores.entregues} entregues, {contadores.descartados} descartados, "
+        f"{contadores.tentativas} tentativas."
+    )
 
 if __name__ == "__main__":
     main()
