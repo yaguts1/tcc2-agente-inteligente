@@ -9,6 +9,13 @@ banco **apagado** e restaurado a partir do backup, com as contagens conferindo
 exatamente. Enquanto ninguém apaga o original, uma rotina de backup não está
 testada — está apenas configurada.
 
+Depois da mudança que fecha o backup em `journal_mode=DELETE`, a restauração foi
+re-executada no container em 2026-07-26 a partir de um arquivo gerado pelo
+código novo: `restore_backup` devolveu sucesso, as seis tabelas conferiram
+linha a linha com a origem e o arquivo restaurado ficou sem sidecars. Mudança
+no formato do backup **precisa** ser seguida de um ensaio de restauração —
+senão o que se testou foi a escrita, não a recuperação.
+
 ---
 
 ## O que é copiado
