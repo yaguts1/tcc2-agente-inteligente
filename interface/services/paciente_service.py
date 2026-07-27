@@ -37,6 +37,47 @@ def intervalo_horas(perfil: str) -> float:
     return round(minutos / 60, 2)
 
 
+# Quarto e leito viajam juntos num unico `cama_id`. A composicao e a separacao
+# precisam sair DAQUI, e nao de cada tela.
+#
+# Havia duas convencoes no mesmo sistema: o cadastro juntava com hifen
+# (`f"{room}-{bed}"`), a tela de Pacientes separava por hifen (certo) e o
+# dashboard de alertas separava por BARRA — que nunca casa. Efeito visivel: um
+# paciente cadastrado no quarto "TESTE", leito "01" aparecia no dashboard como
+# quarto "TESTE-01" e leito VAZIO. A coluna de leito estava sempre vazia para
+# quem foi cadastrado pela interface.
+SEPARADOR_CAMA = "-"
+
+
+def compor_cama(room: str | None, bed: str | None) -> str | None:
+    """Junta quarto e leito no `cama_id` gravado na ficha."""
+    quarto = (room or "").strip()
+    leito = (bed or "").strip()
+    if quarto and leito:
+        return f"{quarto}{SEPARADOR_CAMA}{leito}"
+    return quarto or leito or None
+
+
+def dividir_cama(cama_id: str | None) -> tuple[str, str]:
+    """Separa o `cama_id` de volta em (quarto, leito).
+
+    `rsplit` com limite 1, e nao `split`: um quarto pode ter hifen no nome
+    ("UTI-2"), e dividir pelo PRIMEIRO separador devolveria quarto "UTI" e
+    leito "2", descartando o resto. O separador que importa e o ultimo, que foi
+    o inserido na composicao.
+
+    Barra e aceita por compatibilidade com fichas antigas preenchidas a mao.
+    """
+    texto = (cama_id or "").strip()
+    if not texto:
+        return "", ""
+    for sep in (SEPARADOR_CAMA, "/"):
+        if sep in texto:
+            quarto, leito = texto.rsplit(sep, 1)
+            return quarto.strip(), leito.strip()
+    return texto, ""
+
+
 class PatientService:
     def __init__(self, repository: PatientRepository):
         self.repository = repository
@@ -48,16 +89,10 @@ class PatientService:
         perfil = ficha.get("perfil", "medio").lower()
         cama_id = ficha.get("cama_id")
         
-        room = None
-        bed = None
-        if cama_id:
-            parts = cama_id.split("-")
-            if len(parts) >= 2:
-                room = parts[0]
-                bed = parts[1]
-            else:
-                room = cama_id
-                
+        quarto, leito = dividir_cama(cama_id)
+        room = quarto or None
+        bed = leito or None
+
         # Map perfil to riskLevel
         perfil_map = {
             "alto": "high",
@@ -92,14 +127,7 @@ class PatientService:
         # um paciente rebaixado para risco medio sem aviso.
         perfil = _RISK_PARA_PERFIL[payload.riskLevel.lower()]
 
-        # Construct cama_id
-        cama_id = None
-        if payload.room and payload.bed:
-            cama_id = f"{payload.room}-{payload.bed}"
-        elif payload.room:
-            cama_id = payload.room
-        elif payload.bed:
-            cama_id = payload.bed
+        cama_id = compor_cama(payload.room, payload.bed)
 
         novo_paciente = self.repository.create(
             nome=payload.name,
@@ -116,14 +144,7 @@ class PatientService:
         # um paciente rebaixado para risco medio sem aviso.
         perfil = _RISK_PARA_PERFIL[payload.riskLevel.lower()]
 
-        # Construct cama_id
-        cama_id = None
-        if payload.room and payload.bed:
-            cama_id = f"{payload.room}-{payload.bed}"
-        elif payload.room:
-            cama_id = payload.room
-        elif payload.bed:
-            cama_id = payload.bed
+        cama_id = compor_cama(payload.room, payload.bed)
 
         atualizado = self.repository.update(
             paciente_id=paciente_id,

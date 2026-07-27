@@ -130,3 +130,79 @@ def test_intervalo_exibido_bate_com_a_janela_do_motor(perfil, nivel):
         f"o intervalo exibido para {nivel} divergiu da janela do motor "
         f"({minutos_do_motor} min)"
     )
+
+
+class TestQuartoELeitoNoDashboard:
+    """Quarto e leito precisam sobreviver ao ida-e-volta.
+
+    Descoberto exercitando o fluxo completo contra o sistema em execucao: um
+    paciente cadastrado no quarto "TESTE", leito "01" aparecia no dashboard como
+    quarto "TESTE-01" e leito VAZIO.
+
+    Causa: duas convencoes no mesmo sistema. O cadastro junta com HIFEN, a tela
+    de Pacientes separava por hifen (certo) e o dashboard de alertas separava
+    por BARRA — que nunca casa. A coluna de leito ficava sempre vazia para quem
+    foi cadastrado pela interface.
+    """
+
+    def test_ida_e_volta_preserva_quarto_e_leito(self):
+        from interface.services.paciente_service import compor_cama, dividir_cama
+
+        assert dividir_cama(compor_cama("TESTE", "01")) == ("TESTE", "01")
+        assert dividir_cama(compor_cama("201", "A")) == ("201", "A")
+
+    def test_quarto_com_hifen_no_nome(self):
+        """`split` pelo PRIMEIRO separador devolveria quarto "UTI" e leito "2",
+        descartando o resto. O separador que vale e o ultimo."""
+        from interface.services.paciente_service import compor_cama, dividir_cama
+
+        assert dividir_cama(compor_cama("UTI-2", "A")) == ("UTI-2", "A")
+
+    def test_barra_e_aceita_por_compatibilidade(self):
+        """Fichas antigas preenchidas a mao usam barra."""
+        from interface.services.paciente_service import dividir_cama
+
+        assert dividir_cama("201/B") == ("201", "B")
+
+    def test_so_quarto_nao_inventa_leito(self):
+        from interface.services.paciente_service import compor_cama, dividir_cama
+
+        assert compor_cama("201", None) == "201"
+        assert dividir_cama("201") == ("201", "")
+
+    def test_vazio_nao_estoura(self):
+        from interface.services.paciente_service import compor_cama, dividir_cama
+
+        assert compor_cama(None, None) is None
+        assert dividir_cama(None) == ("", "")
+        assert dividir_cama("") == ("", "")
+
+    @pytest.mark.asyncio
+    async def test_dashboard_mostra_o_leito_que_foi_cadastrado(self, app_isolado):
+        """O teste que amarra as duas telas: o que entra no cadastro e o que
+        sai no dashboard."""
+        import interface.services.alerts_service as servico
+        from interface.dao import inserir_alertas
+        from interface.services.paciente_service import PatientService
+        from interface.repositories.pacientes import PatientRepository
+        from interface.schemas import FrontendCreatePatient
+
+        db = app_isolado.db_path
+        service = PatientService(PatientRepository(db))
+        paciente = service.create_patient(
+            FrontendCreatePatient(name="Fulano", room="TESTE", bed="01", riskLevel="high")
+        )
+        assert paciente["room"] == "TESTE" and paciente["bed"] == "01"
+
+        inserir_alertas(db, [{
+            "paciente_id": paciente["id"], "inicio": "2026-09-01T10:00:00", "fim": None,
+            "tipo": "imobilidade", "perfil": "alto", "janela_min": 60,
+            "status": "aberto", "duracao_min": 70,
+        }])
+
+        alertas = await servico.listar_alertas_frontend(horas=100000)
+        meu = [a for a in alertas if a["id"].startswith(paciente["id"])]
+
+        assert meu, "o alerta deveria aparecer"
+        assert meu[0]["room"] == "TESTE", "o quarto nao pode vir com o leito grudado"
+        assert meu[0]["bed"] == "01", "a coluna de leito ficava sempre vazia"

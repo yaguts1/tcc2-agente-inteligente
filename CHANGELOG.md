@@ -102,6 +102,15 @@ e este projeto adota [Semantic Versioning](https://semver.org/lang/pt-BR/).
   cortada em silêncio é resposta incompleta a uma pergunta legal. Agora traz
   `X-Total-Count`.
 
+- **A coluna de leito no dashboard estava sempre vazia.** Havia duas convenções
+  no mesmo sistema: o cadastro junta quarto e leito com **hífen**
+  (`f"{room}-{bed}"`), a tela de Pacientes separava por hífen (certo) e o
+  dashboard de alertas separava por **barra** — que nunca casa. Um paciente
+  cadastrado no quarto "TESTE", leito "01" aparecia no dashboard como quarto
+  "TESTE-01" e leito vazio. Composição e separação passaram a sair de uma fonte
+  só (`compor_cama` / `dividir_cama`), e a separação usa `rsplit` porque quarto
+  pode ter hífen no nome ("UTI-2").
+
 ### Corrigido — não havia como criar o segundo usuário pela interface
 
 - **Beco sem saída no cadastro.** O registro anônimo fecha assim que existe o

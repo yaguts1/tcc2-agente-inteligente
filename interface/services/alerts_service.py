@@ -19,6 +19,7 @@ from interface.dao import (
     selecionar_alertas_janela,
 )
 from interface.repositories.timeline import ultimo_evento_por_paciente
+from interface.services.paciente_service import dividir_cama
 from interface.tempo import agora_utc_naive, para_iso_utc
 from interface.ws_manager_optimized import ws_manager_optimized
 from servicos import metricas
@@ -122,11 +123,11 @@ async def listar_alertas_frontend_paginado(
     def _quarto_e_leito(paciente_id: str) -> tuple[str, str, str]:
         ficha = fichas.get(str(paciente_id))
         nome = ficha.get("nome") if ficha else paciente_id
-        cama_id = (ficha.get("cama_id") if ficha else None) or ""
-        if cama_id and "/" in cama_id:
-            partes = [p.strip() for p in cama_id.split("/")]
-            return nome, partes[0], (partes[1] if len(partes) > 1 else "")
-        return nome, cama_id, ""
+        # Mesma funcao que a tela de Pacientes usa. Aqui a separacao era por
+        # BARRA enquanto o cadastro junta com HIFEN, entao nunca casava: o
+        # dashboard mostrava o `cama_id` inteiro como quarto e o leito vazio.
+        quarto, leito = dividir_cama(ficha.get("cama_id") if ficha else None)
+        return nome, quarto, leito
 
     # O filtro por quarto depende da ficha, entao vem depois do passo 2.
     if room:
