@@ -722,6 +722,23 @@ export interface Usuario {
 export const usuariosApi = {
   listar: () => request<Usuario[]>('/api/usuarios'),
 
+  /**
+   * Cria uma conta a partir de uma sessão já autenticada.
+   *
+   * Usa `/auth/register`, que é o mesmo endpoint da tela de cadastro — a
+   * diferença é a sessão: com usuários já cadastrados, `_autorizar_cadastro`
+   * exige sessão ativa ou token de convite, e responde 403 para anônimos.
+   *
+   * Sem isto havia um beco sem saída: deslogado a tela de cadastro aparecia mas
+   * o servidor recusava; logado, a tela de cadastro não existe em lugar nenhum.
+   * Criar o segundo usuário da instalação só era possível por `curl`.
+   */
+  criar: (username: string, password: string, display_name?: string) =>
+    request<{ username: string; role: PapelUsuario }>('/api/auth/register', {
+      method: 'POST',
+      body: JSON.stringify({ username, password, display_name }),
+    }),
+
   alterarPapel: (username: string, role: PapelUsuario) =>
     request<{ ok: boolean; username: string; role: PapelUsuario }>(
       `/api/usuarios/${encodeURIComponent(username)}/papel`,

@@ -25,7 +25,7 @@ import { Label } from '../ui/label';
 import { Skeleton } from '../ui/skeleton';
 import { ErrorBanner } from '../shared/ErrorBanner';
 import { Spinner } from '../shared/Spinner';
-import { KeyRound, RefreshCw, ShieldCheck, UserCog, UserX, UserCheck } from 'lucide-react';
+import { KeyRound, RefreshCw, ShieldCheck, UserCog, UserPlus, UserX, UserCheck } from 'lucide-react';
 import { toast } from 'sonner';
 import {
   AlertDialog,
@@ -46,6 +46,8 @@ export function UsersPanel() {
   const [resetandoSenhaDe, setResetandoSenhaDe] = useState<Usuario | null>(null);
   const [novaSenha, setNovaSenha] = useState('');
   const [desativando, setDesativando] = useState<Usuario | null>(null);
+  const [criando, setCriando] = useState(false);
+  const [novoUsuario, setNovoUsuario] = useState({ username: '', senha: '', nome: '' });
 
   const eu = getStoredUser()?.username;
 
@@ -119,6 +121,26 @@ export function UsersPanel() {
     }
   };
 
+  const confirmarCriacao = async () => {
+    const ok = await executar(
+      novoUsuario.username,
+      () =>
+        usuariosApi.criar(
+          novoUsuario.username.trim(),
+          novoUsuario.senha,
+          novoUsuario.nome.trim() || undefined
+        ),
+      `${novoUsuario.username} criado — entra como equipe; promova se precisar`
+    );
+    if (ok) {
+      setCriando(false);
+      setNovoUsuario({ username: '', senha: '', nome: '' });
+    }
+  };
+
+  const podeCriar =
+    novoUsuario.username.trim().length > 0 && novoUsuario.senha.length >= SENHA_MIN_LEN;
+
   const adminsAtivos = usuarios.filter((u) => u.role === 'admin' && u.ativo).length;
 
   if (isLoading) {
@@ -138,10 +160,16 @@ export function UsersPanel() {
           {usuarios.length} conta{usuarios.length === 1 ? '' : 's'} • {adminsAtivos} admin
           {adminsAtivos === 1 ? '' : 's'} ativo{adminsAtivos === 1 ? '' : 's'}
         </p>
-        <Button variant="outline" onClick={carregar}>
-          <RefreshCw className="w-4 h-4 mr-2" />
-          Atualizar
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={carregar}>
+            <RefreshCw className="w-4 h-4 mr-2" />
+            Atualizar
+          </Button>
+          <Button onClick={() => setCriando(true)}>
+            <UserPlus className="w-4 h-4 mr-2" />
+            Criar usuário
+          </Button>
+        </div>
       </div>
 
       {error && (
@@ -240,6 +268,70 @@ export function UsersPanel() {
           </p>
         </CardContent>
       </Card>
+
+      {/* Criação de conta.
+          O cadastro anônimo é fechado assim que existe o primeiro usuário
+          (senão bastaria criar uma conta para ver todos os pacientes), e a tela
+          de cadastro só aparece deslogado — então criar o segundo usuário da
+          instalação não tinha caminho pela interface. */}
+      <AlertDialog open={criando} onOpenChange={(aberto: boolean) => !aberto && setCriando(false)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Criar usuário</AlertDialogTitle>
+            <AlertDialogDescription>
+              A conta nasce como <strong>equipe</strong>. Para torná-la administradora, use
+              &quot;Tornar admin&quot; na lista depois de criar.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-3">
+            <div className="space-y-1">
+              <Label htmlFor="novo-username">Usuário</Label>
+              <Input
+                id="novo-username"
+                value={novoUsuario.username}
+                onChange={(e) => setNovoUsuario((p) => ({ ...p, username: e.target.value }))}
+                autoComplete="off"
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="novo-nome">Nome de exibição (opcional)</Label>
+              <Input
+                id="novo-nome"
+                value={novoUsuario.nome}
+                onChange={(e) => setNovoUsuario((p) => ({ ...p, nome: e.target.value }))}
+              />
+            </div>
+            <div className="space-y-1">
+              <Label htmlFor="novo-senha">Senha</Label>
+              <Input
+                id="novo-senha"
+                type="password"
+                autoComplete="new-password"
+                value={novoUsuario.senha}
+                onChange={(e) => setNovoUsuario((p) => ({ ...p, senha: e.target.value }))}
+                placeholder={`Mínimo de ${SENHA_MIN_LEN} caracteres`}
+              />
+              {novoUsuario.senha.length > 0 && novoUsuario.senha.length < SENHA_MIN_LEN && (
+                <p className="text-sm text-danger">
+                  A senha precisa ter ao menos {SENHA_MIN_LEN} caracteres.
+                </p>
+              )}
+            </div>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                confirmarCriacao();
+              }}
+              disabled={!podeCriar}
+            >
+              Criar
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
 
       {/* Reset de senha */}
       <AlertDialog

@@ -102,6 +102,23 @@ e este projeto adota [Semantic Versioning](https://semver.org/lang/pt-BR/).
   cortada em silêncio é resposta incompleta a uma pergunta legal. Agora traz
   `X-Total-Count`.
 
+### Corrigido — não havia como criar o segundo usuário pela interface
+
+- **Beco sem saída no cadastro.** O registro anônimo fecha assim que existe o
+  primeiro usuário (senão bastaria criar uma conta para ver todos os
+  pacientes), e a tela de cadastro só aparece **deslogado** — logado, ela não
+  existe em lugar nenhum. Resultado: criar o segundo usuário da instalação só
+  era possível por `curl` com cookie de sessão, ou definindo
+  `UPP_REGISTER_TOKEN`. O painel de Usuários ganhou **"Criar usuário"**.
+- **A tela descartava a explicação do servidor.** Qualquer falha de cadastro
+  virava "Erro ao criar conta" (ou "Dados inválidos ou usuário já existe", no
+  400), enquanto o backend respondia coisas precisas: "Cadastro requer sessão
+  ativa ou token de convite" (403), "A senha precisa ter ao menos 8 caracteres"
+  (400), "Muitas requisições. Tente novamente em 60s" (429). Quem tentava criar
+  conta ficava sem nenhuma pista do motivo. O mesmo valia no login para o 429,
+  que fazia a pessoa tentar de novo e estender o próprio bloqueio — o 401
+  continua genérico de propósito, para não revelar quais contas existem.
+
 ### Adicionado — teste de integração do protocolo do firmware
 
 - `tests/test_protocolo_firmware.py` cobre as duas coisas que o firmware não

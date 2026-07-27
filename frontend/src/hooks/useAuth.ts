@@ -70,11 +70,14 @@ export function useAuth() {
     } catch (err) {
       if (err instanceof ApiException) {
         if (err.status === 401) {
+          // Genérico DE PROPÓSITO: distinguir "usuário não existe" de "senha
+          // errada" diria a quem sonda quais contas existem.
           setError('Usuário ou senha inválidos');
-        } else if (err.status === 400) {
-          setError('Dados inválidos');
         } else {
-          setError('Erro ao fazer login');
+          // Nos demais casos a mensagem do servidor é o que orienta — em
+          // especial o 429, que antes virava "Erro ao fazer login" e fazia a
+          // pessoa tentar de novo, estendendo o próprio bloqueio.
+          setError(err.message || 'Erro ao fazer login');
         }
       } else {
         setError('Erro de conexão');
@@ -98,12 +101,16 @@ export function useAuth() {
       setUser(data);
       return true;
     } catch (err) {
+      // A mensagem do backend, quando existe, é a única que diz o que fazer.
+      //
+      // Antes tudo virava "Dados inválidos ou usuário já existe" (400) ou
+      // "Erro ao criar conta" (qualquer outro status). O servidor respondia
+      // coisas precisas — "Cadastro requer sessão ativa ou token de convite"
+      // (403), "A senha precisa ter ao menos 8 caracteres" (400), "Muitas
+      // requisições. Tente novamente em 60s" (429) — e a tela jogava fora,
+      // deixando quem tentava criar conta sem nenhuma pista do motivo.
       if (err instanceof ApiException) {
-        if (err.status === 400) {
-          setError('Dados inválidos ou usuário já existe');
-        } else {
-          setError('Erro ao criar conta');
-        }
+        setError(err.message || 'Não foi possível criar a conta');
       } else {
         setError('Erro de conexão');
       }

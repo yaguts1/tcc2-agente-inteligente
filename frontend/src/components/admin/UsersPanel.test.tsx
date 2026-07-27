@@ -20,6 +20,7 @@ vi.mock('../../lib/api', async (importarOriginal) => {
     ...original,
     usuariosApi: {
       listar: vi.fn(),
+      criar: vi.fn(),
       alterarPapel: vi.fn(),
       alterarAtivo: vi.fn(),
       definirSenha: vi.fn(),
@@ -59,6 +60,7 @@ beforeEach(() => {
     ativo: false,
   });
   vi.mocked(usuariosApi.definirSenha).mockResolvedValue({ ok: true, username: 'bruno' });
+  vi.mocked(usuariosApi.criar).mockResolvedValue({ username: 'novo', role: 'staff' });
 });
 
 const linhaDe = async (nome: string) => {
@@ -164,5 +166,38 @@ describe('reset de senha', () => {
     await waitFor(() => {
       expect(usuariosApi.definirSenha).toHaveBeenCalledWith('bruno', 'senha-longa-o-bastante');
     });
+  });
+});
+
+describe('criacao de conta', () => {
+  it('cria o usuario a partir do painel', async () => {
+    // O cadastro anônimo fecha assim que existe o primeiro usuário, e a tela de
+    // cadastro só aparece deslogado: sem este caminho, criar o segundo usuário
+    // da instalação só era possível por `curl`.
+    render(<UsersPanel />);
+    await screen.findByText('bruno');
+
+    await userEvent.click(screen.getByRole('button', { name: /criar usuário/i }));
+    const dialogo = await screen.findByRole('alertdialog');
+    await userEvent.type(within(dialogo).getByLabelText(/^usuário$/i), 'carla');
+    await userEvent.type(within(dialogo).getByLabelText(/senha/i), 'senha-longa-o-bastante');
+    await userEvent.click(within(dialogo).getByRole('button', { name: /^criar$/i }));
+
+    await waitFor(() => {
+      expect(usuariosApi.criar).toHaveBeenCalledWith('carla', 'senha-longa-o-bastante', undefined);
+    });
+  });
+
+  it('recusa senha abaixo da politica antes de chamar o backend', async () => {
+    render(<UsersPanel />);
+    await screen.findByText('bruno');
+
+    await userEvent.click(screen.getByRole('button', { name: /criar usuário/i }));
+    const dialogo = await screen.findByRole('alertdialog');
+    await userEvent.type(within(dialogo).getByLabelText(/^usuário$/i), 'carla');
+    await userEvent.type(within(dialogo).getByLabelText(/senha/i), 'curta');
+
+    expect(within(dialogo).getByRole('button', { name: /^criar$/i })).toBeDisabled();
+    expect(usuariosApi.criar).not.toHaveBeenCalled();
   });
 });
