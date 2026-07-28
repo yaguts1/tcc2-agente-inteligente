@@ -956,6 +956,46 @@
         "title": "TrocarSenha",
         "type": "object"
       },
+      "UnidadeCreate": {
+        "properties": {
+          "descricao": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Descricao"
+          },
+          "nome": {
+            "maxLength": 120,
+            "minLength": 1,
+            "title": "Nome",
+            "type": "string"
+          }
+        },
+        "required": [
+          "nome"
+        ],
+        "title": "UnidadeCreate",
+        "type": "object"
+      },
+      "UnidadesDoUsuario": {
+        "properties": {
+          "unidades": {
+            "items": {
+              "type": "integer"
+            },
+            "title": "Unidades",
+            "type": "array"
+          }
+        },
+        "title": "UnidadesDoUsuario",
+        "type": "object"
+      },
       "ValidationError": {
         "properties": {
           "loc": {
@@ -2497,8 +2537,20 @@
     },
     "/api/pacientes": {
       "get": {
-        "description": "Listar todos os pacientes.",
+        "description": "Pacientes internados nas unidades que o chamador enxerga.\n\n`incluir_alta` traz tambem os que ja sairam. Fora dele a lista e a ala de\nagora: depois que alta virou estado (migrations/0009), incluir quem foi\nembora encheria a tela de gente que nao esta mais no predio.",
         "operationId": "listar_pacientes_endpoint_api_pacientes_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "incluir_alta",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Incluir Alta",
+              "type": "boolean"
+            }
+          }
+        ],
         "responses": {
           "200": {
             "content": {
@@ -2514,6 +2566,16 @@
               }
             },
             "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
           }
         },
         "summary": "Listar Pacientes Endpoint",
@@ -3434,6 +3496,95 @@
         ]
       }
     },
+    "/api/unidades": {
+      "get": {
+        "operationId": "listar_unidades_endpoint_api_unidades_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "incluir_inativas",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Incluir Inativas",
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Listar Unidades Endpoint Api Unidades Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Listar Unidades Endpoint",
+        "tags": [
+          "usuarios"
+        ]
+      },
+      "post": {
+        "operationId": "criar_unidade_endpoint_api_unidades_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnidadeCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Criar Unidade Endpoint Api Unidades Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Criar Unidade Endpoint",
+        "tags": [
+          "usuarios"
+        ]
+      }
+    },
     "/api/usuarios": {
       "get": {
         "description": "Lista os usuarios (sem hash de senha).",
@@ -3663,6 +3814,103 @@
           }
         },
         "summary": "Definir Senha De Usuario",
+        "tags": [
+          "usuarios"
+        ]
+      }
+    },
+    "/api/usuarios/{username}/unidades": {
+      "get": {
+        "operationId": "unidades_do_usuario_endpoint_api_usuarios__username__unidades_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "username",
+            "required": true,
+            "schema": {
+              "title": "Username",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Unidades Do Usuario Endpoint Api Usuarios  Username  Unidades Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Unidades Do Usuario Endpoint",
+        "tags": [
+          "usuarios"
+        ]
+      },
+      "put": {
+        "description": "Define quais unidades o usuario enxerga.\n\nLista vazia e valido e significa \"nao ve nada\" — deny by default, como em\n`unidades_do_usuario`. Nao e o mesmo que admin: admin ve tudo por causa do\nPAPEL, e esta lista nao o restringe.",
+        "operationId": "definir_unidades_endpoint_api_usuarios__username__unidades_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "username",
+            "required": true,
+            "schema": {
+              "title": "Username",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/UnidadesDoUsuario"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Definir Unidades Endpoint Api Usuarios  Username  Unidades Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Definir Unidades Endpoint",
         "tags": [
           "usuarios"
         ]

@@ -25,8 +25,26 @@ client = TestClient(app)
 
 def _auth_headers(username: str = "tester") -> dict:
     """Header Authorization com um JWT REAL (assinado pela mesma SECRET_KEY
-    que `verify_token` usa)."""
-    token = create_access_token({"sub": username})
+    que `verify_token` usa).
+
+    CRIA a linha em `users` tambem. Nao e detalhe de conveniencia: `sessao_valida`
+    recusa token cujo `sub` nao exista no banco — senao um usuario REMOVIDO
+    continuaria autenticado ate o token expirar.
+
+    Antes este arquivo so assinava o token e dependia de outro teste, em outro
+    arquivo, ter criado "tester" por acaso no mesmo banco. Passava por ordem de
+    execucao: rodado isolado, os 16 testes davam 401, e qualquer arquivo novo
+    que mudasse a ordem alfabetica quebrava todos de uma vez — sem que a causa
+    tivesse relacao nenhuma com o que o arquivo testa (export e /auth/me).
+    """
+    from interface.api_shared import DB_PATH
+    from interface.repositories.users import UserRepository
+
+    try:
+        UserRepository(DB_PATH).create(username, "hash-de-teste", role="admin")
+    except Exception:
+        pass  # ja existe, ou banco ainda sem a tabela — o token vale igual
+    token = create_access_token({"sub": username, "role": "admin"})
     return {"Authorization": f"Bearer {token}"}
 
 

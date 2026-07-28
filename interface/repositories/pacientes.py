@@ -8,6 +8,11 @@ import structlog
 from typing import List, Sequence, Optional
 
 from interface.db_core import connect, utc_now_iso
+from interface.repositories.unidades import (
+    UNIDADE_PADRAO,
+    assert_unidade_valida,
+    filtro_sql as filtro_de_unidades,
+)
 
 logger = structlog.get_logger(__name__)
 
@@ -56,15 +61,23 @@ class PatientRepository:
         conn: sqlite3.Connection,
         cama_id: str | None,
         *,
+        unidade_id: int | None = None,
         ignorar_paciente: str | None = None,
     ) -> None:
+        """Um paciente por leito DENTRO DA UNIDADE.
+
+        A checagem era global, e por isso duas alas com um "Leito 12" cada nao
+        podiam coexistir: a segunda admissao era recusada citando um paciente de
+        outro predio. A mensagem de erro chegava a vazar o ID de um paciente que
+        o operador nao tinha por que conhecer.
+        """
         if cama_id is None:
             return
-        cursor = conn.execute(
-            "SELECT paciente_id FROM paciente_fichas WHERE cama_id = ?",
-            (cama_id,),
-        )
-        row = cursor.fetchone()
+        unidade = UNIDADE_PADRAO if unidade_id is None else int(unidade_id)
+        row = conn.execute(
+            "SELECT paciente_id FROM paciente_fichas WHERE cama_id = ? AND unidade_id = ?",
+            (cama_id, unidade),
+        ).fetchone()
         if row is not None:
             existente = str(row["paciente_id"])
             if ignorar_paciente is None or existente != ignorar_paciente:
@@ -242,14 +255,38 @@ class PatientRepository:
             for row in rows
         ]
 
-    def list_all(self, include_routines: bool = False) -> List[dict]:
+    def list_all(
+        self,
+        include_routines: bool = False,
+        unidades: set[int] | None = None,
+        incluir_alta: bool = False,
+    ) -> List[dict]:
+        """Fichas visiveis para quem pergunta.
+
+        `unidades=None` significa SEM RESTRICAO (admin), e `set()` significa
+        nenhuma unidade — a distincao esta em `repositories/unidades.filtro_sql`,
+        e trata-la como "vazio = tudo" devolveria o hospital inteiro justamente
+        para quem nao pode ver nada.
+
+        `incluir_alta=False` por padrao: depois que alta virou estado
+        (migrations/0009), a lista da ala encheria de gente que ja foi embora.
+        Quem quer o historico pede explicitamente.
+        """
+        condicao, params = filtro_de_unidades(unidades, coluna="f.unidade_id")
+        clausula_alta = (
+            ""
+            if incluir_alta
+            else " AND EXISTS (SELECT 1 FROM internacoes i"
+                 " WHERE i.paciente_id = f.paciente_id AND i.alta_ms IS NULL)"
+        )
         with connect(self.db_path) as conn:
             cursor = conn.execute(
-                """
-                SELECT paciente_id, nome, perfil, cama_id, observacoes, created_at, updated_at
-                FROM paciente_fichas
-                ORDER BY nome COLLATE NOCASE, paciente_id
-                """
+                "SELECT f.paciente_id, f.nome, f.perfil, f.cama_id, f.observacoes,"
+                " f.created_at, f.updated_at, f.unidade_id"
+                " FROM paciente_fichas f"
+                f" WHERE 1 = 1{condicao}{clausula_alta}"
+                " ORDER BY f.nome COLLATE NOCASE, f.paciente_id",
+                params,
             )
             fichas = []
             for row in cursor.fetchall():
@@ -263,7 +300,7 @@ class PatientRepository:
         with connect(self.db_path) as conn:
             cursor = conn.execute(
                 """
-                SELECT paciente_id, nome, perfil, cama_id, observacoes, created_at, updated_at
+                SELECT paciente_id, nome, perfil, cama_id, observacoes, created_at, updated_at, unidade_id
                 FROM paciente_fichas
                 WHERE paciente_id = ?
                 """,
@@ -306,6 +343,7 @@ class PatientRepository:
         observacoes: str | None = None,
         rotinas: Sequence[dict] | None = None,
         registrado_por: str | None = None,
+        unidade_id: int | None = None,
     ) -> dict:
         nome_limpo = str(nome or "").strip()
         if not nome_limpo:
@@ -316,17 +354,20 @@ class PatientRepository:
         cama_norm = self._normalize_cama_id(cama_id)
         obs_val = None if observacoes is None else str(observacoes).strip() or None
         
+        unidade = UNIDADE_PADRAO if unidade_id is None else int(unidade_id)
+
         with connect(self.db_path) as conn:
-            self._assert_cama_disponivel(conn, cama_norm)
+            assert_unidade_valida(conn, unidade)
+            self._assert_cama_disponivel(conn, cama_norm, unidade_id=unidade)
             paciente_id = self._generate_paciente_id(conn)
             agora_iso = utc_now_iso()
             conn.execute("INSERT INTO pacientes (id) VALUES (?)", (paciente_id,))
             conn.execute(
                 """
-                INSERT INTO paciente_fichas (paciente_id, nome, perfil, cama_id, observacoes, created_at, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?, ?)
+                INSERT INTO paciente_fichas (paciente_id, nome, perfil, cama_id, observacoes, created_at, updated_at, unidade_id)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """,
-                (paciente_id, nome_limpo, perfil_norm, cama_norm, obs_val, agora_iso, agora_iso),
+                (paciente_id, nome_limpo, perfil_norm, cama_norm, obs_val, agora_iso, agora_iso, unidade),
             )
             self._replace_rotinas(conn, paciente_id, rotinas)
 
@@ -337,9 +378,9 @@ class PatientRepository:
             # para que alta, tempo de permanencia e o denominador de
             # paciente-hora tenham de onde partir.
             conn.execute(
-                "INSERT INTO internacoes (paciente_id, admissao_ts, admissao_ms, admitido_por)"
-                " VALUES (?, ?, ?, ?)",
-                (paciente_id, agora_iso, agora_ms, registrado_por),
+                "INSERT INTO internacoes (paciente_id, admissao_ts, admissao_ms, admitido_por, unidade_id)"
+                " VALUES (?, ?, ?, ?, ?)",
+                (paciente_id, agora_iso, agora_ms, registrado_por, unidade),
             )
             conn.commit()
 
@@ -365,14 +406,16 @@ class PatientRepository:
         
         with connect(self.db_path) as conn:
             cur = conn.execute(
-                "SELECT paciente_id, cama_id FROM paciente_fichas WHERE paciente_id = ?",
+                "SELECT paciente_id, cama_id, unidade_id FROM paciente_fichas WHERE paciente_id = ?",
                 (paciente_id,),
             )
             row = cur.fetchone()
             if row is None:
                 raise LookupError("Paciente nao encontrado.")
             existing_cama = row["cama_id"]
-            self._assert_cama_disponivel(conn, cama_norm, ignorar_paciente=paciente_id)
+            self._assert_cama_disponivel(
+                conn, cama_norm, unidade_id=row["unidade_id"], ignorar_paciente=paciente_id
+            )
             agora_iso = utc_now_iso()
             conn.execute(
                 """
@@ -503,7 +546,8 @@ class PatientRepository:
 
         with connect(self.db_path) as conn:
             ficha = conn.execute(
-                "SELECT cama_id FROM paciente_fichas WHERE paciente_id = ?", (paciente_id,)
+                "SELECT cama_id, unidade_id FROM paciente_fichas WHERE paciente_id = ?",
+                (paciente_id,),
             ).fetchone()
             if ficha is None:
                 raise LookupError("Paciente nao encontrado.")
@@ -518,7 +562,12 @@ class PatientRepository:
             cama_anterior = ficha["cama_id"]
             if (cama_anterior or None) == cama_norm:
                 raise ValueError("O paciente ja esta neste leito.")
-            self._assert_cama_disponivel(conn, cama_norm, ignorar_paciente=paciente_id)
+            self._assert_cama_disponivel(
+                conn,
+                cama_norm,
+                unidade_id=ficha["unidade_id"],
+                ignorar_paciente=paciente_id,
+            )
 
             agora_iso = utc_now_iso()
             agora_ms = _para_ms(agora_iso)
@@ -556,15 +605,28 @@ class PatientRepository:
 
         with connect(self.db_path) as conn:
             fichas = {}
+            unidades_envolvidas: set = set()
             for pid in (paciente_a, paciente_b):
                 row = conn.execute(
-                    "SELECT cama_id FROM paciente_fichas WHERE paciente_id = ?", (pid,)
+                    "SELECT cama_id, unidade_id FROM paciente_fichas WHERE paciente_id = ?", (pid,)
                 ).fetchone()
                 if row is None:
                     raise LookupError(f"Paciente {pid} nao encontrado.")
                 if row["cama_id"] is None:
                     raise ValueError(f"Paciente {pid} nao esta em nenhum leito.")
                 fichas[pid] = row["cama_id"]
+                unidades_envolvidas.add(row["unidade_id"])
+
+            # Trocar de leito ENTRE unidades nao e troca, sao duas
+            # transferencias — os dois pacientes mudam de ala, e o destino de
+            # cada um precisa ser validado contra a ocupacao da ala de destino.
+            # Aceitar aqui produziria dois pacientes na unidade errada, com
+            # `cama_id` que pode ja estar ocupado la.
+            if len(unidades_envolvidas) > 1:
+                raise ValueError(
+                    "Troca de leitos so entre pacientes da mesma unidade;"
+                    " para mover entre alas use transferencia."
+                )
 
             agora_iso = utc_now_iso()
             agora_ms = _para_ms(agora_iso)

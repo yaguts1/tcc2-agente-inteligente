@@ -25,6 +25,7 @@ class WebSocketFilter:
         patient_id: Optional[str] = None,
         alert_types: Optional[List[str]] = None,
         limit: int = 1000,
+        unidades: Optional[set] = None,
     ):
         """
         Inicializa filtro.
@@ -39,9 +40,30 @@ class WebSocketFilter:
         self.patient_id = patient_id
         self.alert_types = set(alert_types) if alert_types else None
         self.limit = limit
+        # Unidades que ESTA conexao pode receber. `None` = todas (admin).
+        #
+        # Diferente dos filtros acima, este nao e preferencia do cliente: e
+        # limite de visibilidade, decidido no servidor a partir da sessao. Os
+        # outros o cliente escolhe; este ele nao pode afrouxar.
+        self.unidades = unidades
     
     def matches(self, alert: dict) -> bool:
         """Verifica se alerta atende aos critérios de filtro."""
+
+        # Escopo por unidade PRIMEIRO, e separado dos demais: os outros filtros
+        # sao preferencia de quem conectou, este e permissao.
+        #
+        # `unidades is None` significa admin (recebe tudo); um conjunto vazio
+        # significa nenhuma unidade e nao pode virar "recebe tudo" — a diferenca
+        # entre os dois e o vazamento inteiro.
+        #
+        # Alerta sem `unidade_id` no payload nao passa para conexao escopada: um
+        # payload incompleto nao pode ser motivo para entregar dado clinico a
+        # quem talvez nao possa ve-lo.
+        if self.unidades is not None:
+            unidade = alert.get("unidade_id")
+            if unidade is None or int(unidade) not in self.unidades:
+                return False
         
         # Filtro de severidade
         if self.severities:

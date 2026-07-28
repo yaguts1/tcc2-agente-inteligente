@@ -20,7 +20,7 @@ from interface.dao import (
     selecionar_timeline,
 )
 from interface.db_core import connect
-from interface.dependencies import get_current_user
+from interface.dependencies import escopo_de_unidades, get_current_user
 from interface.repositories.alertas import ORIGEM_EQUIPE, ORIGEM_SENSOR
 from interface.repositories.monitoramento import (
     resumo as resumo_monitoramento,
@@ -86,7 +86,10 @@ def health_check() -> dict:
 # `/health` fica FORA do rate limit de proposito (ver `_check_api_rate_limit`):
 # healthcheck limitado faz o monitoramento derrubar o servico que ele vigia.
 @router.get("/stats", status_code=status.HTTP_200_OK)
-def get_stats(_: None = Depends(_check_api_rate_limit)) -> dict:
+def get_stats(
+    _: None = Depends(_check_api_rate_limit),
+    unidades: set[int] | None = Depends(escopo_de_unidades),
+) -> dict:
     """Retorna estatísticas do dashboard para o frontend.
     
     ✅ CORRIGIDO: Usa janela temporal CONSISTENTE de 24h para todas as métricas
@@ -104,6 +107,20 @@ def get_stats(_: None = Depends(_check_api_rate_limit)) -> dict:
         # Antes: selecionar_alertas_janela(DB_PATH, horas=168)  # 1 semana - INCONSISTENTE!
         # Agora: selecionar_alertas_janela(DB_PATH, horas=24)   # 24 horas - CONSISTENTE!
         all_alerts_24h = selecionar_alertas_janela(DB_PATH, horas=24)
+
+        # Escopo por unidade. Sem ele `/stats` MEDIA as duas alas num
+        # `completionRate` so, que para efeito de accountability e pior que nao
+        # ter numero nenhum: nem a ala boa nem a ruim se reconhecem no valor.
+        #
+        # As fichas visiveis sao o porteiro, o mesmo criterio da listagem de
+        # alertas — duas regras de visibilidade divergentes sobre o mesmo dado
+        # seria a forma mais silenciosa de vazar.
+        fichas = listar_fichas_pacientes(DB_PATH, incluir_rotinas=False, unidades=unidades)
+        if unidades is not None:
+            visiveis = {str(f.get("paciente_id")) for f in fichas}
+            all_alerts_24h = [
+                a for a in all_alerts_24h if str(a.get("paciente_id")) in visiveis
+            ]
         
         # Contar alertas abertos (pending) nas últimas 24h
         active_alerts = len([a for a in all_alerts_24h if a.get("status") == "aberto"])
@@ -131,8 +148,8 @@ def get_stats(_: None = Depends(_check_api_rate_limit)) -> dict:
         completed_by_sensor = len([a for a in fechados if a.get("origem_fechamento") == ORIGEM_SENSOR])
         completed_unknown = completed_today - completed_by_team - completed_by_sensor
 
-        # Contar pacientes totais
-        fichas = listar_fichas_pacientes(DB_PATH, incluir_rotinas=False)
+        # Pacientes internados nas unidades visiveis (a lista ja foi carregada
+        # acima para servir de porteiro dos alertas).
         total_patients = len(fichas)
 
         # ✅ CORRIGIDO: Taxa de conclusão agora usa dados CONSISTENTES (todas 24h)
@@ -159,7 +176,7 @@ def get_stats(_: None = Depends(_check_api_rate_limit)) -> dict:
         # de alerta também é o que acontece quando o sensor morre, o WiFi cai
         # ou a ingestão quebra. Sem este número ao lado, a tela não tem como
         # distinguir "está tudo bem" de "parei de receber dados".
-        saude = resumo_monitoramento(DB_PATH)
+        saude = resumo_monitoramento(DB_PATH, unidades=unidades)
 
         return {
             "activeAlerts": active_alerts,
@@ -183,7 +200,10 @@ def get_stats(_: None = Depends(_check_api_rate_limit)) -> dict:
 
 
 @router.get("/monitoramento", status_code=status.HTTP_200_OK)
-def status_monitoramento(_: None = Depends(_check_api_rate_limit)) -> dict:
+def status_monitoramento(
+    _: None = Depends(_check_api_rate_limit),
+    unidades: set[int] | None = Depends(escopo_de_unidades),
+) -> dict:
     """Quais pacientes estão (ou não) com dados chegando.
 
     Responde à pergunta que o dashboard não conseguia responder: "não há
@@ -194,8 +214,8 @@ def status_monitoramento(_: None = Depends(_check_api_rate_limit)) -> dict:
     device↔leito, e a ação corretiva é diferente.
     """
     try:
-        detalhe = status_por_paciente(DB_PATH)
-        agregado = resumo_monitoramento(DB_PATH)
+        detalhe = status_por_paciente(DB_PATH, unidades=unidades)
+        agregado = resumo_monitoramento(DB_PATH, unidades=unidades)
         return {**agregado, "pacientes": detalhe}
     except Exception as exc:
         raise erro_interno("monitoramento_error", exc) from exc

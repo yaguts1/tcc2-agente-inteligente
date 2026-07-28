@@ -116,8 +116,10 @@ class PatientService:
             "updatedAt": ficha.get("updated_at")
         }
 
-    def list_patients(self) -> List[dict]:
-        fichas = self.repository.list_all()
+    def list_patients(
+        self, unidades: set[int] | None = None, incluir_alta: bool = False
+    ) -> List[dict]:
+        fichas = self.repository.list_all(unidades=unidades, incluir_alta=incluir_alta)
         return [self._transform_patient(ficha) for ficha in fichas]
 
     def get_patient(self, paciente_id: str) -> Optional[dict]:

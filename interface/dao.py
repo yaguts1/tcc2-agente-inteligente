@@ -105,8 +105,15 @@ def proximo_identificador_paciente(db_path: str, prefixo: str = PACIENTE_ID_PREF
     return PatientRepository(db_path).proximo_identificador(prefixo)
 
 
-def listar_fichas_pacientes(db_path: str, incluir_rotinas: bool = False) -> List[dict]:
-    return PatientRepository(db_path).list_all(incluir_rotinas)
+def listar_fichas_pacientes(
+    db_path: str,
+    incluir_rotinas: bool = False,
+    unidades: set[int] | None = None,
+    incluir_alta: bool = False,
+) -> List[dict]:
+    return PatientRepository(db_path).list_all(
+        incluir_rotinas, unidades=unidades, incluir_alta=incluir_alta
+    )
 
 
 def obter_ficha_paciente(db_path: str, paciente_id: str, incluir_rotinas: bool = False) -> dict | None:

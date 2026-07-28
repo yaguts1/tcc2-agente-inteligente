@@ -75,10 +75,11 @@ async def listar_alertas_frontend(
     room: str | None = None,
     limit: int = 100,
     offset: int = 0,
+    unidades: set[int] | None = None,
 ) -> list[dict]:
     """Apenas os itens da página. Ver `listar_alertas_frontend_paginado`."""
     pagina = await listar_alertas_frontend_paginado(
-        horas, risk_level, status_filter, room, limit, offset
+        horas, risk_level, status_filter, room, limit, offset, unidades
     )
     return pagina.itens
 
@@ -90,10 +91,21 @@ async def listar_alertas_frontend_paginado(
     room: str | None = None,
     limit: int = 100,
     offset: int = 0,
+    unidades: set[int] | None = None,
 ) -> PaginaDeAlertas:
     """Busca alertas no formato consumido pelo frontend React, com o total
     correspondente aos filtros e cache de 30s por combinação."""
-    cache_key = f"alerts:{horas}:{risk_level}:{status_filter}:{room}:{limit}:{offset}"
+    # A UNIDADE ENTRA NA CHAVE DO CACHE.
+    #
+    # Sem isso o escopo vira um vazamento com 30 segundos de duracao: a
+    # enfermeira da ala A carrega a lista, a chave nao distingue quem perguntou,
+    # e a proxima requisicao — de outra ala, ou de um usuario sem unidade
+    # nenhuma — recebe a pagina dela pronta do cache. Seria pior que nao ter
+    # escopo, porque a tela pareceria correta.
+    escopo = "todas" if unidades is None else ",".join(str(u) for u in sorted(unidades))
+    cache_key = (
+        f"alerts:{horas}:{risk_level}:{status_filter}:{room}:{limit}:{offset}:u={escopo}"
+    )
     cached_result = await api_cache.get(cache_key)
     if cached_result is not None:
         return PaginaDeAlertas(itens=cached_result["itens"], total=cached_result["total"])
@@ -116,11 +128,26 @@ async def listar_alertas_frontend_paginado(
             continue
         candidatos.append((a, risk_level_val, status_val))
 
-    # 2) Fichas de todos os pacientes de uma vez (1 query).
+    # 2) Fichas de todos os pacientes VISIVEIS de uma vez (1 query).
+    #
+    # Esta consulta e o porteiro do escopo por unidade. Como todo alerta ja
+    # precisa da ficha para resolver nome e leito, restringir as fichas
+    # restringe os alertas pelo mesmo caminho — sem uma segunda regra de
+    # visibilidade que pudesse divergir da primeira.
     fichas = {
         str(f.get("paciente_id")): f
-        for f in listar_fichas_pacientes(DB_PATH, incluir_rotinas=False)
+        for f in listar_fichas_pacientes(DB_PATH, incluir_rotinas=False, unidades=unidades)
     }
+
+    if unidades is not None:
+        # Alerta de paciente fora do escopo sai da lista. Sem isto o alerta
+        # apareceria com o ID cru no lugar do nome e o leito vazio — vazando a
+        # existencia (e o risco) de um paciente de outra ala pela porta de tras.
+        #
+        # So no ramo escopado: para admin (`unidades is None`) um alerta sem
+        # ficha continua listado como sempre foi, porque ali o sintoma e dado
+        # orfao, nao vazamento.
+        candidatos = [c for c in candidatos if str(c[0].get("paciente_id")) in fichas]
 
     def _quarto_e_leito(paciente_id: str) -> tuple[str, str, str]:
         ficha = fichas.get(str(paciente_id))
@@ -243,8 +270,24 @@ def _montar_payload_broadcast(alert_id: str, paciente_id: str, ws_status: str) -
         "patient_id": paciente_id,
         "severity": severity,
         "alert_type": alert_type,
+        # Sem isto o WebSocketFilter nao tem contra o que decidir e, por
+        # seguranca, nao entrega nada a conexao escopada — o alerta simplesmente
+        # nao chegaria na tela da propria ala.
+        "unidade_id": _unidade_do_paciente(paciente_id),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
+
+
+def _unidade_do_paciente(paciente_id: str) -> int | None:
+    """Unidade atual do paciente, para o filtro do WebSocket."""
+    from interface.dao import obter_ficha_paciente
+
+    try:
+        ficha = obter_ficha_paciente(DB_PATH, paciente_id, incluir_rotinas=False)
+    except Exception:
+        logger.warning("unidade_do_paciente_falhou", paciente_id=paciente_id, exc_info=True)
+        return None
+    return None if ficha is None else ficha.get("unidade_id")
 
 
 def montar_payload_alerta_novo(paciente_id: str, alerta: dict) -> dict:
@@ -262,6 +305,7 @@ def montar_payload_alerta_novo(paciente_id: str, alerta: dict) -> dict:
         "patient_id": paciente_id,
         "severity": _RISK_MAP.get(str(alerta.get("perfil") or "").lower()),
         "alert_type": alerta.get("tipo"),
+        "unidade_id": _unidade_do_paciente(paciente_id),
         "timestamp": datetime.now(timezone.utc).isoformat(),
     }
 

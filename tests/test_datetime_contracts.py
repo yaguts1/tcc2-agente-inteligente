@@ -18,7 +18,6 @@ from __future__ import annotations
 from datetime import datetime, timezone
 
 import pytest
-from fastapi import Response
 
 import interface.api as api_mod
 import interface.api_shared as api_shared
@@ -53,10 +52,12 @@ async def test_frontend_alerts_datetimes_tem_offset(tmp_path, monkeypatch):
     }
     assert inserir_alertas(str(db_path), [alert]) == 1
 
-    # `Response` real: o handler grava nele o X-Total-Count, que torna o
-    # corte por `limit` visivel para o cliente.
-    resposta = Response()
-    results = await api_mod.frontend_alerts(resposta, horas=24)
+    # Pela porta HTTP: a chamada direta ao handler pulava resolucao de
+    # `Depends` e serializacao — e o offset de fuso, que e o que este arquivo
+    # protege, so existe DEPOIS de serializar.
+    from tests.test_api_contracts import _alertas_via_http
+
+    results = _alertas_via_http(api_mod, db_path)
     assert results, "No alerts returned"
     for r in results:
         for campo in ("lastRepositioning", "nextRepositioning"):

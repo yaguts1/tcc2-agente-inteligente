@@ -8,7 +8,6 @@ from __future__ import annotations
 from datetime import datetime
 
 import pytest
-from fastapi import Response
 
 import interface.api as api_mod
 import interface.api_shared as api_shared
@@ -46,11 +45,14 @@ async def test_frontend_alerts_shape_matches_contract(tmp_path, monkeypatch):
     }
     assert inserir_alertas(str(db_path), [alert]) == 1
 
-    # call the route function directly (it's async)
-    # `Response` real: o handler grava nele o X-Total-Count, que torna o
-    # corte por `limit` visivel para o cliente.
-    resposta = Response()
-    results = await api_mod.frontend_alerts(resposta, horas=24)
+    # Pela porta HTTP, nao chamando o handler direto.
+    #
+    # A chamada direta pulava a resolucao de `Depends`, a serializacao pelo
+    # `response_model` e os headers — ou seja, testava a funcao e nao o
+    # contrato. Quebrou no dia em que o endpoint ganhou uma dependencia
+    # (escopo por unidade), que e justamente o tipo de mudanca que um teste de
+    # contrato deveria cobrir em vez de tropecar.
+    results = _alertas_via_http(api_mod, db_path)
     assert isinstance(results, list)
     assert len(results) >= 1
     r = results[0]
@@ -90,3 +92,30 @@ def test_eventpayload_accepts_esp32_like_payload():
     assert ev.device_id == "ESP32-01"
     assert ev.postura == "supino"
     assert isinstance(ev.ts_utc, datetime)
+
+
+def _alertas_via_http(api_mod, db_path):
+    """GET /api/frontend/alerts com sessao real, devolvendo o JSON."""
+    from fastapi.testclient import TestClient
+
+    from interface.auth_utils import create_access_token
+    from interface.repositories.users import UserRepository
+
+    repo = UserRepository(str(db_path))
+    try:
+        repo.create("contrato", "hash-de-teste", role="admin")
+    except ValueError:
+        pass  # ja existe
+    token = create_access_token({"sub": "contrato", "role": "admin"})
+
+    import interface.web as web
+
+    cliente = TestClient(web.app)
+    resposta = cliente.get(
+        "/api/frontend/alerts?horas=24", headers={"Authorization": f"Bearer {token}"}
+    )
+    assert resposta.status_code == 200, resposta.text
+    assert "X-Total-Count" in resposta.headers, (
+        "o header que torna o corte por limit visivel sumiu"
+    )
+    return resposta.json()

@@ -180,6 +180,29 @@ async def get_current_user(request: Request) -> str:
     return user
 
 
+async def escopo_de_unidades(request: Request) -> Optional[set[int]]:
+    """Dependency: quais unidades o chamador enxerga. `None` = todas (admin).
+
+    Existe como dependency, e nao como consulta dentro de cada endpoint, para
+    que a regra de visibilidade tenha UM dono. Enquanto ela estava implicita
+    ("todo mundo ve tudo"), nao havia lugar onde alguem pudesse ler qual era a
+    regra — e e assim que o escopo passa a divergir entre a listagem, a
+    estatistica e o export sem ninguem perceber.
+
+    Falha fechada: sem sessao valida, conjunto vazio. Quem chama isto ja passou
+    por `get_current_user` no router, entao na pratica nao acontece; mas o
+    caminho existente nao pode ser "sem sessao => ve tudo".
+    """
+    from interface.api_shared import DB_PATH
+    from interface.repositories.unidades import unidades_do_usuario
+
+    payload = _payload_do_jwt(request)
+    if not payload or not sessao_valida(payload):
+        return set()
+    username = payload.get("sub") or ""
+    return unidades_do_usuario(DB_PATH, username, payload.get("role"))
+
+
 def papel_do_jwt(request: Request) -> Optional[str]:
     """Papel declarado no JWT, ou None se nao houver sessao valida.
 

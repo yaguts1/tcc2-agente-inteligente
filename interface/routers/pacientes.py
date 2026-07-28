@@ -7,7 +7,12 @@ from pydantic import BaseModel, Field
 from datetime import timedelta
 
 from interface.api_shared import DB_PATH, DEFAULT_PERFIL, _check_api_rate_limit
-from interface.dependencies import exigir_papel, get_current_user, verificar_token_dispositivo
+from interface.dependencies import (
+    escopo_de_unidades,
+    exigir_papel,
+    get_current_user,
+    verificar_token_dispositivo,
+)
 from interface.tempo import agora_utc_naive
 from interface.schemas import PacienteConfigResponse, RotinaConfig, FrontendCreatePatient
 from interface.repositories.pacientes import JaTeveAlta, PatientRepository
@@ -57,9 +62,17 @@ def criar_paciente_endpoint(payload: FrontendCreatePatient) -> dict:
 
 
 @router.get("/pacientes", response_model=List[dict], status_code=status.HTTP_200_OK)
-def listar_pacientes_endpoint() -> List[dict]:
-    """Listar todos os pacientes."""
-    return service.list_patients()
+def listar_pacientes_endpoint(
+    incluir_alta: bool = False,
+    unidades: set[int] | None = Depends(escopo_de_unidades),
+) -> List[dict]:
+    """Pacientes internados nas unidades que o chamador enxerga.
+
+    `incluir_alta` traz tambem os que ja sairam. Fora dele a lista e a ala de
+    agora: depois que alta virou estado (migrations/0009), incluir quem foi
+    embora encheria a tela de gente que nao esta mais no predio.
+    """
+    return service.list_patients(unidades=unidades, incluir_alta=incluir_alta)
 
 
 @router.get("/perfis-risco", status_code=status.HTTP_200_OK)

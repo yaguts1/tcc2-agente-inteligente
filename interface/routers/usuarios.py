@@ -199,3 +199,84 @@ async def trocar_propria_senha(payload: TrocarSenha, usuario: str = Depends(get_
     revogar_sessoes_do_usuario(_db(), usuario)
     logger.info("senha_trocada", usuario=usuario)
     return {"ok": True, "sessoes_encerradas": True}
+
+
+# ---------------------------------------------------------------------------
+# Unidades (alas/setores) e a quais delas cada usuario tem acesso
+# ---------------------------------------------------------------------------
+#
+# Fica no router de usuarios, sob `exigir_papel("admin")`, porque "quem ve o
+# que" e decisao administrativa: quem enxerga a ala nao pode ser quem decide
+# enxerga-la.
+
+
+class UnidadeCreate(BaseModel):
+    nome: str = Field(..., min_length=1, max_length=120)
+    descricao: str | None = Field(None, max_length=255)
+
+
+class UnidadesDoUsuario(BaseModel):
+    unidades: list[int] = Field(default_factory=list)
+
+
+@router.get("/unidades", status_code=status.HTTP_200_OK)
+def listar_unidades_endpoint(incluir_inativas: bool = False) -> list[dict]:
+    from interface.repositories.unidades import listar_unidades
+
+    return listar_unidades(_db(), incluir_inativas=incluir_inativas)
+
+
+@router.post("/unidades", status_code=status.HTTP_201_CREATED)
+def criar_unidade_endpoint(payload: UnidadeCreate) -> dict:
+    from interface.repositories.unidades import criar_unidade
+
+    try:
+        return criar_unidade(_db(), payload.nome, payload.descricao)
+    except ValueError as exc:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail={"code": "unidade_invalida", "message": str(exc)},
+        ) from exc
+
+
+@router.get("/usuarios/{username}/unidades", status_code=status.HTTP_200_OK)
+def unidades_do_usuario_endpoint(username: str) -> dict:
+    from interface.repositories.unidades import unidades_do_usuario
+
+    unidades = unidades_do_usuario(_db(), username)
+    return {"username": username, "unidades": sorted(unidades or [])}
+
+
+@router.put("/usuarios/{username}/unidades", status_code=status.HTTP_200_OK)
+async def definir_unidades_endpoint(username: str, payload: UnidadesDoUsuario) -> dict:
+    """Define quais unidades o usuario enxerga.
+
+    Lista vazia e valido e significa "nao ve nada" — deny by default, como em
+    `unidades_do_usuario`. Nao e o mesmo que admin: admin ve tudo por causa do
+    PAPEL, e esta lista nao o restringe.
+    """
+    from interface.repositories.unidades import (
+        UnidadeInvalida,
+        definir_unidades_do_usuario,
+    )
+
+    try:
+        unidades = definir_unidades_do_usuario(_db(), username, payload.unidades)
+    except LookupError as exc:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            detail={"code": "usuario_nao_encontrado", "message": str(exc)},
+        ) from exc
+    except UnidadeInvalida as exc:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail={"code": "unidade_invalida", "message": str(exc)},
+        ) from exc
+
+    # As unidades entram na chave do cache da listagem de alertas: sem limpar, o
+    # usuario continuaria vendo por ate 30s a lista do escopo ANTIGO — incluindo
+    # a ala da qual acabou de ser removido.
+    from interface.api_shared import api_cache
+
+    await api_cache.clear()
+    return {"ok": True, "username": username, "unidades": unidades}

@@ -23,6 +23,7 @@ from datetime import timedelta
 from typing import Any
 
 from interface.db_core import connect
+from interface.repositories.unidades import filtro_sql as filtro_de_unidades
 from interface.tempo import agora_utc_naive
 
 
@@ -41,7 +42,9 @@ def limite_silencio_min() -> int:
         return 15
 
 
-def status_por_paciente(db_path: str, limite_min: int | None = None) -> list[dict[str, Any]]:
+def status_por_paciente(
+    db_path: str, limite_min: int | None = None, unidades: set[int] | None = None
+) -> list[dict[str, Any]]:
     """Situacao de monitoramento de cada paciente com leito atribuido.
 
     Considera apenas pacientes COM cama: quem nao esta num leito nao deveria
@@ -52,18 +55,21 @@ def status_por_paciente(db_path: str, limite_min: int | None = None) -> list[dic
     agora = agora_utc_naive()
     corte = (agora - timedelta(minutes=limite)).strftime("%Y-%m-%dT%H:%M:%S")
 
+    # `f.unidade_id` no filtro: o painel de monitoramento nomeia os leitos sem
+    # leitura, entao sem escopo ele conta — e MOSTRA — leitos de outras alas.
+    condicao, params = filtro_de_unidades(unidades, coluna="f.unidade_id")
     with connect(db_path) as conn:
         linhas = conn.execute(
-            """
-            SELECT f.paciente_id  AS paciente_id,
-                   f.nome         AS nome,
-                   f.cama_id      AS cama_id,
-                   MAX(g.ts)      AS ultima_leitura
-              FROM paciente_fichas f
-              LEFT JOIN grade g ON g.paciente_id = f.paciente_id
-             WHERE f.cama_id IS NOT NULL AND f.cama_id != ''
-             GROUP BY f.paciente_id, f.nome, f.cama_id
-            """
+            "SELECT f.paciente_id  AS paciente_id,"
+            "       f.nome         AS nome,"
+            "       f.cama_id      AS cama_id,"
+            "       MAX(g.ts)      AS ultima_leitura"
+            "  FROM paciente_fichas f"
+            "  LEFT JOIN grade g ON g.paciente_id = f.paciente_id"
+            " WHERE f.cama_id IS NOT NULL AND f.cama_id != ''"
+            f"{condicao}"
+            " GROUP BY f.paciente_id, f.nome, f.cama_id",
+            params,
         ).fetchall()
 
     resultado = []
@@ -98,9 +104,17 @@ def status_por_paciente(db_path: str, limite_min: int | None = None) -> list[dic
     return resultado
 
 
-def resumo(db_path: str, limite_min: int | None = None) -> dict[str, Any]:
-    """Resumo agregado, para o dashboard e para as metricas."""
-    pacientes = status_por_paciente(db_path, limite_min)
+def resumo(
+    db_path: str, limite_min: int | None = None, unidades: set[int] | None = None
+) -> dict[str, Any]:
+    """Resumo agregado, para o dashboard e para as metricas.
+
+    O watchdog de fundo (`lifespan_tasks`) chama SEM unidades, de proposito: a
+    metrica `pacientes_sem_monitoramento` e sobre a instalacao inteira, e um
+    sensor mudo na ala B nao pode sumir do Prometheus so porque quem abriu a
+    tela era da ala A.
+    """
+    pacientes = status_por_paciente(db_path, limite_min, unidades=unidades)
     sem_dados = [p for p in pacientes if not p["monitorado"]]
     return {
         "limite_min": limite_silencio_min() if limite_min is None else limite_min,

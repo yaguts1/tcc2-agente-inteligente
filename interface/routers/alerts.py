@@ -9,7 +9,11 @@ from fastapi.responses import StreamingResponse
 from interface.api_shared import DB_PATH, _check_api_rate_limit, _check_batch_rate_limit
 from interface.schemas import BatchAlertRequest
 from interface.ws_manager_optimized import ws_manager_optimized, WebSocketFilter
-from interface.dependencies import exigir_sessao_websocket, get_current_user
+from interface.dependencies import (
+    escopo_de_unidades,
+    exigir_sessao_websocket,
+    get_current_user,
+)
 from interface.services.alerts_service import (
     listar_alertas_frontend_paginado,
     reconhecer_alerta,
@@ -35,6 +39,7 @@ async def frontend_alerts(
     offset: int = 0,
     _: str = Depends(get_current_user),
     __: None = Depends(_check_api_rate_limit),
+    unidades: set[int] | None = Depends(escopo_de_unidades),
 ) -> list[dict]:
     """Return alerts in a shape convenient for the React frontend with optional filters.
 
@@ -57,7 +62,7 @@ async def frontend_alerts(
     paciente atrasado ficaria fora da tela sem nenhum sinal.
     """
     pagina = await listar_alertas_frontend_paginado(
-        horas, riskLevel, status_filter, room, limit, offset
+        horas, riskLevel, status_filter, room, limit, offset, unidades
     )
     response.headers["X-Total-Count"] = str(pagina.total)
     return pagina.itens
@@ -311,6 +316,16 @@ async def websocket_alerts(
     if usuario is None:
         return
 
+    # Escopo por unidade, decidido no SERVIDOR a partir da sessao — nunca a
+    # partir de query string. Os filtros abaixo o cliente escolhe; este ele nao
+    # pode afrouxar.
+    #
+    # Sem isto, `useCriticalAlerts` disparava beep e notificacao para todo
+    # alerta de alto risco DA INSTALACAO: a ala B acordava a enfermeira da ala
+    # A. E o mecanismo que treina a equipe a desligar notificacao — e a partir
+    # dai o sistema inteiro perde a funcao.
+    unidades = await escopo_de_unidades(websocket)
+
     # Parse filters
     severities = severity.split(",") if severity else None
     types = alert_types.split(",") if alert_types else None
@@ -319,6 +334,7 @@ async def websocket_alerts(
         severities=severities,
         patient_id=patient_id,
         alert_types=types,
+        unidades=unidades,
     )
 
     await ws_manager_optimized.connect(websocket, filters=filters)
