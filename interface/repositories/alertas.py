@@ -90,6 +90,12 @@ def inserir_alertas(db_path: str, alertas: List[dict]) -> int:
                 int(alerta.get("janela_min", 0)),
                 str(alerta.get("status", "")),
                 duracao_val,
+                # Quem chega aqui e o MOTOR, nunca a tela: a enfermagem passa por
+                # `alterar_status_alerta`. Entao um fechamento vindo deste caminho
+                # e, por construcao, movimento espontaneo do paciente — e e isso
+                # que precisa ficar registrado para nao virar adesao da equipe na
+                # hora de contar.
+                ORIGEM_SENSOR if fim_val is not None else None,
             )
         )
         pacientes.add(paciente_id)
@@ -119,12 +125,14 @@ def inserir_alertas(db_path: str, alertas: List[dict]) -> int:
         conn.executemany(
             """
             INSERT INTO alertas
-            (paciente_id, inicio, fim, tipo, perfil, janela_min, status, duracao_min)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            (paciente_id, inicio, fim, tipo, perfil, janela_min, status, duracao_min,
+             origem_fechamento)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(paciente_id, inicio) DO UPDATE SET
                 fim = excluded.fim,
                 status = excluded.status,
-                duracao_min = excluded.duracao_min
+                duracao_min = excluded.duracao_min,
+                origem_fechamento = excluded.origem_fechamento
             WHERE excluded.fim IS NOT NULL AND alertas.fim IS NULL
             """,
             registros,
@@ -189,6 +197,16 @@ def listar_alertas_abertos(db_path: str) -> List[dict]:
     return [dict(row) for row in rows]
 
 
+# Uma lista so: os dois ramos de `selecionar_alertas_janela` (com e sem janela)
+# repetiam as colunas, e quem adicionasse uma coluna num ramo e esquecesse o
+# outro criaria um bug que so aparece com `horas=None` — que e justamente o
+# caminho do EXPORT, o menos exercitado.
+_COLUNAS_ALERTA = (
+    "paciente_id, inicio, fim, tipo, perfil, janela_min, status, duracao_min, "
+    "fechado_por, origem_fechamento"
+)
+
+
 def selecionar_alertas_janela(db_path: str, horas: int | None = 24) -> list[dict]:
     """Busca alertas (qualquer status) dentro de uma janela de tempo.
 
@@ -204,8 +222,7 @@ def selecionar_alertas_janela(db_path: str, horas: int | None = 24) -> list[dict
         # Sem filtro de tempo - retorna todos
         with connect(db_path) as conn:
             cursor = conn.execute(
-                "SELECT paciente_id, inicio, fim, tipo, perfil, janela_min, status, duracao_min "
-                "FROM alertas ORDER BY inicio ASC"
+                f"SELECT {_COLUNAS_ALERTA} FROM alertas ORDER BY inicio ASC"
             )
             rows = cursor.fetchall()
         return [dict(row) for row in rows]
@@ -232,8 +249,7 @@ def selecionar_alertas_janela(db_path: str, horas: int | None = 24) -> list[dict
     # motivo para priorizar.
     with connect(db_path) as conn:
         cursor = conn.execute(
-            "SELECT paciente_id, inicio, fim, tipo, perfil, janela_min, status, duracao_min "
-            "FROM alertas "
+            f"SELECT {_COLUNAS_ALERTA} FROM alertas "
             "WHERE (inicio >= ? AND inicio <= ?) OR status IN ('aberto', 'reconhecido') "
             "ORDER BY inicio ASC",
             (limite_inferior, limite_superior),
@@ -264,6 +280,13 @@ def listar_pacientes(db_path: str, horas: int | None = 24) -> list[str]:
 # instante em que o paciente foi virado nao muda depois de registrado.
 ORDEM_STATUS = {"aberto": 0, "reconhecido": 1, "fechado": 2}
 
+# Por qual caminho o alerta chegou a 'fechado'. Ver migrations/0007: sem isto,
+# um paciente que rola sozinho conta como adesao da enfermagem.
+ORIGEM_EQUIPE = "equipe"    # alguem clicou na tela
+ORIGEM_SENSOR = "sensor"    # o motor detectou movimento espontaneo
+ORIGEM_SISTEMA = "sistema"  # regra automatica (alta, transferencia, expurgo)
+ORIGENS_VALIDAS = {ORIGEM_EQUIPE, ORIGEM_SENSOR, ORIGEM_SISTEMA}
+
 
 class TransicaoInvalida(ValueError):
     """Tentativa de retroceder o status de um alerta."""
@@ -276,6 +299,8 @@ def alterar_status_alerta(
     status_destino: str,
     definir_fim: bool = False,
     now_dt: datetime | None = None,
+    fechado_por: str | None = None,
+    origem_fechamento: str = ORIGEM_EQUIPE,
 ) -> None:
     """Avanca o status de um alerta: aberto -> reconhecido -> fechado.
 
@@ -309,6 +334,8 @@ def alterar_status_alerta(
     destino = str(status_destino).lower()
     if destino not in ORDEM_STATUS:
         raise ValueError(f"status invalido: {status_destino!r}")
+    if origem_fechamento not in ORIGENS_VALIDAS:
+        raise ValueError(f"origem_fechamento invalida: {origem_fechamento!r}")
 
     with connect(db_path) as conn:
         cur = conn.execute(
@@ -347,7 +374,8 @@ def alterar_status_alerta(
             conn.execute(
                 """
                 UPDATE alertas
-                SET status = :status, fim = :fim, duracao_min = :duracao_min
+                SET status = :status, fim = :fim, duracao_min = :duracao_min,
+                    fechado_por = :fechado_por, origem_fechamento = :origem
                 WHERE paciente_id = :paciente_id AND inicio = :inicio
                 """,
                 {
@@ -356,6 +384,13 @@ def alterar_status_alerta(
                     "inicio": inicio,
                     "fim": fim_iso,
                     "duracao_min": duracao_min,
+                    # Gravados junto de `fim`, no mesmo UPDATE condicional: a
+                    # autoria acompanha o fechamento e herda a mesma garantia de
+                    # ser escrita UMA vez. Separar em outro UPDATE abriria a
+                    # janela para um alerta com `fim` de um clique e autor de
+                    # outro.
+                    "fechado_por": fechado_por,
+                    "origem": origem_fechamento,
                 },
             )
         else:

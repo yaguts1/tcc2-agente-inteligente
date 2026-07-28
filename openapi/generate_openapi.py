@@ -53,6 +53,11 @@ def generate_openapi(output: Path | None = None) -> Dict[str, Any]:
             "nextRepositioning": {"type": ["string", "null"], "format": "date-time"},
             "riskLevel": {"type": "string", "enum": ["high", "medium", "low"]},
             "status": {"type": "string", "enum": ["pending", "acknowledged", "completed"]},
+            "closureOrigin": {
+                "type": ["string", "null"],
+                "enum": ["equipe", "sensor", "sistema", None],
+            },
+            "closedBy": {"type": ["string", "null"]},
         },
         "required": ["id", "patientName", "riskLevel", "status"],
         "additionalProperties": True,

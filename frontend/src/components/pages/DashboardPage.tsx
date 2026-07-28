@@ -182,17 +182,31 @@ export function DashboardPage() {
         acknowledgedAlerts: stats?.acknowledgedAlerts ?? 0,
         completedToday: stats?.completedToday ?? 0,
         completionRate: stats?.completionRate ?? 0,
+        completedBySensor: stats?.completedBySensor ?? 0,
+        completedUnknownOrigin: stats?.completedUnknownOrigin ?? 0,
+        teamCompletionRate: stats?.teamCompletionRate ?? 0,
       };
     }
     const pendentes = contarPorStatus('pending');
     const reconhecidos = contarPorStatus('acknowledged');
     const concluidos = contarPorStatus('completed');
     const total = pendentes + reconhecidos + concluidos;
+    // Mesma separação que o backend faz por origem — o rótulo do cartão só
+    // continua verdadeiro sob filtro se a conta for a mesma.
+    const concluidosPorEquipe = filteredAlerts.filter(
+      (a) => a.status === 'completed' && a.closureOrigin === 'equipe',
+    ).length;
+    const concluidosPorSensor = filteredAlerts.filter(
+      (a) => a.status === 'completed' && a.closureOrigin === 'sensor',
+    ).length;
     return {
       activeAlerts: pendentes,
       acknowledgedAlerts: reconhecidos,
       completedToday: concluidos,
       completionRate: total > 0 ? Math.round((concluidos / total) * 100) : 0,
+      completedBySensor: concluidosPorSensor,
+      completedUnknownOrigin: concluidos - concluidosPorEquipe - concluidosPorSensor,
+      teamCompletionRate: total > 0 ? Math.round((concluidosPorEquipe / total) * 100) : 0,
     };
   })();
 
@@ -364,8 +378,25 @@ export function DashboardPage() {
                 <Calendar className="w-5 h-5 text-blue-500" />
               </div>
               <div>
-                <p className="text-sm text-muted-foreground">Taxa de Conclusão</p>
-                <p className="text-2xl font-bold text-foreground">{displayStats.completionRate}%</p>
+                {/*
+                  O rótulo era "Taxa de Conclusão" sobre um número que somava
+                  adesão da enfermagem com paciente que se mexeu sozinho — duas
+                  coisas não comparáveis no mesmo indicador de capa. Agora o
+                  número grande é só o que a equipe fez, e o espontâneo aparece
+                  ao lado em vez de sumir dentro do total.
+                */}
+                <p className="text-sm text-muted-foreground">Reposicionado pela Equipe</p>
+                <p className="text-2xl font-bold text-foreground">{displayStats.teamCompletionRate}%</p>
+                {displayStats.completedBySensor > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    +{displayStats.completedBySensor} por movimento espontâneo
+                  </p>
+                )}
+                {displayStats.completedUnknownOrigin > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {displayStats.completedUnknownOrigin} sem origem registrada
+                  </p>
+                )}
               </div>
             </div>
           </Card>

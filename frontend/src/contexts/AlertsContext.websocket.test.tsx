@@ -58,6 +58,8 @@ const alerta = (id: string) => ({
   nextRepositioning: '2026-07-26T06:00:00+00:00',
   riskLevel: 'high' as const,
   status: 'pending' as const,
+  closureOrigin: null,
+  closedBy: null,
 });
 
 function Sonda() {

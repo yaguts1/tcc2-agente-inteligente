@@ -21,6 +21,7 @@ from interface.dao import (
 )
 from interface.db_core import connect
 from interface.dependencies import get_current_user
+from interface.repositories.alertas import ORIGEM_EQUIPE, ORIGEM_SENSOR
 from interface.repositories.monitoramento import (
     resumo as resumo_monitoramento,
     status_por_paciente,
@@ -111,21 +112,47 @@ def get_stats(_: None = Depends(_check_api_rate_limit)) -> dict:
         acked_alerts = len([a for a in all_alerts_24h if a.get("status") == "reconhecido"])
         
         # Contar alertas fechados (completed) nas últimas 24h
-        completed_today = len([a for a in all_alerts_24h if a.get("status") == "fechado"])
-        
+        fechados = [a for a in all_alerts_24h if a.get("status") == "fechado"]
+        completed_today = len(fechados)
+
+        # Fechado pela EQUIPE vs. fechado sozinho pelo paciente.
+        #
+        # Os dois viravam a mesma linha e entravam no mesmo numero, entao a KPI
+        # de capa media adesao da enfermagem somada a mobilidade do paciente: um
+        # paciente que rola sozinho gerava um "concluido" sem humano nenhum.
+        # Para o TCC isso contamina a variavel de desfecho primaria.
+        #
+        # Linhas anteriores a migrations/0007 tem `origem_fechamento` NULL —
+        # nao da para saber retroativamente qual caminho fechou cada uma, e
+        # chutar 'equipe' inventaria adesao. Ficam de fora das duas contagens e
+        # aparecem em `completedUnknownOrigin`, para a tela poder dizer que o
+        # numero e parcial em vez de mentir por omissao.
+        completed_by_team = len([a for a in fechados if a.get("origem_fechamento") == ORIGEM_EQUIPE])
+        completed_by_sensor = len([a for a in fechados if a.get("origem_fechamento") == ORIGEM_SENSOR])
+        completed_unknown = completed_today - completed_by_team - completed_by_sensor
+
         # Contar pacientes totais
         fichas = listar_fichas_pacientes(DB_PATH, incluir_rotinas=False)
         total_patients = len(fichas)
-        
+
         # ✅ CORRIGIDO: Taxa de conclusão agora usa dados CONSISTENTES (todas 24h)
         # Fórmula: fechados / (abertos + reconhecidos + fechados) nas últimas 24h
         # Representa: % de alertas que foram completados no período de 24h
         total_relevant = active_alerts + acked_alerts + completed_today
         completion_rate = (
-            (completed_today / total_relevant * 100) 
+            (completed_today / total_relevant * 100)
             if total_relevant > 0 else 0
         )
-        
+
+        # A taxa que responde "a equipe esta virando os pacientes?" — a pergunta
+        # que a coordenacao faz. `completionRate` continua existindo porque a
+        # tela ja o consome, mas ele responde outra coisa: "quantos alertas
+        # deixaram de estar abertos", por qualquer motivo.
+        team_completion_rate = (
+            (completed_by_team / total_relevant * 100)
+            if total_relevant > 0 else 0
+        )
+
         # Saúde do monitoramento entra no MESMO payload das estatísticas de
         # propósito. O dashboard afirmava "Todos os pacientes estão com
         # reposicionamento em dia" sempre que não havia alertas — mas ausência
@@ -138,8 +165,12 @@ def get_stats(_: None = Depends(_check_api_rate_limit)) -> dict:
             "activeAlerts": active_alerts,
             "acknowledgedAlerts": acked_alerts,
             "completedToday": completed_today,
+            "completedByTeam": completed_by_team,
+            "completedBySensor": completed_by_sensor,
+            "completedUnknownOrigin": completed_unknown,
             "totalPatients": total_patients,
             "completionRate": round(completion_rate, 1),
+            "teamCompletionRate": round(team_completion_rate, 1),
             "unmonitoredPatients": saude["sem_monitoramento"],
             "monitoringLimitMin": saude["limite_min"],
         }

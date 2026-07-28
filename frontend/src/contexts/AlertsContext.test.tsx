@@ -53,6 +53,8 @@ const alertaExemplo = {
   nextRepositioning: '2026-01-01T10:00:00',
   riskLevel: 'high' as const,
   status: 'pending' as const,
+  closureOrigin: null,
+  closedBy: null,
 };
 
 /** Componente sonda: expõe o estado do contexto como texto verificável. */

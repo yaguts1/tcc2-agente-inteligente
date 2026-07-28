@@ -402,6 +402,45 @@ class ProcessadorIncremental:
     return alertas
 
   # ------------------------------------------------------------------
+  def marcar_reposicionado(self, paciente_id: str) -> bool:
+    """A equipe virou o paciente. O motor precisa saber.
+
+    O botao "Reposicionar" da tela so escrevia a linha em `alertas`
+    (`alterar_status_alerta`) e nada tocava o motor. Mas `nucleo/decisor.py:172`
+    so abre alerta novo quando `alerta_atual is None`, e `alerta_atual` so
+    limpava sozinho com postura DIFERENTE sustentada por `histerese_min`.
+
+    O desfecho, quando o paciente nao foi virado de fato (ou o sensor nao viu):
+    a linha vira 'fechado', o dashboard fica verde, `alerta_atual` continua
+    preenchido — e NENHUM alerta novo nasce para aquele paciente ate uma mudanca
+    real de postura. O paciente pode passar horas sobre o sacro atras de uma
+    tela que afirma que esta tudo bem.
+
+    E o inverso exato do modo de falha contra o qual
+    `repositories/monitoramento.py` ja protege (silencio confundido com
+    normalidade): aqui a tela nao fica calada, ela afirma bem-estar.
+
+    Reiniciar a corrida (em vez de so limpar o alerta) e o ponto: e o que faz o
+    relogio da proxima janela comecar do reposicionamento, que e quando o alivio
+    de pressao de fato aconteceu.
+
+    Devolve True se havia estado para reiniciar — o chamador usa isso para
+    distinguir "motor atualizado" de "paciente que o motor nem conhecia".
+    """
+    estado = self._estado_cache.get(paciente_id)
+    if estado is None:
+      return False
+
+    novo_estado = reiniciar_corrida(estado)
+    novo_estado.alerta_atual = None
+    novo_estado.alerta_inicio = None
+    novo_estado.baseline_postura = None
+    self._estado_cache[paciente_id] = novo_estado
+    self._persistir_estado(paciente_id)
+    logger.info("reposicionamento_registrado_no_motor", paciente_id=paciente_id)
+    return True
+
+  # ------------------------------------------------------------------
   def _processar_recalculo(self, paciente_id: str, postura: str, timestamp: datetime) -> list:
     buffer = self._buffers[paciente_id]
     buffer.append({"timestamp": timestamp, "postura": postura})

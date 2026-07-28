@@ -446,6 +446,10 @@ class ExportService:
             'Perfil',
             'Status',
             'Duração',
+            # "Concluído" sozinho nao diz se alguem virou o paciente ou se ele
+            # se mexeu sozinho. Este relatorio e o que chega a coordenacao, e sem
+            # esta coluna ele documenta adesao que talvez nunca tenha existido.
+            'Resolvido por',
         ]
         
         data = [header]
@@ -487,15 +491,45 @@ class ExportService:
                 perfil_map.get(str(alert.get('perfil', '')).lower(), str(alert.get('perfil', ''))),
                 status_map.get(str(alert.get('status', '')).lower(), str(alert.get('status', ''))),
                 duracao,
+                self._descrever_resolucao(alert),
             ]
             data.append(row)
         
         return data
     
+    def _descrever_resolucao(self, alert: Dict[str, Any]) -> str:
+        """Quem fechou o alerta, em texto para o relatorio.
+
+        Tres respostas possiveis, e a terceira importa tanto quanto as outras:
+
+          * a equipe (com o usuario, quando gravado);
+          * o proprio paciente, que se mexeu sozinho — o motor detectou e fechou;
+          * "nao registrado", para linhas anteriores a migrations/0007.
+
+        O ultimo caso e deliberadamente visivel em vez de virar traco ou espaco
+        em branco: quem le a planilha precisa saber que aquele periodo nao tem a
+        informacao, e nao concluir que ninguem atendeu.
+        """
+        if not alert.get('fim'):
+            return '-'
+
+        origem = str(alert.get('origem_fechamento') or '').lower()
+        if origem == 'equipe':
+            quem = alert.get('fechado_por')
+            return f"Equipe ({quem})" if quem else 'Equipe'
+        if origem == 'sensor':
+            return 'Movimento espontâneo'
+        if origem == 'sistema':
+            return 'Sistema'
+        return 'Não registrado'
+
     def _create_table(self, data: List[List[str]]) -> Table:
         """Cria tabela formatada para PDF."""
-        # Ajustar larguras das colunas: Paciente, Início, Fim, Tipo, Perfil, Status, Duração
-        table = Table(data, colWidths=[2.0*inch, 1.3*inch, 1.3*inch, 1.0*inch, 0.8*inch, 1.0*inch, 1.2*inch])
+        # Paciente, Início, Fim, Tipo, Perfil, Status, Duração, Resolvido por
+        table = Table(
+            data,
+            colWidths=[1.6*inch, 1.15*inch, 1.15*inch, 0.85*inch, 0.7*inch, 0.9*inch, 0.9*inch, 1.35*inch],
+        )
         
         table.setStyle(TableStyle([
             # Header

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import asyncio
 from datetime import datetime, timedelta, timezone
+from functools import partial
 from typing import List, Literal, NamedTuple
 
 import structlog
@@ -18,6 +19,7 @@ from interface.dao import (
     listar_fichas_pacientes,
     selecionar_alertas_janela,
 )
+from interface.repositories.alertas import ORIGEM_EQUIPE
 from interface.repositories.timeline import ultimo_evento_por_paciente
 from interface.services.paciente_service import dividir_cama
 from interface.tempo import agora_utc_naive, para_iso_utc
@@ -198,6 +200,13 @@ async def listar_alertas_frontend_paginado(
                 "nextRepositioning": para_iso_utc(next_iso),
                 "riskLevel": risk_level_val,
                 "status": status_val,
+                # Quem fechou: 'equipe' | 'sensor' | 'sistema' | null.
+                # A tela precisa disto para recalcular as estatisticas quando ha
+                # filtro ativo — sem o campo, a visao filtrada voltaria a somar
+                # adesao da equipe com movimento espontaneo, que e exatamente o
+                # que `completedByTeam` existe para separar.
+                "closureOrigin": a.get("origem_fechamento"),
+                "closedBy": a.get("fechado_por"),
             }
         )
 
@@ -325,13 +334,47 @@ async def anunciar_alertas_novos(alertas: list[dict]) -> None:
             logger.warning("broadcast_alerta_novo_falhou", paciente_id=paciente_id, exc_info=True)
 
 
+def _avisar_motor_do_reposicionamento(paciente_id: str) -> None:
+    """Fecha o ciclo entre o clique da enfermagem e o estado do motor.
+
+    Sem isto, concluir um alerta na tela deixava `alerta_atual` preenchido no
+    decisor e o paciente ficava PERMANENTEMENTE sem alerta novo — com o
+    dashboard verde. Ver `ProcessadorIncremental.marcar_reposicionado`.
+
+    Import tardio: `ingestao_service` (dono do PROCESSADOR) importa daqui para
+    anunciar alertas novos, entao o import no topo fecharia ciclo.
+
+    Falha aqui nao derruba a operacao — o alerta ja foi fechado no banco e o
+    clique da enfermeira nao pode virar erro 500 por causa do motor — mas
+    tambem nao passa em silencio: um motor desatualizado e exatamente o defeito
+    que esta funcao existe para corrigir.
+    """
+    try:
+        from interface.services.ingestao_service import PROCESSADOR
+
+        PROCESSADOR.marcar_reposicionado(paciente_id)
+    except Exception:
+        logger.warning("motor_nao_soube_do_reposicionamento", paciente_id=paciente_id, exc_info=True)
+
+
 async def _aplicar_operacao(alert_id: str, user: str, operacao: Literal["acknowledge", "complete"]) -> None:
     """Aplica reconhecer/completar a um único alerta: atualiza status,
     registra timeline, faz broadcast via WS e invalida o cache."""
     config = _OPERACOES[operacao]
     paciente_id, inicio = alert_id.split("__", 1)
 
-    alterar_status_alerta(DB_PATH, paciente_id, inicio, config["novo_status"], config["definir_fim"])
+    alterar_status_alerta(
+        DB_PATH,
+        paciente_id,
+        inicio,
+        config["novo_status"],
+        config["definir_fim"],
+        fechado_por=user if config["definir_fim"] else None,
+        origem_fechamento=ORIGEM_EQUIPE,
+    )
+
+    if config["definir_fim"]:
+        _avisar_motor_do_reposicionamento(paciente_id)
 
     try:
         # Idem: UTC naive, o formato do resto do banco.
@@ -390,8 +433,23 @@ async def processar_lote(alert_ids: List[str], user: str, operacao: Literal["ack
         try:
             paciente_id, inicio = alert_id.split("__", 1)
             await asyncio.to_thread(
-                alterar_status_alerta, DB_PATH, paciente_id, inicio, config["novo_status"], config["definir_fim"]
+                partial(
+                    alterar_status_alerta,
+                    DB_PATH,
+                    paciente_id,
+                    inicio,
+                    config["novo_status"],
+                    config["definir_fim"],
+                    fechado_por=user if config["definir_fim"] else None,
+                    origem_fechamento=ORIGEM_EQUIPE,
+                )
             )
+            if config["definir_fim"]:
+                # O lote precisa do MESMO aviso ao motor que a operacao unitaria:
+                # e por aqui que passa a maior parte dos fechamentos (o botao de
+                # selecionar tudo da tela), entao esquecer aqui deixaria o defeito
+                # vivo justamente no caminho mais usado.
+                await asyncio.to_thread(_avisar_motor_do_reposicionamento, paciente_id)
             try:
                 # UTC naive no formato do resto do banco. Estes dois pontos
                 # gravavam `2026-07-25T03:42:24.229283+00:00` enquanto todos os

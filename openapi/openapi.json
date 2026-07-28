@@ -493,6 +493,24 @@
           "bed": {
             "type": "string"
           },
+          "closedBy": {
+            "type": [
+              "string",
+              "null"
+            ]
+          },
+          "closureOrigin": {
+            "enum": [
+              "equipe",
+              "sensor",
+              "sistema",
+              null
+            ],
+            "type": [
+              "string",
+              "null"
+            ]
+          },
           "id": {
             "type": "string"
           },

@@ -25,6 +25,8 @@ function alerta(over: Partial<Alert> = {}): Alert {
     nextRepositioning: '2026-01-01T14:00:00Z',
     riskLevel: 'high',
     status: 'pending',
+    closureOrigin: null,
+    closedBy: null,
     ...over,
   };
 }

@@ -235,6 +235,16 @@ export interface Alert {
   nextRepositioning: string;
   riskLevel: 'high' | 'medium' | 'low';
   status: 'pending' | 'acknowledged' | 'completed';
+  /**
+   * Por qual caminho o alerta foi fechado. `null` em alertas ainda abertos e
+   * nos anteriores a migrations/0007, quando a origem não era registrada.
+   *
+   * Sem isto, a visão FILTRADA do dashboard recalcula as estatísticas em memória
+   * e voltaria a somar adesão da equipe com paciente que se mexeu sozinho.
+   */
+  closureOrigin: 'equipe' | 'sensor' | 'sistema' | null;
+  /** Usuário que fechou, quando foi a equipe. */
+  closedBy: string | null;
 }
 
 export interface AlertsResponse {
@@ -579,7 +589,26 @@ export interface DashboardStats {
   acknowledgedAlerts: number;
   completedToday: number;
   totalPatients: number;
+  /**
+   * Alertas que deixaram de estar abertos, POR QUALQUER MOTIVO. Não é adesão:
+   * inclui o paciente que se mexeu sozinho. Ver `teamCompletionRate`.
+   */
   completionRate: number;
+  /** Fechados por alguém da equipe clicando na tela. */
+  completedByTeam: number;
+  /** Fechados pelo motor ao detectar movimento espontâneo do paciente. */
+  completedBySensor: number;
+  /**
+   * Fechados antes de a origem passar a ser registrada (migrations/0007).
+   * Ficam de fora das duas contagens acima de propósito: não dá para saber
+   * retroativamente quem fechou, e chutar "equipe" inventaria adesão.
+   */
+  completedUnknownOrigin: number;
+  /**
+   * A taxa que responde "a equipe está virando os pacientes?" — só conta
+   * fechamentos pela equipe. `completionRate` responde outra pergunta.
+   */
+  teamCompletionRate: number;
   /**
    * Pacientes com leito atribuído SEM leituras recentes (sensor, rede ou
    * ingestão com problema). Existe porque "nenhum alerta" é ambíguo: pode
