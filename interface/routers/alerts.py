@@ -9,7 +9,7 @@ from fastapi.responses import StreamingResponse
 from interface.api_shared import DB_PATH, _check_api_rate_limit, _check_batch_rate_limit
 from interface.schemas import BatchAlertRequest
 from interface.ws_manager_optimized import ws_manager_optimized, WebSocketFilter
-from interface.dependencies import get_current_user
+from interface.dependencies import exigir_sessao_websocket, get_current_user
 from interface.services.alerts_service import (
     listar_alertas_frontend_paginado,
     reconhecer_alerta,
@@ -302,6 +302,15 @@ async def websocket_alerts(
     `WebSocketFilter.matches()` decide. Ja houve o caso de o payload nao os
     ter, e todo cliente com filtro ficava sem receber nada.
     """
+    # Este stream carrega dado clinico — `patient_id`, `severity` e o resto do
+    # payload de alerta — e aceitava `?patient_id=` de qualquer origem, o que
+    # transformava a falta de auth em acompanhar UM paciente escolhido. O WS de
+    # ingestao (routers/ingestao.py) sempre validou credencial; este ficou de
+    # fora. Recusa antes do `accept()`.
+    usuario = await exigir_sessao_websocket(websocket)
+    if usuario is None:
+        return
+
     # Parse filters
     severities = severity.split(",") if severity else None
     types = alert_types.split(",") if alert_types else None

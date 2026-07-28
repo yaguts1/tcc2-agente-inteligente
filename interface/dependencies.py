@@ -4,7 +4,7 @@ from datetime import datetime, timezone
 from typing import Optional
 
 import structlog
-from fastapi import Depends, Request, HTTPException, status
+from fastapi import Depends, Request, HTTPException, WebSocket, status
 from interface.auth_utils import verify_token
 
 logger = structlog.get_logger(__name__)
@@ -44,8 +44,13 @@ def verificar_token_dispositivo(request: Request) -> None:
         )
 
 
-def _payload_do_jwt(request: Request) -> Optional[dict]:
+def _payload_do_jwt(request: "Request | WebSocket") -> Optional[dict]:
     """Payload do JWT apresentado (header ou cookie), ou None.
+
+    Aceita `WebSocket` alem de `Request`: as duas classes expoem `.headers` e
+    `.cookies`, e a regra de quem esta autenticado nao pode depender do
+    transporte — foi assim que `/api/ws/alerts` ficou aberto enquanto todas as
+    rotas HTTP vizinhas exigiam sessao.
 
     NÃO confia no cookie `session_user` (texto puro, não assinado, forjável):
     qualquer um poderia mandar `Cookie: session_user=admin` e ser autenticado.
@@ -138,6 +143,28 @@ def usuario_de_jwt(request: Request) -> Optional[str]:
     """Username autenticado, ou None se não houver sessão válida."""
     payload = _payload_do_jwt(request)
     if not payload or not sessao_valida(payload):
+        return None
+    return payload.get("sub")
+
+
+async def exigir_sessao_websocket(websocket: WebSocket) -> Optional[str]:
+    """Username autenticado no handshake do WebSocket, ou None (ja fechado).
+
+    Fecha com 1008 (policy violation) ANTES do `accept()`: nao ha o que negociar
+    com quem nao tem sessao, e aceitar para so depois fechar entregaria uma
+    conexao aberta a um anonimo, ainda que por instantes.
+
+    O navegador nao consegue mandar cabecalho no handshake de WebSocket, entao a
+    credencial que funciona para a SPA e o cookie `access_token` — que
+    `_definir_cookie_sessao` ja grava no login E no cadastro, e que o navegador
+    anexa sozinho por ser mesma origem. O cabecalho `Authorization` continua
+    aceito porque `_payload_do_jwt` o le, o que mantem clientes nao-navegador
+    (teste, script, painel de leito futuro) funcionando sem caso especial.
+    """
+    payload = _payload_do_jwt(websocket)
+    if not payload or not sessao_valida(payload):
+        logger.warning("ws_sem_sessao", caminho=websocket.url.path)
+        await websocket.close(code=1008)
         return None
     return payload.get("sub")
 
