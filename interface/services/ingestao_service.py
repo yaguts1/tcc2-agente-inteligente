@@ -134,6 +134,35 @@ def processar_eventos_filtrados(
     return total_alertas
 
 
+def _resolver_dono_da_leitura(
+    ev: Mapping[str, Any], device_id: str | None, cama_id: str
+) -> str | None:
+    """A quem pertencia esta leitura NO INSTANTE em que foi feita.
+
+    Fonte unica das DUAS portas de reconciliacao (`_do_reconcile` e
+    `_do_reconcile_bed`). Ja divergiram uma vez — a correcao do timestamp entrou
+    so numa delas, e a outra seguiu gravando o lote no ocupante atual do leito —
+    entao a regra mora aqui e nao pode ser reimplementada.
+
+    Ordem por especificidade: o vinculo do DEVICE com o paciente naquele instante
+    e mais forte que a ocupacao do leito, e e a mesma regra que `POST /api/eventos`
+    usa. Retorna None quando nao da para saber: um buraco no historico e ruim,
+    atribuir ao paciente errado e pior, porque vira dado clinico falso que
+    ninguem tem como distinguir do verdadeiro.
+    """
+    ts_ms_evento = ev.get("ts_ms")
+    if ts_ms_evento is None:
+        return None
+    try:
+        pid = resolver_paciente_por_device_em(DB_PATH, device_id, int(ts_ms_evento))
+        if not pid:
+            pid = resolver_paciente_por_cama_em(DB_PATH, cama_id, int(ts_ms_evento))
+        return pid or None
+    except Exception:
+        logger.warning("reconcile_resolucao_falhou", event_id=ev.get("id"), exc_info=True)
+        return None
+
+
 def _do_reconcile(device_id: str | None = None, limit: int = 100) -> dict:
     """Synchronous reconcile worker. Intended to run in a thread via asyncio.to_thread."""
     processed = 0
@@ -150,40 +179,15 @@ def _do_reconcile(device_id: str | None = None, limit: int = 100) -> dict:
             skipped += 1
             continue
 
-        # A quem pertencia esta leitura NO INSTANTE em que foi feita.
-        #
-        # Antes: `obter_ficha_por_cama(cama_id)` — o ocupante ATUAL do leito,
-        # ignorando o timestamp do evento. Uma leitura orfa das 02:00, do leito
-        # 201-A, reconciliada as 06:00 depois de o leito trocar de paciente,
-        # era gravada no prontuario do NOVO ocupante. Verificado: o caminho
-        # principal resolvia para PAC-A e a reconciliacao gravava em PAC-B.
-        #
-        # As consequencias sao as duas piores para este sistema: o paciente que
-        # entrou recebe imobilidade que nao e dele (e alertas calculados sobre
-        # isso), e o que saiu fica com um buraco no historico. Nada indica
-        # nenhum dos dois.
-        #
-        # A ordem segue a especificidade: o vinculo do DEVICE com o paciente
-        # naquele instante e mais forte que a ocupacao do leito, e e a mesma
-        # regra que `POST /api/eventos` ja usava — as duas portas de entrada
-        # nao podiam divergir sobre de quem e o dado.
-        ts_ms_evento = ev.get("ts_ms")
-        pid = None
-        if ts_ms_evento is not None:
-            try:
-                pid = resolver_paciente_por_device_em(DB_PATH, did, int(ts_ms_evento))
-                if not pid:
-                    pid = resolver_paciente_por_cama_em(DB_PATH, cama_id, int(ts_ms_evento))
-            except Exception:
-                logger.warning(
-                    "reconcile_resolucao_falhou", event_id=ev.get("id"), exc_info=True
-                )
-                pid = None
-
+        # Uma leitura orfa das 02:00, do leito 201-A, reconciliada as 06:00
+        # depois de o leito trocar de paciente, ia parar no prontuario do NOVO
+        # ocupante. Verificado: o caminho principal resolvia para PAC-A e a
+        # reconciliacao gravava em PAC-B. As consequencias sao as duas piores
+        # para este sistema — o paciente que entrou recebe imobilidade que nao e
+        # dele (e alertas calculados sobre isso), e o que saiu fica com um buraco
+        # no historico — e nada indica nenhum dos dois.
+        pid = _resolver_dono_da_leitura(ev, did, cama_id)
         if not pid:
-            # Sem saber de QUEM e a leitura, ela fica na fila. Um buraco no
-            # historico e ruim; atribuir ao paciente errado e pior, porque vira
-            # dado clinico falso que ninguem tem como distinguir do verdadeiro.
             skipped += 1
             continue
 
@@ -234,25 +238,29 @@ async def reconcile_device_events(device_id: str | None = None, limit: int = 100
 
 
 def _do_reconcile_bed(cama_id: str, limit: int = 1000) -> dict:
-    """Reconcile all events from a specific bed to the current patient in that bed."""
+    """Reconcilia os eventos orfaos de um leito, cada um para o dono DAQUELE instante.
+
+    Antes esta funcao resolvia UMA vez, por `obter_ficha_por_cama(cama_id)` — o
+    ocupante ATUAL — e gravava o lote inteiro nele. E exatamente o defeito que
+    `_do_reconcile` ja corrigiu (ver o comentario longo la em cima): a fila de
+    orfaos e por definicao ANTIGA, entao o ocupante de agora frequentemente nao
+    e quem gerou as leituras. Como as duas portas de entrada nao podem divergir
+    sobre de quem e o dado, a regra aqui e a mesma: vinculo do device no
+    instante da leitura, depois ocupacao do leito no instante da leitura, e na
+    duvida a leitura fica na fila.
+
+    O nome do ocupante atual continua sendo lido, mas so para a resposta da tela
+    de administracao — nao decide mais atribuicao nenhuma.
+    """
     processed = 0
     skipped = 0
     patient_name = None
 
-    # Find current patient in this bed
     try:
         paciente = obter_ficha_por_cama(DB_PATH, cama_id, incluir_rotinas=False)
-        pid = paciente.get("paciente_id") if paciente else None
         patient_name = paciente.get("nome") if paciente else None
     except Exception:
-        pid = None
-
-    if not pid:
-        return {
-            "processed": 0,
-            "skipped": 0,
-            "error": f"No patient currently in bed {cama_id}"
-        }
+        logger.warning("reconcile_bed_ficha_atual_falhou", cama_id=cama_id, exc_info=True)
 
     # Get all orphan events
     all_events = listar_device_events(DB_PATH, device_id=None, limit=10000)
@@ -272,6 +280,11 @@ def _do_reconcile_bed(cama_id: str, limit: int = 1000) -> dict:
     for ev in bed_events:
         did = ev.get("device_id")
         payload = ev.get("payload") or {}
+
+        pid = _resolver_dono_da_leitura(ev, did, cama_id)
+        if not pid:
+            skipped += 1
+            continue
 
         try:
             payload["paciente_id"] = pid

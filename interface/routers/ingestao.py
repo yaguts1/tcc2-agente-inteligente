@@ -13,11 +13,13 @@ from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile
 from interface.api_shared import (
     DB_PATH,
     _aplicar_rate_limit,
+    _check_api_rate_limit,
     iterar_linhas_jsonl,
     tipo_de_conteudo_aceito,
 )
 from interface.dependencies import (
     TOKEN_DISPOSITIVO_HEADER,
+    get_current_user,
     token_dispositivo_configurado,
     verificar_token_dispositivo,
 )
@@ -370,7 +372,16 @@ async def receber_grade(
     )
 
 
-@router.post("/device_events/reconcile", status_code=status.HTTP_200_OK)
+# As duas rotas de reconciliacao ESCREVEM em prontuario (grade, eventos e os
+# alertas calculados em cima deles), mas ficaram sem dependencia nenhuma
+# enquanto todas as vizinhas exigiam sessao — inclusive `GET /api/device_events`
+# (routers/devices.py:25), que so LE a mesma fila. Sao acionadas pela tela de
+# administracao, entao a exigencia e a mesma do resto do painel.
+@router.post(
+    "/device_events/reconcile",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(get_current_user), Depends(_check_api_rate_limit)],
+)
 async def api_reconcile_device_events(device_id: str | None = None, limit: int = 100) -> dict:
     """Attempt to reconcile stored raw device events into patient events."""
     # delegate to shared reconcile helper which uses a lock and runs in a thread
@@ -378,9 +389,13 @@ async def api_reconcile_device_events(device_id: str | None = None, limit: int =
     return result
 
 
-@router.post("/device_events/reconcile_bed/{cama_id}", status_code=status.HTTP_200_OK)
+@router.post(
+    "/device_events/reconcile_bed/{cama_id}",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(get_current_user), Depends(_check_api_rate_limit)],
+)
 async def api_reconcile_bed_events(cama_id: str, limit: int = 1000) -> dict:
-    """Reconcile all orphan events for a specific bed (cama_id) to the current patient."""
+    """Reconcilia os eventos orfaos de um leito, cada um para o dono do instante."""
     async with _reconcile_lock:
         return await asyncio.to_thread(_do_reconcile_bed, cama_id, limit)
 

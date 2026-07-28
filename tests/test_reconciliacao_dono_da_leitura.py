@@ -14,6 +14,12 @@ historico. Nada indica nenhum dos dois.
 O caminho principal (`POST /api/eventos`) sempre resolveu pelo timestamp, com
 `resolver_paciente_por_device_em`. As duas portas de entrada divergiam sobre de
 quem e o dado.
+
+E divergiram DE NOVO: a correcao entrou so em `_do_reconcile`, e o gemeo
+`_do_reconcile_bed` — o que a tela de administracao aciona — seguiu resolvendo
+uma unica vez por `obter_ficha_por_cama` e gravando o lote inteiro no ocupante
+atual. Por isso a regra agora mora em `_resolver_dono_da_leitura`, com teste
+para as duas portas.
 """
 
 import sqlite3
@@ -103,6 +109,19 @@ def reconciliador(monkeypatch):
     return _run
 
 
+@pytest.fixture
+def reconciliador_por_leito(monkeypatch):
+    """A porta que a tela de administracao aciona (`POST .../reconcile_bed/{cama}`)."""
+
+    def _run(db):
+        import interface.services.ingestao_service as ing
+
+        monkeypatch.setattr(ing, "DB_PATH", db)
+        return ing._do_reconcile_bed(CAMA)
+
+    return _run
+
+
 def test_leitura_vai_para_quem_ocupava_o_leito_na_hora(tmp_path, reconciliador):
     """O caso que estava errado: leitura da Ana era gravada no Bruno."""
     db = _montar(tmp_path)
@@ -150,6 +169,32 @@ def test_reconciliacao_concorda_com_a_ingestao_direta(tmp_path):
 
     assert resolver_paciente_por_device_em(db, "dev-1", _ms(T_LEITURA)) == "PAC-A"
     assert resolver_paciente_por_cama_em(db, CAMA, _ms(T_LEITURA)) == "PAC-A"
+
+
+def test_reconciliacao_por_leito_tambem_respeita_o_instante(tmp_path, reconciliador_por_leito):
+    """O gemeo que a tela aciona resolvia pelo ocupante ATUAL e gravava no Bruno.
+
+    Mesmo cenario do primeiro teste, pela outra porta. Se as duas divergirem de
+    novo, e aqui que aparece.
+    """
+    db = _montar(tmp_path)
+
+    resultado = reconciliador_por_leito(db)
+
+    assert resultado["processed"] == 1
+    assert _dono_da_amostra(db) == "PAC-A", (
+        "reconcile_bed gravou a leitura da Ana no prontuario do Bruno"
+    )
+
+
+def test_reconciliacao_por_leito_nao_atribui_sem_saber(tmp_path, reconciliador_por_leito):
+    """Sem vinculo nem historico, a leitura fica na fila — nao vai para o ocupante atual."""
+    db = _montar(tmp_path, com_assignment=False, com_historico=False)
+
+    resultado = reconciliador_por_leito(db)
+
+    assert resultado["processed"] == 0
+    assert _dono_da_amostra(db) is None, "atribuiu ao ocupante atual sem saber de quem era"
 
 
 def test_resolvedor_de_leito_respeita_a_troca(tmp_path):

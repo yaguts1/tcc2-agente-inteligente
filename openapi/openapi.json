@@ -1829,7 +1829,7 @@
     },
     "/api/device_events/reconcile_bed/{cama_id}": {
       "post": {
-        "description": "Reconcile all orphan events for a specific bed (cama_id) to the current patient.",
+        "description": "Reconcilia os eventos orfaos de um leito, cada um para o dono do instante.",
         "operationId": "api_reconcile_bed_events_api_device_events_reconcile_bed__cama_id__post",
         "parameters": [
           {
