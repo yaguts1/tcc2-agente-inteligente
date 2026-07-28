@@ -475,6 +475,24 @@ export interface DeletePatientResult {
   removidos: Record<string, number>;
 }
 
+export interface DischargeResult {
+  ok: boolean;
+  paciente_id: string;
+  alta_ts: string;
+  /** Tempo de internação, em horas. */
+  permanencia_horas: number;
+  /** Leito que ficou livre, ou `null` se o paciente não estava em nenhum. */
+  cama_liberada: string | null;
+}
+
+export interface TransferResult {
+  ok: boolean;
+  paciente_id: string;
+  cama_anterior: string | null;
+  cama_atual: string | null;
+  ts: string;
+}
+
 export const patientsApi = {
   getPerfisRisco: () => request<PerfisRisco>('/api/perfis-risco'),
 
@@ -494,9 +512,44 @@ export const patientsApi = {
       body: JSON.stringify(data),
     }),
 
+  /**
+   * Remove o paciente e TODO o rastro clínico dele.
+   *
+   * NÃO é o caminho para dar alta — para isso existe `discharge`, que preserva
+   * o histórico. Este endpoint é para ERRO DE CADASTRO (paciente duplicado,
+   * criado no lugar errado), que é coisa diferente e rara, e por isso segue
+   * restrito a admin.
+   */
   deletePatient: (id: string) =>
     request<DeletePatientResult>(`/api/pacientes/${id}`, {
       method: 'DELETE',
+    }),
+
+  /**
+   * Encerra a internação PRESERVANDO o histórico clínico.
+   *
+   * Libera o leito, fecha o período no histórico de leito e desvincula o
+   * device — sem isso, a leitura do sensor do leito continuaria caindo no
+   * prontuário de quem já foi embora.
+   */
+  discharge: (id: string, motivo?: string) =>
+    request<DischargeResult>(`/api/pacientes/${id}/alta`, {
+      method: 'POST',
+      body: JSON.stringify({ motivo: motivo || null }),
+    }),
+
+  /**
+   * Move o paciente de leito como operação própria.
+   *
+   * A transferência É um reposicionamento: ser erguido para a maca, levado
+   * pelo corredor e reacomodado é o maior alívio de pressão do dia. Por isso
+   * ela reinicia o motor de alertas — o que editar o campo no formulário não
+   * faz, porque um formulário não sabe que houve deslocamento físico.
+   */
+  transfer: (id: string, room: string, bed: string) =>
+    request<TransferResult>(`/api/pacientes/${id}/transferencia`, {
+      method: 'POST',
+      body: JSON.stringify({ room, bed }),
     }),
 
   simulateData: (id: string, data: SimulationRequest) =>

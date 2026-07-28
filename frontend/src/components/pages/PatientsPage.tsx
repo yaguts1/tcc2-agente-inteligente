@@ -4,10 +4,12 @@ import { getStoredUser } from '../../lib/storage';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
+import { Input } from '../ui/input';
+import { Label } from '../ui/label';
 import { Skeleton } from '../ui/skeleton';
 import { ErrorBanner } from '../shared/ErrorBanner';
 import { EmptyState } from '../shared/EmptyState';
-import { Users, Plus, Edit, Trash2, Calendar, X } from 'lucide-react';
+import { Users, Plus, Edit, Trash2, Calendar, X, LogOut, ArrowRightLeft } from 'lucide-react';
 import { PatientForm } from '../patients/PatientForm';
 import { AgendaPanel } from '../patients/AgendaPanel';
 import { toast } from 'sonner';
@@ -33,6 +35,11 @@ export function PatientsPage() {
   // Nome das alas, para o cartão não mostrar um id cru. Só é exibido quando há
   // mais de uma: com ala única o rótulo seria ruído constante.
   const [unidades, setUnidades] = useState<Unit[]>([]);
+  const [dandoAlta, setDandoAlta] = useState<Patient | null>(null);
+  const [motivoAlta, setMotivoAlta] = useState('');
+  const [transferindo, setTransferindo] = useState<Patient | null>(null);
+  const [destino, setDestino] = useState({ room: '', bed: '' });
+  const [emAcao, setEmAcao] = useState(false);
 
   // Só afordância de UI: quem decide é o backend, que exige o papel `admin`
   // vindo do JWT assinado. Esconder o botão evita oferecer uma ação que
@@ -70,6 +77,40 @@ export function PatientsPage() {
   useEffect(() => {
     fetchPatients();
   }, []);
+
+  const handleAlta = async (patient: Patient) => {
+    setEmAcao(true);
+    try {
+      const r = await patientsApi.discharge(patient.id, motivoAlta.trim() || undefined);
+      // A permanência vai no toast porque é o número que a alta produz e que
+      // some da tela em seguida — o paciente sai da lista.
+      toast.success(
+        `Alta de ${patient.name} registrada — ${r.permanencia_horas}h de internação`,
+      );
+      setDandoAlta(null);
+      setMotivoAlta('');
+      await fetchPatients();
+    } catch (err) {
+      toast.error(err instanceof ApiException ? err.message : 'Falha ao dar alta');
+    } finally {
+      setEmAcao(false);
+    }
+  };
+
+  const handleTransferencia = async (patient: Patient) => {
+    setEmAcao(true);
+    try {
+      const r = await patientsApi.transfer(patient.id, destino.room.trim(), destino.bed.trim());
+      toast.success(`${patient.name}: ${r.cama_anterior ?? '—'} → ${r.cama_atual ?? '—'}`);
+      setTransferindo(null);
+      setDestino({ room: '', bed: '' });
+      await fetchPatients();
+    } catch (err) {
+      toast.error(err instanceof ApiException ? err.message : 'Falha ao transferir');
+    } finally {
+      setEmAcao(false);
+    }
+  };
 
   const handleDelete = async (patient: Patient) => {
     try {
@@ -280,6 +321,45 @@ export function PatientsPage() {
                       </span>
                     </div>
                   </div>
+                  {/*
+                    Duas fileiras, e a separação é deliberada.
+
+                    Alta e transferência são o que a ala faz todo dia, e são as
+                    ações que faltavam: até aqui a única forma de tirar um
+                    paciente da tela era Excluir, que apaga alertas, timeline e
+                    leituras de sensor. A enfermagem estava sendo empurrada para
+                    o botão destrutivo por falta de alternativa.
+
+                    Excluir desce para a fileira de baixo, junto das ações de
+                    manutenção, e continua restrito a admin — é para erro de
+                    cadastro, não para alta.
+                  */}
+                  <div className="flex gap-2 mb-2">
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => {
+                        setDestino({ room: patient.room, bed: patient.bed });
+                        setTransferindo(patient);
+                      }}
+                    >
+                      <ArrowRightLeft className="w-4 h-4 mr-1" aria-hidden="true" />
+                      Transferir
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => {
+                        setMotivoAlta('');
+                        setDandoAlta(patient);
+                      }}
+                    >
+                      <LogOut className="w-4 h-4 mr-1" aria-hidden="true" />
+                      Dar alta
+                    </Button>
+                  </div>
                   <div className="flex gap-2">
                     <Button
                       variant="outline"
@@ -317,6 +397,99 @@ export function PatientsPage() {
         )}
       </div>
 
+      {/* Alta */}
+      <AlertDialog
+        open={dandoAlta !== null}
+        onOpenChange={(open: boolean) => !open && setDandoAlta(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Dar alta a {dandoAlta?.name}</AlertDialogTitle>
+            <AlertDialogDescription>
+              O leito <strong>{dandoAlta?.room}-{dandoAlta?.bed}</strong> fica livre
+              e o paciente sai da lista da ala. O histórico clínico —
+              alertas, linha do tempo e leituras de sensor —{' '}
+              <strong>é preservado</strong>.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="space-y-2">
+            <Label htmlFor="motivo-alta">Motivo (opcional)</Label>
+            <Input
+              id="motivo-alta"
+              value={motivoAlta}
+              placeholder="ex: melhora clínica, transferência externa"
+              onChange={(e) => setMotivoAlta(e.target.value)}
+              disabled={emAcao}
+            />
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={emAcao}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                // `preventDefault` porque o Radix fecha o diálogo no clique da
+                // ação: sem isso ele sumiria antes de a requisição responder, e
+                // um erro do backend não teria onde aparecer.
+                e.preventDefault();
+                if (dandoAlta) void handleAlta(dandoAlta);
+              }}
+              disabled={emAcao}
+            >
+              {emAcao ? 'Registrando…' : 'Confirmar alta'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Transferência */}
+      <AlertDialog
+        open={transferindo !== null}
+        onOpenChange={(open: boolean) => !open && setTransferindo(null)}
+      >
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Transferir {transferindo?.name}</AlertDialogTitle>
+            <AlertDialogDescription>
+              Sai de <strong>{transferindo?.room}-{transferindo?.bed}</strong>.
+              A transferência conta como reposicionamento: o relógio da próxima
+              virada recomeça agora, porque ser erguido para a maca é alívio de
+              pressão real.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <div className="grid grid-cols-2 gap-3">
+            <div className="space-y-2">
+              <Label htmlFor="destino-room">Quarto</Label>
+              <Input
+                id="destino-room"
+                value={destino.room}
+                onChange={(e) => setDestino({ ...destino, room: e.target.value })}
+                disabled={emAcao}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="destino-bed">Leito</Label>
+              <Input
+                id="destino-bed"
+                value={destino.bed}
+                onChange={(e) => setDestino({ ...destino, bed: e.target.value })}
+                disabled={emAcao}
+              />
+            </div>
+          </div>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={emAcao}>Cancelar</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={(e) => {
+                e.preventDefault();
+                if (transferindo) void handleTransferencia(transferindo);
+              }}
+              disabled={emAcao || !destino.room.trim() || !destino.bed.trim()}
+            >
+              {emAcao ? 'Transferindo…' : 'Confirmar transferência'}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
       {/* Delete Confirmation Dialog */}
       <AlertDialog
         open={deletingPatient !== null}
@@ -331,6 +504,11 @@ export function PatientsPage() {
               <strong>todo o histórico de alertas, a linha do tempo e as
               leituras de sensor</strong> deste paciente. Esta ação não pode ser
               desfeita.
+              <br />
+              <br />
+              Para <strong>encerrar uma internação</strong>, use "Dar alta": o
+              leito é liberado e o histórico fica preservado. Excluir é para erro
+              de cadastro.
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
