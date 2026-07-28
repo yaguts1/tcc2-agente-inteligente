@@ -34,9 +34,20 @@ def banco(tmp_path):
         # So `id`: as demais colunas de `pacientes` vem de migracoes, e o teste
         # nao deve depender de qual ja rodou.
         conn.execute("INSERT INTO pacientes (id) VALUES (?)", ("PAC-BKP",))
+        # `ts_ms` compoe a chave primaria desde migrations/0008 (o `ts` de
+        # segundo cheio colidia e descartava amostras sub-segundo em silencio).
         conn.executemany(
-            "INSERT INTO grade (paciente_id, ts, postura, confianca) VALUES (?,?,?,?)",
-            [("PAC-BKP", f"2026-01-05T{h:02d}:00:00", "supino", 0.9) for h in range(24)],
+            "INSERT INTO grade (paciente_id, ts, ts_ms, postura, confianca) VALUES (?,?,?,?,?)",
+            [
+                (
+                    "PAC-BKP",
+                    f"2026-01-05T{h:02d}:00:00",
+                    int(datetime(2026, 1, 5, h, tzinfo=timezone.utc).timestamp() * 1000),
+                    "supino",
+                    0.9,
+                )
+                for h in range(24)
+            ],
         )
     return db
 

@@ -4,9 +4,28 @@ from __future__ import annotations
 from datetime import timedelta
 
 import pandas as pd
+import structlog
 
 from interface.db_core import connect, ensure_paciente, norm_iso, _ensure_grade_confianca_column
 from interface.tempo import agora_utc_naive
+
+logger = structlog.get_logger(__name__)
+
+
+def _para_ts_ms(serie: pd.Series) -> list[int | None]:
+    """Timestamps em milissegundos inteiros, sem o arredondamento de `norm_iso`.
+
+    `norm_iso` existe para o texto de `ts`, que e de segundo cheio em todo o
+    banco. Aqui a precisao e o ponto: e o que impede duas amostras do mesmo
+    segundo de colidirem na chave primaria.
+    """
+    convertidos = pd.to_datetime(serie, errors="coerce", utc=False)
+    if getattr(convertidos.dtype, "tz", None) is not None:
+        convertidos = convertidos.dt.tz_convert(None)
+    return [
+        None if pd.isna(valor) else int(valor.timestamp() * 1000)
+        for valor in convertidos
+    ]
 
 
 def inserir_grade(
@@ -20,6 +39,11 @@ def inserir_grade(
         raise ValueError("df_grade precisa conter as colunas 'timestamp' e 'postura'.")
 
     timestamps = norm_iso(df_grade["timestamp"]).tolist()
+    # `ts_ms` guarda a precisao que `ts` perde no `.dt.floor("s")` de `norm_iso`.
+    # E ele, nao `ts`, que compoe a chave primaria — ver migrations/0008: com a
+    # chave em segundos, duas amostras do mesmo segundo colidiam e a segunda era
+    # descartada em silencio pelo `INSERT OR IGNORE`.
+    ts_ms_series = _para_ts_ms(df_grade["timestamp"])
     posturas = df_grade["postura"].astype(str).tolist()
 
     # Handle optional confianca
@@ -29,9 +53,9 @@ def inserir_grade(
         confiancas = [1.0] * len(timestamps)
 
     registros = [
-        (paciente_id, ts, postura, conf)
-        for ts, postura, conf in zip(timestamps, posturas, confiancas)
-        if ts is not None
+        (paciente_id, ts, ts_ms, postura, conf)
+        for ts, ts_ms, postura, conf in zip(timestamps, ts_ms_series, posturas, confiancas)
+        if ts is not None and ts_ms is not None
     ]
 
     if not registros:
@@ -42,10 +66,29 @@ def inserir_grade(
         _ensure_grade_confianca_column(conn)
         before = conn.total_changes
         conn.executemany(
-            "INSERT OR IGNORE INTO grade (paciente_id, ts, postura, confianca) VALUES (?, ?, ?, ?)",
+            "INSERT OR IGNORE INTO grade (paciente_id, ts, ts_ms, postura, confianca)"
+            " VALUES (?, ?, ?, ?, ?)",
             registros,
         )
-        return conn.total_changes - before
+        inseridos = conn.total_changes - before
+
+    # `OR IGNORE` continua sendo o que queremos — reenvio do dispositivo e
+    # reingestao de evento orfao dependem dele para serem idempotentes. O que
+    # nao pode continuar e o descarte ser INVISIVEL: era assim que o teto de uma
+    # amostra por segundo se escondia, e e assim que qualquer teto futuro se
+    # esconderia. A partir daqui, sumir amostra deixa rastro.
+    descartadas = len(registros) - inseridos
+    if descartadas > 0:
+        logger.info(
+            "grade_amostras_ignoradas",
+            paciente_id=paciente_id,
+            enviadas=len(registros),
+            gravadas=inseridos,
+            ignoradas=descartadas,
+            motivo="chave (paciente_id, ts_ms) ja existente",
+        )
+
+    return inseridos
 
 
 def inserir_eventos(
@@ -90,7 +133,7 @@ def selecionar_grade_janela(db_path: str, horas: int | None = 24) -> list[dict]:
     if horas is None:
         with connect(db_path) as conn:
             cursor = conn.execute(
-                "SELECT paciente_id, ts, postura, confianca FROM grade ORDER BY ts ASC"
+                "SELECT paciente_id, ts, postura, confianca FROM grade ORDER BY ts ASC, ts_ms ASC"
             )
             rows = cursor.fetchall()
         return [dict(row) for row in rows]
@@ -103,7 +146,11 @@ def selecionar_grade_janela(db_path: str, horas: int | None = 24) -> list[dict]:
 
     with connect(db_path) as conn:
         cursor = conn.execute(
-            "SELECT paciente_id, ts, postura, confianca FROM grade WHERE ts >= ? AND ts <= ? ORDER BY ts ASC",
+            # `ts_ms` desempata: com varias amostras no mesmo segundo, `ORDER BY
+            # ts` sozinho deixa a ordem entre elas a criterio do SQLite — e essa
+            # sequencia alimenta o replay do decisor, que depende de ordem.
+            "SELECT paciente_id, ts, postura, confianca FROM grade"
+            " WHERE ts >= ? AND ts <= ? ORDER BY ts ASC, ts_ms ASC",
             (limite_inferior, limite_superior),
         )
         rows = cursor.fetchall()
