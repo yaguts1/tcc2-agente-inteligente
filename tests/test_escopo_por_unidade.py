@@ -399,3 +399,13 @@ def test_admissao_sem_unidade_cai_na_padrao(client, cabecalho_auth, app_isolado)
 
     assert resposta.status_code == 201, resposta.text
     assert resposta.json()["unitId"] == UNIDADE_A
+
+
+def test_listar_unidades_exige_sessao(client):
+    """`escopo_de_unidades` falha fechado (conjunto vazio) mas NAO autentica.
+
+    Sem uma dependencia de sessao, o anonimo recebia 200 com lista vazia. Nao
+    vazava dado, mas 200 para quem nao tem sessao e resposta errada — e o
+    proximo a mexer aqui poderia ler o 200 como "esta rota e publica".
+    """
+    assert client.get("/api/unidades").status_code == 401

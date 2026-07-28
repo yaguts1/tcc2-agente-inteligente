@@ -224,6 +224,12 @@ class UnidadesDoUsuario(BaseModel):
 def listar_unidades_endpoint(
     incluir_inativas: bool = False,
     unidades_visiveis: set[int] | None = Depends(escopo_de_unidades),
+    # `escopo_de_unidades` sozinho NAO autentica: ele falha fechado e devolve
+    # conjunto vazio, entao um anonimo recebia 200 com lista vazia em vez de
+    # 401. Nao vazava dado, mas 200 para quem nao tem sessao e uma resposta
+    # errada — e o proximo a mexer aqui poderia ler o 200 como "esta rota e
+    # publica" e afrouxar o resto.
+    _: str = Depends(get_current_user),
 ) -> list[dict]:
     """Unidades que o chamador enxerga.
 
