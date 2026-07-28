@@ -14,7 +14,19 @@ from interface.tempo import agora_utc_naive
 
 
 def ensure_agendas_table(db_path: str) -> None:
-    """Cria tabela de agendas se não existir."""
+    """Cria tabela de agendas se não existir.
+
+    O dono do schema e `migrations/0006_agendas_no_schema.sql`; esta funcao
+    sobrevive como rede de seguranca para quem chama o DAO sem passar pelo
+    startup do app (script, teste). As duas definicoes precisam concordar — em
+    especial a FK, que apontava para `fichas_paciente` (tabela inexistente; a
+    real e `paciente_fichas`) e so nao quebrava porque as foreign keys do SQLite
+    vinham desligadas.
+
+    A referencia e `pacientes(id)` e nao a ficha: quem cria agenda chama
+    `_ensure_paciente`, que garante a linha em `pacientes`, e nada no fluxo
+    garante que exista ficha.
+    """
     with _connect(db_path) as conn:
         conn.execute("""
             CREATE TABLE IF NOT EXISTS agendas_paciente (
@@ -43,7 +55,7 @@ def ensure_agendas_table(db_path: str) -> None:
                 created_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 updated_at TEXT DEFAULT CURRENT_TIMESTAMP,
                 
-                FOREIGN KEY (paciente_id) REFERENCES fichas_paciente(paciente_id)
+                FOREIGN KEY (paciente_id) REFERENCES pacientes(id) ON DELETE CASCADE
             )
         """)
         

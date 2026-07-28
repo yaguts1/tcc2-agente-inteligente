@@ -49,6 +49,12 @@ def connect(db_path: str) -> Iterator[sqlite3.Connection]:
         # escrevendo/lendo ao mesmo tempo).
         conn.execute("PRAGMA journal_mode=WAL")
         conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
+        # No SQLite as foreign keys sao POR CONEXAO e vem desligadas por default.
+        # Sem esta linha, todo `ON DELETE CASCADE` e todo `REFERENCES` do
+        # migrations/0001_baseline.sql eram decoracao: o banco aceitava filho sem
+        # pai e a limpeza em cascata nunca acontecia — as remocoes funcionavam
+        # so porque `repositories/pacientes.py` apaga tabela por tabela na mao.
+        conn.execute("PRAGMA foreign_keys=ON")
         yield conn
         conn.commit()
     except Exception:
