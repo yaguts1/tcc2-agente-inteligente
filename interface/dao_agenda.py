@@ -352,6 +352,15 @@ def _timestamp_matches_agenda(timestamp: Union[datetime, str], agenda: dict) -> 
             return False
     else:
         # Único - verificar data específica
+        if not agenda["data_inicio"]:
+            # Agenda sem recorrencia E sem data: nao diz quando vale. A API
+            # passou a recusar (AgendaCreate.exigir_recorrencia_ou_data), mas
+            # linhas antigas podem existir. Antes isto fazia
+            # `fromisoformat(None)` levantar TypeError, e quem chama trata
+            # excecao como fail-safe "nao suprime" — ou seja, a agenda ficava
+            # inerte por um caminho que ninguem via. Sair por False e o mesmo
+            # resultado, sem esconder um erro no meio.
+            return False
         data_inicio = datetime.fromisoformat(agenda["data_inicio"]).date()
         
         if agenda["data_fim"]:

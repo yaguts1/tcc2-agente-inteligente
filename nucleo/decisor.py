@@ -113,6 +113,29 @@ def _fechar_alerta_inplace(alerta: Dict[str, Any], fim: datetime, inicio: dateti
     return alerta
 
 
+def reiniciar_corrida(estado: EstadoDecisor) -> EstadoDecisor:
+    """Estado novo em que a corrida de imobilidade recomeca do zero.
+
+    Pura, como o resto deste modulo: devolve um estado novo e nao toca no que
+    recebeu.
+
+    Existe porque ha eventos que interrompem a imobilidade sem que o sensor veja
+    postura diferente — o paciente sai do leito para uma cirurgia, e erguido para
+    a maca numa transferencia, ou a equipe reposiciona sem que a mudanca seja
+    captada. Sem isto, o intervalo era lido como UMA corrida continua, e o
+    paciente recebia credito de zero movimento justamente nos momentos de maior
+    alivio de pressao.
+
+    Nao mexe em `cooldown_ate`: se um alerta acabou de ser fechado, o intervalo
+    de silencio combinado continua valendo.
+    """
+    novo_estado = estado.clone()
+    novo_estado.run_postura = None
+    novo_estado.run_inicio = None
+    novo_estado.movimento_inicio = None
+    return novo_estado
+
+
 def processar_alertas_incremental(
     estado: EstadoDecisor,
     amostra: Mapping[str, Any],

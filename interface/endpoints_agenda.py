@@ -6,7 +6,7 @@ Gerencia agendas de supressão de alertas.
 
 from datetime import datetime
 from typing import Optional
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
 
@@ -100,6 +100,27 @@ class AgendaCreate(BaseModel):
 
     _horas = field_validator("hora_inicio", "hora_fim")(_validar_hora)
     _dias = field_validator("dias_semana")(_validar_dias)
+
+    @model_validator(mode="after")
+    def exigir_recorrencia_ou_data(self):
+        """Uma agenda precisa dizer QUANDO vale, alem da hora.
+
+        Os dois campos sao opcionais isoladamente porque sao alternativas
+        (recorrente por dia da semana OU pontual por data), mas nenhum dos dois
+        preenchidos nao e "vale sempre": `_timestamp_matches_agenda` cai no ramo
+        da data pontual e faz `datetime.fromisoformat(None)`. A agenda ficaria
+        cadastrada, visivel na tela, e nunca suprimiria nada — o mesmo modo de
+        falha que este arquivo ja documenta ter corrigido antes.
+
+        A tela sempre manda `data_inicio` (o formulario a marca obrigatoria),
+        entao isto fecha a porta da API, nao a do usuario.
+        """
+        if not self.dias_semana and not self.data_inicio:
+            raise ValueError(
+                "informe dias_semana (recorrente) ou data_inicio (pontual);"
+                " sem um dos dois a agenda nunca casaria com nenhum horario"
+            )
+        return self
 
 
 class AgendaUpdate(BaseModel):

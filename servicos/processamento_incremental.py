@@ -13,7 +13,13 @@ from typing import Dict, Iterable, Mapping, Optional
 import structlog
 
 from configuracao import config
-from nucleo.decisor import EstadoDecisor, processar_alertas_incremental, processar_alertas_lote
+from interface.tempo import utc_naive_para_local
+from nucleo.decisor import (
+  EstadoDecisor,
+  processar_alertas_incremental,
+  processar_alertas_lote,
+  reiniciar_corrida,
+)
 from servicos import metricas
 
 try:  # pragma: no cover - dependencia opcional
@@ -215,6 +221,11 @@ class ProcessadorIncremental:
 
     self._estado_cache: Dict[str, EstadoDecisor] = {}
     self._ultima_ts: Dict[str, datetime] = {}
+    # Quem esta dentro de uma janela de supressao agora. So serve para detectar
+    # a BORDA de saida (e reiniciar a corrida uma vez), nao para decidir
+    # supressao — quem decide e sempre a agenda no banco, para uma agenda criada
+    # ou removida durante o turno valer na amostra seguinte.
+    self._em_supressao: Dict[str, bool] = {}
 
     if estrategia == "estado_em_memoria":
       if redis_url:
@@ -295,6 +306,10 @@ class ProcessadorIncremental:
         logger.debug("evento_fora_ordem", paciente_id=paciente_id, ts=str(timestamp), ultimo=str(ultimo))
         continue
 
+      if self._suprimir_por_agenda(paciente_id, timestamp):
+        self._ultima_ts[paciente_id] = timestamp
+        continue
+
       inicio = time.perf_counter()
 
       if self._estrategia == "estado_em_memoria":
@@ -313,6 +328,63 @@ class ProcessadorIncremental:
       self._ultima_ts[paciente_id] = timestamp
 
     return alertas_emitidos
+
+  # ------------------------------------------------------------------
+  # Agenda de supressao
+  # ------------------------------------------------------------------
+  def _suprimir_por_agenda(self, paciente_id: str, timestamp: datetime) -> bool:
+    """True quando a amostra cai numa janela em que NAO se deve alertar.
+
+    A supressao existia so em `modulo_alerta/engine.py`, que e chamado pelo
+    endpoint de simulacao e pelo CLI — nunca pelo caminho do sensor. Resultado:
+    a enfermagem cadastrava "cirurgia 08:00-12:00, suprimir", via a agenda na
+    tela, e o ESP32 alertava a cirurgia inteira. A funcionalidade funcionava na
+    demo e nao funcionava em producao.
+
+    A checagem e ANTES do decisor, nao depois: filtrar o alerta ja emitido
+    deixaria `alerta_atual`, `baseline_postura` e `cooldown_ate` mutados por um
+    alerta que ninguem viu — e um `alerta_atual` fantasma impede TODOS os
+    alertas seguintes daquele paciente ate uma mudanca real de postura.
+
+    Ao sair da janela a corrida recomeca: o periodo suprimido nao foi observado,
+    entao somar as duas pontas como uma corrida continua contaria como imobilidade
+    justamente o intervalo em que o paciente estava em cirurgia — sendo movido.
+
+    Fail-safe deliberado: se a consulta a agenda quebrar, a amostra passa e o
+    alerta acontece. Um alerta a mais e ruido; um alerta a menos e uma UPP que
+    ninguem viu chegar. Mesma escolha (e mesmo motivo) de engine.py:80-89.
+    """
+    # Import tardio: `interface.dao_agenda` puxa `interface.dao`, que fecharia
+    # ciclo com este modulo (interface.services.ingestao_service importa daqui).
+    from interface.dao_agenda import is_timestamp_in_suppressed_period
+
+    try:
+      # O timestamp e UTC naive; as horas da agenda sao horario LOCAL do
+      # hospital, que e o que a enfermagem digita.
+      timestamp_local = utc_naive_para_local(timestamp)
+      _, modo = is_timestamp_in_suppressed_period(
+        db_path=self._db_path,
+        paciente_id=paciente_id,
+        timestamp=timestamp_local,
+      )
+    except Exception as exc:
+      logger.warning("agenda_consulta_falhou", paciente_id=paciente_id, motivo=str(exc))
+      return False
+
+    if modo == "suprimir":
+      if not self._em_supressao.get(paciente_id):
+        self._em_supressao[paciente_id] = True
+        logger.info("agenda_supressao_iniciada", paciente_id=paciente_id, ts=str(timestamp))
+      return True
+
+    if self._em_supressao.pop(paciente_id, False):
+      logger.info("agenda_supressao_encerrada", paciente_id=paciente_id, ts=str(timestamp))
+      estado = self._estado_cache.get(paciente_id)
+      if estado is not None:
+        self._estado_cache[paciente_id] = reiniciar_corrida(estado)
+        self._persistir_estado(paciente_id)
+
+    return False
 
   # ------------------------------------------------------------------
   def _processar_estado_memoria(self, paciente_id: str, postura: str, timestamp: datetime) -> list:
