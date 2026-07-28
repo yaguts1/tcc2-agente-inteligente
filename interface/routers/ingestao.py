@@ -31,7 +31,6 @@ from interface.services.ingestao_service import (
     normalizar_payload,
     processar_eventos_filtrados,
     reconcile_device_events,
-    registrar_evento,
 )
 from quality.filtro import filtrar as filtrar_evento, flush_filtro
 from servicos import metricas
@@ -536,8 +535,42 @@ async def websocket_eventos(websocket: WebSocket):
                                 )
 
                         if evento.paciente_id:
-                            # Full processing
-                            registrar_evento(evento)
+                            # MESMO tratamento do POST /api/eventos: passa pelo
+                            # filtro de qualidade antes de virar dado clinico.
+                            #
+                            # Este caminho chamava `registrar_evento` direto, e
+                            # com isso o transporte que o firmware trata como
+                            # primario (`transporte_ws.h`) escapava do dedup e do
+                            # buffer de reordenacao por jitter. Consequencia
+                            # pratica: uma retransmissao do device virava amostra
+                            # duplicada na grade, e uma amostra fora de ordem era
+                            # descartada la adiante em `debug`
+                            # (processamento_incremental: `evento_fora_ordem`) em
+                            # vez de ser reordenada — as duas coisas que o filtro
+                            # existe para resolver.
+                            #
+                            # O limiar de confianca continuava valendo pelo
+                            # caminho de baixo, entao o buraco era so dedup e
+                            # ordenacao — o suficiente para as duas portas
+                            # divergirem sobre o que vira historico do paciente.
+                            resultado = filtrar_evento(evento_dict)
+                            if resultado.descartado:
+                                metricas.registrar_descartado()
+                                logger.info(
+                                    "ws_evento_descartado",
+                                    device_id=evento.device_id,
+                                    paciente_id=evento.paciente_id,
+                                    motivo=resultado.motivo,
+                                )
+                            elif resultado.prontos:
+                                processar_eventos_filtrados(
+                                    resultado.prontos, defaultdict(int)
+                                )
+                            # `prontos` vazio sem descarte = retido no buffer de
+                            # jitter. ACK assim mesmo, igual ao HTTP, que responde
+                            # `accepted` no mesmo caso: o device ja entregou, e
+                            # mandar reenviar so geraria duplicata para o dedup
+                            # comer de novo.
                         else:
                             # Store raw
                             ts_iso = evento.ts_utc.strftime("%Y-%m-%dT%H:%M:%S")

@@ -183,11 +183,17 @@ async def test_websocket_nao_confirma_evento_que_nao_foi_persistido():
             assert websocket.receive_json()["status"] == "connected"
 
             # Toda tentativa de persistir falha (banco indisponivel, por ex.)
+            #
+            # `processar_eventos_filtrados` no lugar de `registrar_evento`: o
+            # caminho do paciente passou a atravessar `quality/filtro.py` antes
+            # de persistir, como o POST /api/eventos sempre fez. O contrato que
+            # este teste protege nao mudou — nada de ACK "ok" para amostra que
+            # nao foi guardada — so mudou de quem e a ultima parada.
             with patch(
                 "interface.routers.ingestao.inserir_device_event",
                 side_effect=RuntimeError("db indisponivel"),
             ), patch(
-                "interface.routers.ingestao.registrar_evento",
+                "interface.routers.ingestao.processar_eventos_filtrados",
                 side_effect=RuntimeError("db indisponivel"),
             ):
                 websocket.send_json({
