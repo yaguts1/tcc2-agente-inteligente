@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import json
-import secrets
 from collections import defaultdict
 from datetime import datetime, timezone
 from typing import Any, Dict
@@ -19,8 +18,8 @@ from interface.api_shared import (
 )
 from interface.dependencies import (
     TOKEN_DISPOSITIVO_HEADER,
+    credencial_de_dispositivo_ok,
     get_current_user,
-    token_dispositivo_configurado,
     verificar_token_dispositivo,
 )
 from interface.repositories.devices import inserir_device_event, registrar_device, resolver_paciente_por_device_em
@@ -432,14 +431,19 @@ async def websocket_eventos(websocket: WebSocket):
             await websocket.close()
             return
 
-        esperado = token_dispositivo_configurado()
-        if esperado:
-            recebido = websocket.headers.get(TOKEN_DISPOSITIVO_HEADER) or auth_data.get("token") or ""
-            if not secrets.compare_digest(recebido, esperado):
-                logger.warning("ws_device_token_invalido", device_id=device_id)
-                await websocket.send_json({"status": "error", "error": "invalid_device_token"})
-                await websocket.close()
-                return
+        # Mesma regra do HTTP, na mesma funcao: as duas portas de ingestao nao
+        # podem discordar sobre quem tem permissao de enviar amostra. O token
+        # vem no corpo da mensagem de auth porque a biblioteca de WebSocket do
+        # ESP32 nao consegue definir cabecalho no handshake — o header continua
+        # aceito para clientes que conseguem.
+        recebido = (
+            websocket.headers.get(TOKEN_DISPOSITIVO_HEADER) or auth_data.get("token") or ""
+        )
+        if not credencial_de_dispositivo_ok(device_id, recebido):
+            logger.warning("ws_device_token_invalido", device_id=device_id)
+            await websocket.send_json({"status": "error", "error": "invalid_device_token"})
+            await websocket.close()
+            return
 
         # Register device if needed (falha benigna: device já pode existir)
         try:

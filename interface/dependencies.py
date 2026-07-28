@@ -17,25 +17,62 @@ def token_dispositivo_configurado() -> Optional[str]:
     return os.getenv("UPP_DEVICE_TOKEN") or None
 
 
+def credencial_de_dispositivo_ok(device_id: str | None, token: str | None) -> bool:
+    """Decide se esta credencial de dispositivo vale. Fonte unica das duas portas.
+
+    HTTP e WebSocket precisam concordar sobre quem pode enviar amostra: uma
+    regra em cada lugar e como as duas portas de reconciliacao divergiram sobre
+    de quem era o dado.
+
+    A ordem existe para permitir migrar a frota aparelho por aparelho:
+
+      1. dispositivo JA PROVISIONADO responde so pela credencial dele. Nao
+         aceita o global — senao um segredo global vazado continuaria falando em
+         nome de um aparelho ja migrado, e migrar nao teria efeito nenhum de
+         seguranca. "Provisionado" inclui REVOGADO: revogar corta o acesso, e
+         nao rebaixa o aparelho de volta para a credencial da frota;
+      2. dispositivo SEM token proprio cai no global, se houver. Trocar a
+         credencial da frota inteira num deploy so deixaria a ala sem
+         monitoramento no instante da troca;
+      3. sem nenhum dos dois, a verificacao fica desligada — comportamento
+         pre-existente, para nao derrubar bancada montada. O aviso sai no
+         startup (interface/web.py).
+    """
+    from interface.api_shared import DB_PATH
+    from interface.repositories.device_tokens import foi_provisionado, validar
+
+    try:
+        provisionado = bool(device_id) and foi_provisionado(DB_PATH, str(device_id))
+    except Exception:
+        # Falha ao consultar o banco NAO pode virar "aceita qualquer um": o
+        # caminho seguro e recusar, e a amostra e reenviada pelo firmware (que
+        # trata 401 como falha TRANSIENTE justamente por isso).
+        logger.warning("device_token_consulta_falhou", device_id=device_id, exc_info=True)
+        return False
+
+    if provisionado:
+        return validar(DB_PATH, str(device_id), str(token or ""))
+
+    esperado = token_dispositivo_configurado()
+    if not esperado:
+        return True
+    return bool(token) and secrets.compare_digest(str(token), esperado)
+
+
 def verificar_token_dispositivo(request: Request) -> None:
     """Autentica o dispositivo nos endpoints de ingestao.
 
     O firmware so envia `X-Device-Id`, que ele mesmo escolhe — nao e segredo
     nenhum, e ainda permite furar o rate limit trocando o header. Este token e
     o que de fato autentica a origem dos dados.
-
-    Se UPP_DEVICE_TOKEN nao estiver definido, a verificacao fica desligada para
-    nao derrubar bancadas ja montadas; o aviso sai no startup (interface/web.py).
     """
-    esperado = token_dispositivo_configurado()
-    if not esperado:
-        return
-
+    device_id = request.headers.get("X-Device-Id")
     recebido = request.headers.get(TOKEN_DISPOSITIVO_HEADER, "")
-    if not recebido or not secrets.compare_digest(recebido, esperado):
+
+    if not credencial_de_dispositivo_ok(device_id, recebido):
         logger.warning(
             "device_token_invalido",
-            device_id=request.headers.get("X-Device-Id"),
+            device_id=device_id,
             cliente=request.client.host if request.client else None,
         )
         raise HTTPException(

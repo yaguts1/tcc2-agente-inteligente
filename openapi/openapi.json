@@ -2125,6 +2125,121 @@
         ]
       }
     },
+    "/api/devices/tokens": {
+      "get": {
+        "description": "Estado das credenciais. Nunca expoe hash nem texto puro.",
+        "operationId": "listar_tokens_de_dispositivo_api_devices_tokens_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Listar Tokens De Dispositivo Api Devices Tokens Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Listar Tokens De Dispositivo",
+        "tags": [
+          "devices"
+        ]
+      }
+    },
+    "/api/devices/{device_id}/token": {
+      "delete": {
+        "description": "Invalida a credencial do dispositivo imediatamente.\n\nE a operacao que nao existia: com um segredo unico para a frota, revogar\nexigia trocar a variavel de ambiente e reflashear TODOS os aparelhos, o que\nna pratica significava nunca revogar.\n\nO dispositivo revogado NAO volta a ser aceito pelo token global: ter tido\ncredencial propria e o que marca o aparelho como migrado, e o proposito da\nrevogacao e justamente cortar o acesso daquele aparelho.",
+        "operationId": "revogar_token_de_dispositivo_api_devices__device_id__token_delete",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "title": "Device Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Revogar Token De Dispositivo Api Devices  Device Id  Token Delete",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Revogar Token De Dispositivo",
+        "tags": [
+          "devices"
+        ]
+      },
+      "post": {
+        "description": "Gera a credencial do dispositivo e devolve o texto puro UMA VEZ.\n\nO servidor guarda so o hash: nao ha endpoint para reler o token depois, e\nisso e a propriedade, nao uma limitacao. Perdeu, emite outro — barato, e o\naparelho que estiver com o antigo para de ser aceito na hora, que e o\ncomportamento desejado quando alguem perde a credencial de vista.\n\nEmitir de novo ROTACIONA: substitui o token anterior. O `config.h` do\naparelho precisa ser atualizado, senao ele passa a receber 401 — que o\nfirmware trata como falha TRANSIENTE e reenvia, entao a amostra nao se\nperde enquanto o aparelho nao e reflasheado.",
+        "operationId": "emitir_token_de_dispositivo_api_devices__device_id__token_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "device_id",
+            "required": true,
+            "schema": {
+              "title": "Device Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Emitir Token De Dispositivo Api Devices  Device Id  Token Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Emitir Token De Dispositivo",
+        "tags": [
+          "devices"
+        ]
+      }
+    },
     "/api/eventos": {
       "post": {
         "operationId": "receber_evento_api_eventos_post",

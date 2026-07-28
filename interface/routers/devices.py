@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import structlog
-from fastapi import APIRouter, Depends, status
+from fastapi import APIRouter, Depends, HTTPException, status
 
-from interface.dependencies import get_current_user
+from interface.dependencies import exigir_papel, get_current_user
 
 from interface.api_shared import DB_PATH, _check_api_rate_limit, erro_interno
 from interface.dao import (
@@ -148,3 +148,91 @@ def api_device_events_stats() -> dict:
         "amostra_truncada": total_pendentes > len(events),
         "beds": beds_list
     }
+
+
+# ---------------------------------------------------------------------------
+# Credencial por dispositivo
+# ---------------------------------------------------------------------------
+#
+# Emitir e revogar credencial e operacao administrativa, e por isso exige
+# `admin` alem da sessao que o router inteiro ja pede: quem opera a ala nao
+# precisa poder criar credencial que fala em nome de um leito.
+
+
+@router.get(
+    "/devices/tokens",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(exigir_papel("admin"))],
+)
+def listar_tokens_de_dispositivo() -> list[dict]:
+    """Estado das credenciais. Nunca expoe hash nem texto puro."""
+    from interface.repositories.device_tokens import listar
+
+    return listar(DB_PATH)
+
+
+@router.post(
+    "/devices/{device_id}/token",
+    status_code=status.HTTP_201_CREATED,
+    dependencies=[Depends(exigir_papel("admin"))],
+)
+def emitir_token_de_dispositivo(device_id: str, admin: str = Depends(get_current_user)) -> dict:
+    """Gera a credencial do dispositivo e devolve o texto puro UMA VEZ.
+
+    O servidor guarda so o hash: nao ha endpoint para reler o token depois, e
+    isso e a propriedade, nao uma limitacao. Perdeu, emite outro — barato, e o
+    aparelho que estiver com o antigo para de ser aceito na hora, que e o
+    comportamento desejado quando alguem perde a credencial de vista.
+
+    Emitir de novo ROTACIONA: substitui o token anterior. O `config.h` do
+    aparelho precisa ser atualizado, senao ele passa a receber 401 — que o
+    firmware trata como falha TRANSIENTE e reenvia, entao a amostra nao se
+    perde enquanto o aparelho nao e reflasheado.
+    """
+    from interface.repositories.device_tokens import emitir
+
+    try:
+        token = emitir(DB_PATH, device_id, criado_por=admin)
+    except ValueError as exc:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail={"code": "device_invalido", "message": str(exc)},
+        ) from exc
+
+    return {
+        "device_id": device_id,
+        "token": token,
+        "aviso": (
+            "Guarde agora: o servidor nao consegue mostrar este token de novo."
+            " Grave em DEVICE_TOKEN no config.h deste aparelho."
+        ),
+    }
+
+
+@router.delete(
+    "/devices/{device_id}/token",
+    status_code=status.HTTP_200_OK,
+    dependencies=[Depends(exigir_papel("admin"))],
+)
+def revogar_token_de_dispositivo(device_id: str, admin: str = Depends(get_current_user)) -> dict:
+    """Invalida a credencial do dispositivo imediatamente.
+
+    E a operacao que nao existia: com um segredo unico para a frota, revogar
+    exigia trocar a variavel de ambiente e reflashear TODOS os aparelhos, o que
+    na pratica significava nunca revogar.
+
+    O dispositivo revogado NAO volta a ser aceito pelo token global: ter tido
+    credencial propria e o que marca o aparelho como migrado, e o proposito da
+    revogacao e justamente cortar o acesso daquele aparelho.
+    """
+    from interface.repositories.device_tokens import revogar
+
+    if not revogar(DB_PATH, device_id, revogado_por=admin):
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            detail={
+                "code": "token_nao_encontrado",
+                "message": "Dispositivo nao tem credencial ativa.",
+            },
+        )
+    return {"ok": True, "device_id": device_id, "revogado_por": admin}

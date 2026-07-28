@@ -29,7 +29,6 @@ from interface.api import router as api_router
 from interface.auth_utils import em_producao
 from interface.db_core import criar_esquema
 from interface.middleware_auditoria import AuditoriaMiddleware
-from interface.dependencies import token_dispositivo_configurado
 from interface.lifespan_tasks import (
     start_reconciler_task,
     stop_reconciler_task,
@@ -99,19 +98,25 @@ async def _lifespan(app: FastAPI):
     except Exception as exc:  # pragma: no cover - log but do not fail startup
         logger.warning("schema_nao_garantido", motivo=str(exc))
 
-    # A ingestao so autentica a origem se UPP_DEVICE_TOKEN estiver definido.
-    # Sem ele, qualquer um que alcance a rede pode injetar leituras de sensor
-    # em nome de um paciente — o X-Device-Id vem do proprio cliente e nao e
-    # segredo. Deixamos ligado por padrao para nao derrubar bancadas ja
-    # montadas, mas o aviso precisa aparecer.
-    if not token_dispositivo_configurado():
+    # A ingestao so fica ABERTA quando nao ha credencial nenhuma: nem token
+    # global, nem aparelho provisionado. Um deploy com todos os ESP32 com token
+    # proprio e sem UPP_DEVICE_TOKEN esta correto e nao deve gerar aviso —
+    # alarme falso e o que ensina a equipe a ignorar o log.
+    #
+    # Quando de fato nao ha nada, o aviso precisa sair: o X-Device-Id vem do
+    # proprio cliente e nao e segredo, entao qualquer um que alcance a rede
+    # injeta leitura em nome de um paciente. Fica ligado por padrao para nao
+    # derrubar bancada ja montada.
+    from interface.repositories.device_tokens import ingestao_esta_aberta
+
+    if ingestao_esta_aberta(DB_PATH):
         logger.warning(
             "device_token_nao_configurado",
             motivo=(
-                "UPP_DEVICE_TOKEN nao definido: os endpoints de ingestao "
-                "(/api/eventos, /api/grade, /api/ws/eventos) aceitam qualquer "
-                "origem. Defina a variavel e grave o mesmo valor no config.h "
-                "do firmware."
+                "Sem UPP_DEVICE_TOKEN e sem nenhum dispositivo provisionado: os "
+                "endpoints de ingestao (/api/eventos, /api/grade, /api/ws/eventos) "
+                "aceitam qualquer origem. Emita um token por aparelho em "
+                "POST /api/devices/{device_id}/token, ou defina UPP_DEVICE_TOKEN."
             ),
         )
 
