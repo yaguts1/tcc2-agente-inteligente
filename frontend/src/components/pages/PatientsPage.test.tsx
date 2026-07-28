@@ -69,6 +69,9 @@ beforeEach(() => {
     paciente_id: 'PAC-0001',
     cama_anterior: '201-A',
     cama_atual: '305-B',
+    unidade_anterior: 1,
+    unidade_atual: 1,
+    mudou_de_unidade: false,
     ts: '2026-01-02T10:00:00',
   });
 });
@@ -140,7 +143,7 @@ describe('transferência', () => {
     await userEvent.click(screen.getByRole('button', { name: /confirmar transferência/i }));
 
     await waitFor(() =>
-      expect(patientsApi.transfer).toHaveBeenCalledWith('PAC-0001', '305', 'B'),
+      expect(patientsApi.transfer).toHaveBeenCalledWith('PAC-0001', '305', 'B', 1),
     );
   });
 
@@ -161,5 +164,44 @@ describe('excluir', () => {
     await screen.findByText('Ana Silva');
 
     expect(screen.queryByRole('button', { name: /excluir/i })).not.toBeInTheDocument();
+  });
+});
+
+describe('transferência entre alas', () => {
+  const DUAS_ALAS = [
+    { id: 1, nome: 'Unidade Principal', descricao: null, ativo: 1 },
+    { id: 2, nome: 'Ala Sul', descricao: null, ativo: 1 },
+  ];
+
+  it('seletor de ala nao aparece com uma unidade so', async () => {
+    render(<PatientsPage />);
+    await userEvent.click(await screen.findByRole('button', { name: /transferir/i }));
+
+    expect(screen.queryByLabelText(/unidade de destino/i)).not.toBeInTheDocument();
+  });
+
+  it('avisa que o paciente sai da lista ao mudar de ala', async () => {
+    vi.mocked(unitsApi.list).mockResolvedValue(DUAS_ALAS);
+    render(<PatientsPage />);
+    await userEvent.click(await screen.findByRole('button', { name: /transferir/i }));
+
+    await userEvent.click(await screen.findByLabelText(/unidade de destino/i));
+    await userEvent.click(await screen.findByRole('option', { name: 'Ala Sul' }));
+
+    expect(await screen.findByText(/sai da sua lista/i)).toBeInTheDocument();
+  });
+
+  it('envia a ala de destino', async () => {
+    vi.mocked(unitsApi.list).mockResolvedValue(DUAS_ALAS);
+    render(<PatientsPage />);
+    await userEvent.click(await screen.findByRole('button', { name: /transferir/i }));
+
+    await userEvent.click(await screen.findByLabelText(/unidade de destino/i));
+    await userEvent.click(await screen.findByRole('option', { name: 'Ala Sul' }));
+    await userEvent.click(screen.getByRole('button', { name: /confirmar transferência/i }));
+
+    await waitFor(() =>
+      expect(patientsApi.transfer).toHaveBeenCalledWith('PAC-0001', '201', 'A', 2),
+    );
   });
 });

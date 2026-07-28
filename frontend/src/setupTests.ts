@@ -33,3 +33,13 @@ if (!window.matchMedia) {
 if (!window.HTMLElement.prototype.scrollIntoView) {
   window.HTMLElement.prototype.scrollIntoView = vi.fn();
 }
+
+// Pointer capture: o Radix Select consulta estas três ao abrir o menu, e o
+// jsdom não as implementa. Sem os stubs, qualquer teste que abra um `Select`
+// morre com `target.hasPointerCapture is not a function` — um erro que não tem
+// relação nenhuma com o que o teste verifica, e que aponta para o lugar errado.
+if (!window.HTMLElement.prototype.hasPointerCapture) {
+  window.HTMLElement.prototype.hasPointerCapture = vi.fn(() => false);
+  window.HTMLElement.prototype.setPointerCapture = vi.fn();
+  window.HTMLElement.prototype.releasePointerCapture = vi.fn();
+}

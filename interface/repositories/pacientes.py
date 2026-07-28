@@ -117,6 +117,7 @@ class PatientRepository:
         cama_id: str | None,
         agora_iso: str,
         agora_ms: int,
+        unidade_id: int | None = None,
     ) -> None:
         """Fecha o periodo do leito anterior e abre o do novo (ou nenhum).
 
@@ -146,10 +147,15 @@ class PatientRepository:
         if cama_id is None:
             return
 
+        # A unidade do periodo, e nao so o leito: e o que permite calcular
+        # paciente-hora por ala depois que o paciente muda de ala. Sem ela, a
+        # unica unidade conhecida seria a ATUAL da ficha, e um paciente que
+        # passou tres dias na ala A e um na B apareceria como quatro na B.
         conn.execute(
-            "INSERT INTO paciente_cama_history (paciente_id, cama_id, start_ts, start_ms)"
-            " VALUES (?, ?, ?, ?)",
-            (paciente_id, cama_id, agora_iso, agora_ms),
+            "INSERT INTO paciente_cama_history"
+            " (paciente_id, cama_id, start_ts, start_ms, unidade_id)"
+            " VALUES (?, ?, ?, ?, ?)",
+            (paciente_id, cama_id, agora_iso, agora_ms, unidade_id),
         )
         self._vincular_device_da_cama(conn, cama_id, paciente_id, agora_iso, agora_ms)
 
@@ -372,7 +378,9 @@ class PatientRepository:
             self._replace_rotinas(conn, paciente_id, rotinas)
 
             agora_ms = _para_ms(agora_iso)
-            self._mover_para_cama(conn, paciente_id, cama_norm, agora_iso, agora_ms)
+            self._mover_para_cama(
+                conn, paciente_id, cama_norm, agora_iso, agora_ms, unidade_id=unidade
+            )
             # Cadastrar um paciente E admiti-lo: nao existe, neste sistema,
             # paciente que exista sem estar internado. O episodio comeca aqui
             # para que alta, tempo de permanencia e o denominador de
@@ -436,7 +444,12 @@ class PatientRepository:
             mudou_de_leito = (existing_cama or None) != (cama_norm or None)
             if mudou_de_leito:
                 self._mover_para_cama(
-                    conn, paciente_id, cama_norm, agora_iso, _para_ms(agora_iso)
+                    conn,
+                    paciente_id,
+                    cama_norm,
+                    agora_iso,
+                    _para_ms(agora_iso),
+                    unidade_id=row["unidade_id"],
                 )
             conn.commit()
 
@@ -522,7 +535,11 @@ class PatientRepository:
         }
 
     def transferir(
-        self, paciente_id: str, nova_cama: str | None, usuario: str | None = None
+        self,
+        paciente_id: str,
+        nova_cama: str | None,
+        usuario: str | None = None,
+        unidade_id: int | None = None,
     ) -> dict:
         """Move o paciente de leito como UMA operacao, nao como efeito colateral.
 
@@ -560,22 +577,48 @@ class PatientRepository:
                 )
 
             cama_anterior = ficha["cama_id"]
-            if (cama_anterior or None) == cama_norm:
+            unidade_anterior = ficha["unidade_id"]
+            # Destino na MESMA ala quando nao se informa outra: transferir de
+            # leito dentro da propria unidade e o caso comum, e exigir a
+            # unidade em toda chamada quebraria quem ja usa a operacao.
+            unidade_destino = (
+                unidade_anterior if unidade_id is None else int(unidade_id)
+            )
+            muda_de_ala = unidade_destino != unidade_anterior
+
+            if (cama_anterior or None) == cama_norm and not muda_de_ala:
                 raise ValueError("O paciente ja esta neste leito.")
+
+            if muda_de_ala:
+                assert_unidade_valida(conn, unidade_destino)
+
+            # A ocupacao e conferida na ala de DESTINO.
+            #
+            # Era conferida na ala de ORIGEM, e por isso uma transferencia entre
+            # alas produzia estado errado em silencio: o leito da ala de destino
+            # podia estar ocupado sem que ninguem visse, o `cama_id` era gravado
+            # e a `unidade_id` da ficha continuava sendo a de origem — dois
+            # pacientes no mesmo leito real, e um deles listado na ala errada.
             self._assert_cama_disponivel(
                 conn,
                 cama_norm,
-                unidade_id=ficha["unidade_id"],
+                unidade_id=unidade_destino,
                 ignorar_paciente=paciente_id,
             )
 
             agora_iso = utc_now_iso()
             agora_ms = _para_ms(agora_iso)
             conn.execute(
-                "UPDATE paciente_fichas SET cama_id = ?, updated_at = ? WHERE paciente_id = ?",
-                (cama_norm, agora_iso, paciente_id),
+                "UPDATE paciente_fichas SET cama_id = ?, unidade_id = ?, updated_at = ?"
+                " WHERE paciente_id = ?",
+                (cama_norm, unidade_destino, agora_iso, paciente_id),
             )
-            self._mover_para_cama(conn, paciente_id, cama_norm, agora_iso, agora_ms)
+            self._mover_para_cama(
+                conn, paciente_id, cama_norm, agora_iso, agora_ms, unidade_id=unidade_destino
+            )
+            # `internacoes.unidade_id` NAO muda: ele registra onde a internacao
+            # COMECOU. Sobrescrever atribuiria a estadia inteira a ultima ala,
+            # que e exatamente o erro que o historico por periodo evita.
             self._limpar_estado_do_motor(conn, paciente_id)
             conn.commit()
 
@@ -583,6 +626,9 @@ class PatientRepository:
             "paciente_id": paciente_id,
             "cama_anterior": cama_anterior,
             "cama_atual": cama_norm,
+            "unidade_anterior": unidade_anterior,
+            "unidade_atual": unidade_destino,
+            "mudou_de_unidade": muda_de_ala,
             "ts": agora_iso,
             "usuario": usuario,
         }
@@ -627,6 +673,7 @@ class PatientRepository:
                     "Troca de leitos so entre pacientes da mesma unidade;"
                     " para mover entre alas use transferencia."
                 )
+            unidade_comum = next(iter(unidades_envolvidas))
 
             agora_iso = utc_now_iso()
             agora_ms = _para_ms(agora_iso)
@@ -646,7 +693,9 @@ class PatientRepository:
                     "UPDATE paciente_fichas SET cama_id = ?, updated_at = ? WHERE paciente_id = ?",
                     (destino, agora_iso, pid),
                 )
-                self._mover_para_cama(conn, pid, destino, agora_iso, agora_ms)
+                self._mover_para_cama(
+                    conn, pid, destino, agora_iso, agora_ms, unidade_id=unidade_comum
+                )
                 # Os dois foram fisicamente movidos: os dois reiniciam.
                 self._limpar_estado_do_motor(conn, pid)
             conn.commit()

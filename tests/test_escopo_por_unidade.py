@@ -62,6 +62,19 @@ def _abrir_alerta(db, paciente_id, minutos_atras=90):
         )
 
 
+
+def _linhas_hist(db, paciente_id):
+    with connect(db) as conn:
+        return [
+            dict(linha)
+            for linha in conn.execute(
+                "SELECT cama_id, unidade_id FROM paciente_cama_history"
+                " WHERE paciente_id = ? ORDER BY start_ms",
+                (paciente_id,),
+            )
+        ]
+
+
 # ------------------------------------------------------- colisao de leito
 
 
@@ -409,3 +422,119 @@ def test_listar_unidades_exige_sessao(client):
     proximo a mexer aqui poderia ler o 200 como "esta rota e publica".
     """
     assert client.get("/api/unidades").status_code == 401
+
+
+# ------------------------------------------------------- transferencia entre alas
+
+
+def test_transferencia_entre_alas_move_a_unidade(repo, unidade_b, app_isolado):
+    """O defeito: transferir para leito de outra ala mantinha o paciente na ala
+    de ORIGEM, em silencio.
+
+    A ocupacao era conferida na ala de origem, entao o leito da ala de destino
+    podia estar ocupado sem ninguem ver; o `cama_id` era gravado e a
+    `unidade_id` da ficha nao mudava — dois pacientes no mesmo leito real, e um
+    deles listado na ala errada.
+    """
+    ana = repo.create(nome="Ana", perfil="alto", cama_id="201-A", unidade_id=UNIDADE_A)
+
+    resultado = repo.transferir(ana["paciente_id"], "305-B", unidade_id=unidade_b)
+
+    assert resultado["mudou_de_unidade"] is True
+    assert resultado["unidade_atual"] == unidade_b
+    assert repo.get_by_id(ana["paciente_id"])["unidade_id"] == unidade_b
+
+
+def test_ocupacao_e_conferida_na_ala_de_destino(repo, unidade_b):
+    """Leito ocupado NA ALA DE DESTINO precisa recusar."""
+    repo.create(nome="Ja esta la", perfil="alto", cama_id="305-B", unidade_id=unidade_b)
+    ana = repo.create(nome="Ana", perfil="alto", cama_id="201-A", unidade_id=UNIDADE_A)
+
+    with pytest.raises(ValueError):
+        repo.transferir(ana["paciente_id"], "305-B", unidade_id=unidade_b)
+
+
+def test_leito_de_mesmo_nome_na_outra_ala_e_aceito(repo, unidade_b):
+    """O mesmo numero de leito existe nas duas alas: mudar de ala mantendo o
+    numero e transferencia valida, nao conflito."""
+    repo.create(nome="Outro", perfil="alto", cama_id="12", unidade_id=UNIDADE_A)
+    ana = repo.create(nome="Ana", perfil="alto", cama_id="99", unidade_id=UNIDADE_A)
+
+    resultado = repo.transferir(ana["paciente_id"], "12", unidade_id=unidade_b)
+
+    assert resultado["cama_atual"] == "12"
+    assert resultado["unidade_atual"] == unidade_b
+
+
+def test_historico_de_leito_registra_a_ala_de_cada_periodo(repo, unidade_b, app_isolado):
+    """Sem a unidade no periodo, "paciente-hora por ala" fica incalculavel: um
+    paciente que passou por duas alas contaria inteiro para a ultima."""
+    ana = repo.create(nome="Ana", perfil="alto", cama_id="201-A", unidade_id=UNIDADE_A)
+    repo.transferir(ana["paciente_id"], "305-B", unidade_id=unidade_b)
+
+    periodos = _linhas_hist(app_isolado.db_path, ana["paciente_id"])
+
+    assert [p["unidade_id"] for p in periodos] == [UNIDADE_A, unidade_b]
+
+
+def test_internacao_continua_registrando_a_ala_de_origem(repo, unidade_b, app_isolado):
+    """`internacoes.unidade_id` e onde a internacao COMECOU.
+
+    Sobrescrever na transferencia atribuiria a estadia inteira a ultima ala —
+    exatamente o erro que o historico por periodo existe para evitar.
+    """
+    ana = repo.create(nome="Ana", perfil="alto", cama_id="201-A", unidade_id=UNIDADE_A)
+    repo.transferir(ana["paciente_id"], "305-B", unidade_id=unidade_b)
+
+    with connect(app_isolado.db_path) as conn:
+        episodio = conn.execute(
+            "SELECT unidade_id FROM internacoes WHERE paciente_id = ?",
+            (ana["paciente_id"],),
+        ).fetchone()
+
+    assert episodio["unidade_id"] == UNIDADE_A
+
+
+def test_transferencia_dentro_da_mesma_ala_continua_funcionando(repo):
+    ana = repo.create(nome="Ana", perfil="alto", cama_id="201-A", unidade_id=UNIDADE_A)
+
+    resultado = repo.transferir(ana["paciente_id"], "202-B")
+
+    assert resultado["mudou_de_unidade"] is False
+    assert resultado["unidade_atual"] == UNIDADE_A
+
+
+def test_nao_da_para_empurrar_paciente_para_ala_que_nao_se_enxerga(
+    client, app_isolado, cabecalho_auth, repo, unidade_b
+):
+    """Sem esta checagem, a enfermeira da ala A poderia mandar pacientes para
+    dentro da ala B — ocupando leitos que ela nao tem como saber se estao
+    livres, e tirando o paciente do proprio campo de visao."""
+    ana = repo.create(nome="Ana", perfil="alto", cama_id="201-A", unidade_id=UNIDADE_A)
+    cab_a = _usuario_da_unidade(app_isolado, cabecalho_auth, "enf.a", [UNIDADE_A])
+
+    resposta = client.post(
+        f"/api/pacientes/{ana['paciente_id']}/transferencia",
+        json={"room": "305", "bed": "B", "unitId": unidade_b},
+        headers=cab_a,
+    )
+
+    assert resposta.status_code == 403
+    assert resposta.json()["detail"]["code"] == "unidade_fora_do_escopo"
+    assert repo.get_by_id(ana["paciente_id"])["unidade_id"] == UNIDADE_A
+
+
+def test_admin_transfere_entre_alas_pela_api(
+    client, app_isolado, cabecalho_auth, repo, unidade_b
+):
+    ana = repo.create(nome="Ana", perfil="alto", cama_id="201-A", unidade_id=UNIDADE_A)
+    admin = cabecalho_auth(username="chefe", role="admin")
+
+    resposta = client.post(
+        f"/api/pacientes/{ana['paciente_id']}/transferencia",
+        json={"room": "305", "bed": "B", "unitId": unidade_b},
+        headers=admin,
+    )
+
+    assert resposta.status_code == 200, resposta.text
+    assert resposta.json()["mudou_de_unidade"] is True

@@ -6,6 +6,7 @@ import { Button } from '../ui/button';
 import { Badge } from '../ui/badge';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../ui/select';
 import { Skeleton } from '../ui/skeleton';
 import { ErrorBanner } from '../shared/ErrorBanner';
 import { EmptyState } from '../shared/EmptyState';
@@ -38,7 +39,11 @@ export function PatientsPage() {
   const [dandoAlta, setDandoAlta] = useState<Patient | null>(null);
   const [motivoAlta, setMotivoAlta] = useState('');
   const [transferindo, setTransferindo] = useState<Patient | null>(null);
-  const [destino, setDestino] = useState({ room: '', bed: '' });
+  const [destino, setDestino] = useState<{ room: string; bed: string; unitId: number | null }>({
+    room: '',
+    bed: '',
+    unitId: null,
+  });
   const [emAcao, setEmAcao] = useState(false);
 
   // Só afordância de UI: quem decide é o backend, que exige o papel `admin`
@@ -100,10 +105,21 @@ export function PatientsPage() {
   const handleTransferencia = async (patient: Patient) => {
     setEmAcao(true);
     try {
-      const r = await patientsApi.transfer(patient.id, destino.room.trim(), destino.bed.trim());
-      toast.success(`${patient.name}: ${r.cama_anterior ?? '—'} → ${r.cama_atual ?? '—'}`);
+      const r = await patientsApi.transfer(
+        patient.id,
+        destino.room.trim(),
+        destino.bed.trim(),
+        destino.unitId,
+      );
+      // Mudar de ala tira o paciente da lista de quem transferiu, e isso
+      // precisa ser dito: um paciente que some sem explicação parece erro.
+      toast.success(
+        r.mudou_de_unidade
+          ? `${patient.name} transferido para ${nomeDaUnidade(r.unidade_atual)} — sai desta lista`
+          : `${patient.name}: ${r.cama_anterior ?? '—'} → ${r.cama_atual ?? '—'}`,
+      );
       setTransferindo(null);
-      setDestino({ room: '', bed: '' });
+      setDestino({ room: '', bed: '', unitId: null });
       await fetchPatients();
     } catch (err) {
       toast.error(err instanceof ApiException ? err.message : 'Falha ao transferir');
@@ -340,7 +356,7 @@ export function PatientsPage() {
                       size="sm"
                       className="flex-1"
                       onClick={() => {
-                        setDestino({ room: patient.room, bed: patient.bed });
+                        setDestino({ room: patient.room, bed: patient.bed, unitId: patient.unitId });
                         setTransferindo(patient);
                       }}
                     >
@@ -455,6 +471,39 @@ export function PatientsPage() {
               pressão real.
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {/*
+            Ala de destino só aparece com mais de uma. Transferir entre alas
+            move o paciente para fora da lista de quem transferiu — daí o aviso
+            no rodapé do seletor: um paciente que some sem explicação parece
+            erro, e a pessoa refaria a operação.
+          */}
+          {unidades.length > 1 && (
+            <div className="space-y-2">
+              <Label htmlFor="destino-unidade">Unidade de destino</Label>
+              <Select
+                value={destino.unitId ? String(destino.unitId) : ''}
+                onValueChange={(value) => setDestino({ ...destino, unitId: Number(value) })}
+                disabled={emAcao}
+              >
+                <SelectTrigger id="destino-unidade">
+                  <SelectValue placeholder="Selecione a ala" />
+                </SelectTrigger>
+                <SelectContent>
+                  {unidades.map((u) => (
+                    <SelectItem key={u.id} value={String(u.id)}>
+                      {u.nome}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {destino.unitId !== null && destino.unitId !== transferindo?.unitId && (
+                <p className="text-xs text-warning" role="alert">
+                  Muda de ala: o paciente sai da sua lista.
+                </p>
+              )}
+            </div>
+          )}
+
           <div className="grid grid-cols-2 gap-3">
             <div className="space-y-2">
               <Label htmlFor="destino-room">Quarto</Label>

@@ -16,7 +16,7 @@ from interface.dependencies import (
 from interface.tempo import agora_utc_naive
 from interface.schemas import PacienteConfigResponse, RotinaConfig, FrontendCreatePatient
 from interface.repositories.pacientes import JaTeveAlta, PatientRepository
-from interface.services.paciente_service import PatientService
+from interface.services.paciente_service import PatientService, UnidadeForaDoEscopo
 from dados_simulados.gerador import (
     gerar_sessao_simulada, 
     gerar_eventos_sessao, 
@@ -165,6 +165,10 @@ class AltaRequest(BaseModel):
 class TransferenciaRequest(BaseModel):
     room: Optional[str] = Field(None, max_length=64)
     bed: Optional[str] = Field(None, max_length=64)
+    # Ala de destino. Ausente = mesma ala, que e o caso comum e o unico que
+    # existia antes — quando digitar um leito de outra ala mantinha o paciente
+    # na ala de origem, em silencio.
+    unitId: Optional[int] = None
 
 
 class TrocaDeLeitosRequest(BaseModel):
@@ -209,7 +213,10 @@ async def dar_alta_endpoint(
 
 @router.post("/pacientes/{paciente_id}/transferencia", status_code=status.HTTP_200_OK)
 async def transferir_endpoint(
-    paciente_id: str, payload: TransferenciaRequest, usuario: str = Depends(get_current_user)
+    paciente_id: str,
+    payload: TransferenciaRequest,
+    usuario: str = Depends(get_current_user),
+    unidades_visiveis: set[int] | None = Depends(escopo_de_unidades),
 ) -> dict:
     """Move o paciente de leito como operacao propria.
 
@@ -220,7 +227,13 @@ async def transferir_endpoint(
     """
     try:
         resultado = await asyncio.to_thread(
-            service.transfer_patient, paciente_id, payload.room, payload.bed, usuario
+            service.transfer_patient,
+            paciente_id,
+            payload.room,
+            payload.bed,
+            usuario,
+            payload.unitId,
+            unidades_visiveis,
         )
     except LookupError as exc:
         raise HTTPException(
@@ -231,6 +244,11 @@ async def transferir_endpoint(
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             detail={"code": "sem_internacao_aberta", "message": str(exc)},
+        ) from exc
+    except UnidadeForaDoEscopo as exc:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            detail={"code": "unidade_fora_do_escopo", "message": str(exc)},
         ) from exc
     except ValueError as exc:
         raise HTTPException(

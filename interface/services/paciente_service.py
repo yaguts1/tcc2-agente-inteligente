@@ -10,6 +10,10 @@ from interface.schemas import FrontendCreatePatient
 
 logger = structlog.get_logger(__name__)
 
+
+class UnidadeForaDoEscopo(PermissionError):
+    """Destino de transferencia fora das unidades que o chamador enxerga."""
+
 # Vocabulário do frontend (en) e do banco (pt) para o perfil de risco. A
 # validação de quais valores são aceitos fica no schema, que rejeita na borda.
 _RISK_PARA_PERFIL = {
@@ -160,10 +164,32 @@ class PatientService:
         return resultado
 
     def transfer_patient(
-        self, paciente_id: str, room: str | None, bed: str | None, usuario: str | None = None
+        self,
+        paciente_id: str,
+        room: str | None,
+        bed: str | None,
+        usuario: str | None = None,
+        unidade_id: int | None = None,
+        unidades_visiveis: set[int] | None = None,
     ) -> dict:
+        """Move o paciente de leito, possivelmente para outra ala.
+
+        `unidades_visiveis` e o escopo de QUEM transfere (`None` = admin). Um
+        destino fora dele e recusado: sem essa checagem, uma enfermeira poderia
+        empurrar pacientes para dentro de alas que ela nao enxerga — inclusive
+        ocupando leitos que ela nao tem como saber se estao livres.
+        """
+        if (
+            unidade_id is not None
+            and unidades_visiveis is not None
+            and int(unidade_id) not in unidades_visiveis
+        ):
+            raise UnidadeForaDoEscopo(
+                "Voce nao tem acesso a unidade de destino."
+            )
+
         resultado = self.repository.transferir(
-            paciente_id, compor_cama(room, bed), usuario=usuario
+            paciente_id, compor_cama(room, bed), usuario=usuario, unidade_id=unidade_id
         )
         self._esquecer_no_motor(paciente_id)
         return resultado

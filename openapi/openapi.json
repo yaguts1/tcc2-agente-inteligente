@@ -921,6 +921,17 @@
               }
             ],
             "title": "Room"
+          },
+          "unitId": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unitid"
           }
         },
         "title": "TransferenciaRequest",

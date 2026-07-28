@@ -490,6 +490,10 @@ export interface TransferResult {
   paciente_id: string;
   cama_anterior: string | null;
   cama_atual: string | null;
+  unidade_anterior: number | null;
+  unidade_atual: number | null;
+  /** `true` quando o paciente mudou de ala, não só de leito. */
+  mudou_de_unidade: boolean;
   ts: string;
 }
 
@@ -546,10 +550,10 @@ export const patientsApi = {
    * ela reinicia o motor de alertas — o que editar o campo no formulário não
    * faz, porque um formulário não sabe que houve deslocamento físico.
    */
-  transfer: (id: string, room: string, bed: string) =>
+  transfer: (id: string, room: string, bed: string, unitId?: number | null) =>
     request<TransferResult>(`/api/pacientes/${id}/transferencia`, {
       method: 'POST',
-      body: JSON.stringify({ room, bed }),
+      body: JSON.stringify({ room, bed, unitId: unitId ?? null }),
     }),
 
   simulateData: (id: string, data: SimulationRequest) =>
