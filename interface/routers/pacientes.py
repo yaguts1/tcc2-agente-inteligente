@@ -1,15 +1,16 @@
 from __future__ import annotations
 
-from typing import List
+import asyncio
+from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from datetime import timedelta
 
 from interface.api_shared import DB_PATH, DEFAULT_PERFIL, _check_api_rate_limit
 from interface.dependencies import exigir_papel, get_current_user, verificar_token_dispositivo
 from interface.tempo import agora_utc_naive
 from interface.schemas import PacienteConfigResponse, RotinaConfig, FrontendCreatePatient
-from interface.repositories.pacientes import PatientRepository
+from interface.repositories.pacientes import JaTeveAlta, PatientRepository
 from interface.services.paciente_service import PatientService
 from dados_simulados.gerador import (
     gerar_sessao_simulada, 
@@ -144,6 +145,123 @@ def atualizar_paciente_endpoint(paciente_id: str, payload: FrontendCreatePatient
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
+class AltaRequest(BaseModel):
+    motivo: Optional[str] = Field(None, max_length=255)
+
+
+class TransferenciaRequest(BaseModel):
+    room: Optional[str] = Field(None, max_length=64)
+    bed: Optional[str] = Field(None, max_length=64)
+
+
+class TrocaDeLeitosRequest(BaseModel):
+    pacienteA: str = Field(..., min_length=1, max_length=64)
+    pacienteB: str = Field(..., min_length=1, max_length=64)
+
+
+@router.post("/pacientes/{paciente_id}/alta", status_code=status.HTTP_200_OK)
+async def dar_alta_endpoint(
+    paciente_id: str, payload: AltaRequest, usuario: str = Depends(get_current_user)
+) -> dict:
+    """Encerra a internacao preservando o historico clinico.
+
+    Existe porque a unica forma de tirar um paciente da tela era `DELETE`, que
+    apaga alertas, grade, eventos e timeline. A operacao mais rotineira de uma
+    ala destruia a evidencia que acreditacao e LGPD exigem guardar.
+
+    Nao e restrito a admin, diferente do `DELETE`: dar alta e ato clinico de
+    rotina da equipe, e exigir admin para isso empurraria a enfermagem de volta
+    para o botao de excluir — que e destrutivo.
+    """
+    try:
+        resultado = await asyncio.to_thread(
+            service.discharge_patient, paciente_id, payload.motivo, usuario
+        )
+    except LookupError as exc:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            detail={"code": "paciente_nao_encontrado", "message": "Paciente nao encontrado"},
+        ) from exc
+    except JaTeveAlta as exc:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail={"code": "sem_internacao_aberta", "message": str(exc)},
+        ) from exc
+
+    from interface.api_shared import api_cache
+
+    await api_cache.clear()
+    return {"ok": True, **resultado}
+
+
+@router.post("/pacientes/{paciente_id}/transferencia", status_code=status.HTTP_200_OK)
+async def transferir_endpoint(
+    paciente_id: str, payload: TransferenciaRequest, usuario: str = Depends(get_current_user)
+) -> dict:
+    """Move o paciente de leito como operacao propria.
+
+    Antes era efeito colateral de editar um campo do formulario, o que perdia
+    duas coisas: a transferencia E um reposicionamento (ser erguido para a maca
+    e alivio de pressao real), e o estado do motor seguia o paciente com o
+    relogio e a corrida do leito anterior.
+    """
+    try:
+        resultado = await asyncio.to_thread(
+            service.transfer_patient, paciente_id, payload.room, payload.bed, usuario
+        )
+    except LookupError as exc:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            detail={"code": "paciente_nao_encontrado", "message": "Paciente nao encontrado"},
+        ) from exc
+    except JaTeveAlta as exc:
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            detail={"code": "sem_internacao_aberta", "message": str(exc)},
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail={"code": "transferencia_invalida", "message": str(exc)},
+        ) from exc
+
+    from interface.api_shared import api_cache
+
+    await api_cache.clear()
+    return {"ok": True, **resultado}
+
+
+@router.post("/pacientes/troca-de-leitos", status_code=status.HTTP_200_OK)
+async def trocar_leitos_endpoint(
+    payload: TrocaDeLeitosRequest, usuario: str = Depends(get_current_user)
+) -> dict:
+    """Dois pacientes trocam de leito.
+
+    Era impossivel pela tela: qualquer sequencia de duas edicoes passa por um
+    estado em que um leito tem dois ocupantes, e o indice unico parcial de
+    `cama_id` recusa. Trocar dois pacientes de lugar e rotina numa ala.
+    """
+    try:
+        resultado = await asyncio.to_thread(
+            service.swap_beds, payload.pacienteA, payload.pacienteB, usuario
+        )
+    except LookupError as exc:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            detail={"code": "paciente_nao_encontrado", "message": str(exc)},
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail={"code": "troca_invalida", "message": str(exc)},
+        ) from exc
+
+    from interface.api_shared import api_cache
+
+    await api_cache.clear()
+    return {"ok": True, **resultado}
+
+
 @router.delete(
     "/pacientes/{paciente_id}",
     status_code=status.HTTP_200_OK,
@@ -151,6 +269,11 @@ def atualizar_paciente_endpoint(paciente_id: str, payload: FrontendCreatePatient
 )
 async def remover_paciente_endpoint(paciente_id: str) -> dict:
     """Remove um paciente e todo o rastro clinico dele.
+
+    NAO e o caminho para dar alta — para isso existe
+    `POST /api/pacientes/{id}/alta`, que preserva o historico. Este endpoint
+    e para ERRO DE CADASTRO (paciente duplicado, criado no lugar errado), que e
+    coisa diferente, rara, e por isso segue restrito a admin.
 
     A rota nao existia. O `PatientRepository.delete` e o `dao.remover_paciente`
     ja estavam escritos e sem nenhum chamador, e a tela de Pacientes tinha o

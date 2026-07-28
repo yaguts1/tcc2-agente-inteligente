@@ -334,6 +334,24 @@
         "title": "AgendaUpdate",
         "type": "object"
       },
+      "AltaRequest": {
+        "properties": {
+          "motivo": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Motivo"
+          }
+        },
+        "title": "AltaRequest",
+        "type": "object"
+      },
       "AlterarAtivo": {
         "properties": {
           "ativo": {
@@ -865,6 +883,58 @@
           "agendas_ativas"
         ],
         "title": "SuppressionCheckResponse",
+        "type": "object"
+      },
+      "TransferenciaRequest": {
+        "properties": {
+          "bed": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bed"
+          },
+          "room": {
+            "anyOf": [
+              {
+                "maxLength": 64,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room"
+          }
+        },
+        "title": "TransferenciaRequest",
+        "type": "object"
+      },
+      "TrocaDeLeitosRequest": {
+        "properties": {
+          "pacienteA": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Pacientea",
+            "type": "string"
+          },
+          "pacienteB": {
+            "maxLength": 64,
+            "minLength": 1,
+            "title": "Pacienteb",
+            "type": "string"
+          }
+        },
+        "required": [
+          "pacienteA",
+          "pacienteB"
+        ],
+        "title": "TrocaDeLeitosRequest",
         "type": "object"
       },
       "TrocarSenha": {
@@ -2536,9 +2606,53 @@
         ]
       }
     },
+    "/api/pacientes/troca-de-leitos": {
+      "post": {
+        "description": "Dois pacientes trocam de leito.\n\nEra impossivel pela tela: qualquer sequencia de duas edicoes passa por um\nestado em que um leito tem dois ocupantes, e o indice unico parcial de\n`cama_id` recusa. Trocar dois pacientes de lugar e rotina numa ala.",
+        "operationId": "trocar_leitos_endpoint_api_pacientes_troca_de_leitos_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TrocaDeLeitosRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Trocar Leitos Endpoint Api Pacientes Troca De Leitos Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Trocar Leitos Endpoint",
+        "tags": [
+          "pacientes"
+        ]
+      }
+    },
     "/api/pacientes/{paciente_id}": {
       "delete": {
-        "description": "Remove um paciente e todo o rastro clinico dele.\n\nA rota nao existia. O `PatientRepository.delete` e o `dao.remover_paciente`\nja estavam escritos e sem nenhum chamador, e a tela de Pacientes tinha o\nbotao \"Excluir\" com dialogo de confirmacao chamando `DELETE /api/pacientes/\n{id}` — que respondia 405. O usuario confirmava a exclusao, via \"Erro ao\nremover paciente\" e o paciente continuava na lista.\n\nRestrito a admin, pelo mesmo motivo de `/simular`: e uma acao irreversivel\nsobre o historico clinico de uma pessoa. O acesso ja entra na trilha de\nauditoria pelo middleware (a rota casa com `/api/pacientes`), entao fica\nregistrado QUEM removeu e QUANDO.",
+        "description": "Remove um paciente e todo o rastro clinico dele.\n\nNAO e o caminho para dar alta — para isso existe\n`POST /api/pacientes/{id}/alta`, que preserva o historico. Este endpoint\ne para ERRO DE CADASTRO (paciente duplicado, criado no lugar errado), que e\ncoisa diferente, rara, e por isso segue restrito a admin.\n\nA rota nao existia. O `PatientRepository.delete` e o `dao.remover_paciente`\nja estavam escritos e sem nenhum chamador, e a tela de Pacientes tinha o\nbotao \"Excluir\" com dialogo de confirmacao chamando `DELETE /api/pacientes/\n{id}` — que respondia 405. O usuario confirmava a exclusao, via \"Erro ao\nremover paciente\" e o paciente continuava na lista.\n\nRestrito a admin, pelo mesmo motivo de `/simular`: e uma acao irreversivel\nsobre o historico clinico de uma pessoa. O acesso ja entra na trilha de\nauditoria pelo middleware (a rota casa com `/api/pacientes`), entao fica\nregistrado QUEM removeu e QUANDO.",
         "operationId": "remover_paciente_endpoint_api_pacientes__paciente_id__delete",
         "parameters": [
           {
@@ -2996,6 +3110,61 @@
         ]
       }
     },
+    "/api/pacientes/{paciente_id}/alta": {
+      "post": {
+        "description": "Encerra a internacao preservando o historico clinico.\n\nExiste porque a unica forma de tirar um paciente da tela era `DELETE`, que\napaga alertas, grade, eventos e timeline. A operacao mais rotineira de uma\nala destruia a evidencia que acreditacao e LGPD exigem guardar.\n\nNao e restrito a admin, diferente do `DELETE`: dar alta e ato clinico de\nrotina da equipe, e exigir admin para isso empurraria a enfermagem de volta\npara o botao de excluir — que e destrutivo.",
+        "operationId": "dar_alta_endpoint_api_pacientes__paciente_id__alta_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "paciente_id",
+            "required": true,
+            "schema": {
+              "title": "Paciente Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AltaRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Dar Alta Endpoint Api Pacientes  Paciente Id  Alta Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Dar Alta Endpoint",
+        "tags": [
+          "pacientes"
+        ]
+      }
+    },
     "/api/pacientes/{paciente_id}/simular": {
       "post": {
         "description": "Simular dados históricos para um paciente.\n\nRestrito a admin: grava eventos, grade e ALERTAS sintéticos no mesmo banco\ndos dados reais. Num ambiente de produção, dado simulado misturado ao\nhistórico clínico do paciente é indistinguível do que veio do sensor.",
@@ -3044,6 +3213,61 @@
           }
         },
         "summary": "Simular Paciente Endpoint",
+        "tags": [
+          "pacientes"
+        ]
+      }
+    },
+    "/api/pacientes/{paciente_id}/transferencia": {
+      "post": {
+        "description": "Move o paciente de leito como operacao propria.\n\nAntes era efeito colateral de editar um campo do formulario, o que perdia\nduas coisas: a transferencia E um reposicionamento (ser erguido para a maca\ne alivio de pressao real), e o estado do motor seguia o paciente com o\nrelogio e a corrida do leito anterior.",
+        "operationId": "transferir_endpoint_api_pacientes__paciente_id__transferencia_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "paciente_id",
+            "required": true,
+            "schema": {
+              "title": "Paciente Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/TransferenciaRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Transferir Endpoint Api Pacientes  Paciente Id  Transferencia Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Transferir Endpoint",
         "tags": [
           "pacientes"
         ]

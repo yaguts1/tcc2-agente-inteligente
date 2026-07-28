@@ -402,6 +402,29 @@ class ProcessadorIncremental:
     return alertas
 
   # ------------------------------------------------------------------
+  def esquecer_paciente(self, paciente_id: str) -> None:
+    """Descarta TODO o estado em memoria deste paciente.
+
+    Diferente de `marcar_reposicionado`, que preserva o paciente e so reinicia
+    a corrida: aqui o paciente sai do leito de vez (alta) ou vai para outro
+    (transferencia), e nada do estado anterior deve sobreviver.
+
+    `_ultima_ts` entra no descarte, e nao e detalhe: se o relogio do ESP32 do
+    leito novo estiver ATRAS do anterior, toda amostra do leito novo seria
+    recusada como fora de ordem — em nivel debug, sem metrica — ate o relogio
+    passar. O paciente ficaria sem monitoramento nenhum por um intervalo que
+    ninguem consegue prever, logo depois de ser movido.
+    """
+    self._estado_cache.pop(paciente_id, None)
+    self._ultima_ts.pop(paciente_id, None)
+    self._em_supressao.pop(paciente_id, None)
+    if self._estrategia != "estado_em_memoria":
+      self._buffers.pop(paciente_id, None)
+      self._alertas_status.pop(paciente_id, None)
+    self._persistir_estado(paciente_id)
+    logger.info("paciente_esquecido_pelo_motor", paciente_id=paciente_id)
+
+  # ------------------------------------------------------------------
   def marcar_reposicionado(self, paciente_id: str) -> bool:
     """A equipe virou o paciente. O motor precisa saber.
 

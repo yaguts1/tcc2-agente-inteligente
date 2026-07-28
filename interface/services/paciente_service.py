@@ -2,8 +2,13 @@
 from __future__ import annotations
 
 from typing import List, Optional
+
+import structlog
+
 from interface.repositories.pacientes import PatientRepository
 from interface.schemas import FrontendCreatePatient
+
+logger = structlog.get_logger(__name__)
 
 # Vocabulário do frontend (en) e do banco (pt) para o perfil de risco. A
 # validação de quais valores são aceitos fica no schema, que rejeita na borda.
@@ -121,7 +126,50 @@ class PatientService:
             return None
         return self._transform_patient(ficha)
 
-    def create_patient(self, payload: FrontendCreatePatient) -> dict:
+    def _esquecer_no_motor(self, paciente_id: str) -> None:
+        """Tira o paciente do cache em memoria do PROCESSADOR.
+
+        O repositorio apaga a linha em `estado_incremental`, mas o motor guarda
+        os estados num dict em memoria e so le o banco na subida. Sem os dois, o
+        paciente transferido continuaria sendo avaliado com `run_inicio`,
+        `baseline_postura` e `_ultima_ts` do leito anterior ate o proximo
+        restart — que e justamente o que a transferencia precisa zerar.
+
+        Import tardio: `ingestao_service` importa deste modulo.
+        """
+        try:
+            from interface.services.ingestao_service import PROCESSADOR
+
+            PROCESSADOR.esquecer_paciente(paciente_id)
+        except Exception:
+            logger.warning("motor_nao_esqueceu_paciente", paciente_id=paciente_id, exc_info=True)
+
+    def admit_patient(self, payload: FrontendCreatePatient, usuario: str | None = None) -> dict:
+        return self.create_patient(payload, usuario=usuario)
+
+    def discharge_patient(
+        self, paciente_id: str, motivo: str | None = None, usuario: str | None = None
+    ) -> dict:
+        resultado = self.repository.dar_alta(paciente_id, motivo=motivo, usuario=usuario)
+        self._esquecer_no_motor(paciente_id)
+        return resultado
+
+    def transfer_patient(
+        self, paciente_id: str, room: str | None, bed: str | None, usuario: str | None = None
+    ) -> dict:
+        resultado = self.repository.transferir(
+            paciente_id, compor_cama(room, bed), usuario=usuario
+        )
+        self._esquecer_no_motor(paciente_id)
+        return resultado
+
+    def swap_beds(self, paciente_a: str, paciente_b: str, usuario: str | None = None) -> dict:
+        resultado = self.repository.trocar_leitos(paciente_a, paciente_b, usuario=usuario)
+        for pid in (paciente_a, paciente_b):
+            self._esquecer_no_motor(pid)
+        return resultado
+
+    def create_patient(self, payload: FrontendCreatePatient, usuario: str | None = None) -> dict:
         # riskLevel ja vem validado pelo schema (FrontendCreatePatient), entao
         # aqui nao ha default silencioso: um valor fora do mapa e um bug, nao
         # um paciente rebaixado para risco medio sem aviso.
@@ -134,7 +182,8 @@ class PatientService:
             perfil=perfil,
             cama_id=cama_id,
             observacoes=payload.notes,
-            rotinas=None
+            rotinas=None,
+            registrado_por=usuario,
         )
         return self._transform_patient(novo_paciente)
 
