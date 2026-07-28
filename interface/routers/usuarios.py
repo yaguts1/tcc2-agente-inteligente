@@ -28,6 +28,7 @@ from pydantic import BaseModel, Field
 
 from interface.api_shared import erro_interno, exigir_senha_forte
 from interface.api_shared import _check_api_rate_limit
+from interface.dependencies import escopo_de_unidades
 from interface.dependencies import exigir_papel, get_current_user
 from interface.repositories.sessoes import revogar_sessoes_do_usuario
 from interface.repositories.users import UltimoAdmin, UserRepository
@@ -219,11 +220,26 @@ class UnidadesDoUsuario(BaseModel):
     unidades: list[int] = Field(default_factory=list)
 
 
-@router.get("/unidades", status_code=status.HTTP_200_OK)
-def listar_unidades_endpoint(incluir_inativas: bool = False) -> list[dict]:
+@router_proprio.get("/unidades", status_code=status.HTTP_200_OK)
+def listar_unidades_endpoint(
+    incluir_inativas: bool = False,
+    unidades_visiveis: set[int] | None = Depends(escopo_de_unidades),
+) -> list[dict]:
+    """Unidades que o chamador enxerga.
+
+    Fica FORA do router de admin: a enfermeira precisa da lista para escolher
+    onde admitir um paciente. O que muda por papel e o alcance — admin ve todas,
+    os demais so as suas —, nao o direito de consultar.
+
+    Criar e vincular seguem restritos a admin, logo abaixo: quem enxerga a ala
+    nao pode ser quem decide enxerga-la.
+    """
     from interface.repositories.unidades import listar_unidades
 
-    return listar_unidades(_db(), incluir_inativas=incluir_inativas)
+    todas = listar_unidades(_db(), incluir_inativas=incluir_inativas)
+    if unidades_visiveis is None:
+        return todas
+    return [u for u in todas if int(u["id"]) in unidades_visiveis]
 
 
 @router.post("/unidades", status_code=status.HTTP_201_CREATED)

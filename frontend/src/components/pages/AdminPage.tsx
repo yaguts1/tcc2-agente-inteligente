@@ -1,8 +1,9 @@
 import { useState } from 'react';
-import { Settings, Bed, Users, Database } from 'lucide-react';
+import { Settings, Bed, Users, Database, Building2 } from 'lucide-react';
 import { OrphanEventsPanel } from '../admin/OrphanEventsPanel';
 import { UsersPanel } from '../admin/UsersPanel';
 import { BackupPanel } from '../admin/BackupPanel';
+import { UnitsPanel } from '../admin/UnitsPanel';
 
 /**
  * Página de administração.
@@ -19,6 +20,7 @@ import { BackupPanel } from '../admin/BackupPanel';
 const ABAS = [
   { id: 'orfaos', rotulo: 'Eventos órfãos', icone: Bed },
   { id: 'usuarios', rotulo: 'Usuários', icone: Users },
+  { id: 'unidades', rotulo: 'Unidades', icone: Building2 },
   { id: 'backup', rotulo: 'Backup', icone: Database },
 ] as const;
 
@@ -35,7 +37,7 @@ export function AdminPage() {
           Administração
         </h1>
         <p className="text-muted-foreground mt-1">
-          Reconciliação de eventos, contas de acesso e backup do banco
+          Reconciliação de eventos, contas de acesso, unidades e backup do banco
         </p>
       </div>
 
@@ -72,6 +74,7 @@ export function AdminPage() {
       <div role="tabpanel" id={`painel-${aba}`} aria-labelledby={`aba-${aba}`}>
         {aba === 'orfaos' && <OrphanEventsPanel />}
         {aba === 'usuarios' && <UsersPanel />}
+        {aba === 'unidades' && <UnitsPanel />}
         {aba === 'backup' && <BackupPanel />}
       </div>
     </div>

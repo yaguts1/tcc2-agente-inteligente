@@ -70,6 +70,11 @@ class FrontendCreatePatient(BaseModel):
     # nada.
     repositioningInterval: float | None = None
     notes: str | None = None
+    # Em qual ala o paciente esta sendo admitido. Ausente = unidade padrao, para
+    # o cliente antigo (e a instalacao de uma ala so) continuar funcionando sem
+    # mudanca. E ignorado no PATCH: mudar de ala e transferencia, nao edicao de
+    # formulario.
+    unitId: int | None = None
 
     @field_validator("riskLevel")
     @classmethod
@@ -99,6 +104,7 @@ class FrontendPatient(BaseModel):
     repositioningInterval: float | None = None
     createdAt: str | None = None
     updatedAt: str | None = None
+    unitId: int | None = None
 
 
 class DeviceRegisterRequest(BaseModel):

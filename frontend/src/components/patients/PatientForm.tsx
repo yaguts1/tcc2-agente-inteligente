@@ -1,5 +1,13 @@
 import { useEffect, useState } from 'react';
-import { patientsApi, Patient, CreatePatientRequest, ApiException, PerfisRisco } from '../../lib/api';
+import {
+  patientsApi,
+  unitsApi,
+  Patient,
+  CreatePatientRequest,
+  ApiException,
+  PerfisRisco,
+  Unit,
+} from '../../lib/api';
 import { Card, CardContent } from '../ui/card';
 import { Button } from '../ui/button';
 import { Input } from '../ui/input';
@@ -28,6 +36,9 @@ export function PatientForm({ patient, onSuccess, onCancel }: PatientFormProps) 
   // motor de alertas). Antes o formulario assumia 2h fixo, que so por acaso
   // batia com algum perfil — e nao batia com o motor.
   const [perfis, setPerfis] = useState<PerfisRisco | null>(null);
+  // Unidades que ESTE usuário enxerga. Com uma ala só a lista tem um item e o
+  // seletor nem aparece — a instalação de ala única não ganha um passo novo.
+  const [unidades, setUnidades] = useState<Unit[]>([]);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [showSimulation, setShowSimulation] = useState(false);
@@ -35,6 +46,18 @@ export function PatientForm({ patient, onSuccess, onCancel }: PatientFormProps) 
 
   useEffect(() => {
     patientsApi.getPerfisRisco().then(setPerfis).catch(() => setPerfis(null));
+    unitsApi
+      .list()
+      .then((lista) => {
+        setUnidades(lista);
+        // Pré-seleciona quando só há uma opção: obrigar a escolher entre um
+        // item é ruído, e deixar vazio faria a admissão cair na unidade padrão
+        // sem ninguém decidir.
+        if (lista.length === 1) {
+          setFormData((atual) => ({ ...atual, unitId: lista[0].id }));
+        }
+      })
+      .catch(() => setUnidades([]));
   }, []);
 
   const intervaloDoPerfil = perfis?.[formData.riskLevel as keyof PerfisRisco];
@@ -166,6 +189,43 @@ export function PatientForm({ patient, onSuccess, onCancel }: PatientFormProps) 
                 required
               />
             </div>
+
+            {/*
+              Unidade só na ADMISSÃO. Ao editar, o seletor não aparece: mudar
+              de ala é transferência, que reinicia o motor de alertas porque ser
+              erguido para a maca é alívio de pressão real. Deixar isso num
+              campo de formulário faria a mudança acontecer sem que o motor
+              soubesse — o defeito que a transferência veio corrigir.
+
+              Com uma ala só, o seletor some: instalação de ala única não ganha
+              um passo a mais por causa de um recurso que ela não usa.
+            */}
+            {!patient && unidades.length > 1 && (
+              <div className="space-y-2 md:col-span-2">
+                <Label htmlFor="unitId">Unidade *</Label>
+                <Select
+                  value={formData.unitId ? String(formData.unitId) : ''}
+                  onValueChange={(value) =>
+                    setFormData({ ...formData, unitId: Number(value) })
+                  }
+                  disabled={isLoading}
+                >
+                  <SelectTrigger id="unitId">
+                    <SelectValue placeholder="Selecione a ala" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {unidades.map((u) => (
+                      <SelectItem key={u.id} value={String(u.id)}>
+                        {u.nome}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <p className="text-xs text-muted-foreground">
+                  O mesmo número de leito pode existir em alas diferentes.
+                </p>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label htmlFor="riskLevel">Nível de Risco *</Label>

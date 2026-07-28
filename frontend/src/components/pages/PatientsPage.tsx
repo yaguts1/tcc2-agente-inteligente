@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { patientsApi, Patient, ApiException } from '../../lib/api';
+import { patientsApi, unitsApi, Patient, Unit, ApiException } from '../../lib/api';
 import { getStoredUser } from '../../lib/storage';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Button } from '../ui/button';
@@ -30,11 +30,23 @@ export function PatientsPage() {
   const [editingPatient, setEditingPatient] = useState<Patient | null>(null);
   const [deletingPatient, setDeletingPatient] = useState<Patient | null>(null);
   const [selectedPatientForAgenda, setSelectedPatientForAgenda] = useState<Patient | null>(null);
+  // Nome das alas, para o cartão não mostrar um id cru. Só é exibido quando há
+  // mais de uma: com ala única o rótulo seria ruído constante.
+  const [unidades, setUnidades] = useState<Unit[]>([]);
 
   // Só afordância de UI: quem decide é o backend, que exige o papel `admin`
   // vindo do JWT assinado. Esconder o botão evita oferecer uma ação que
   // responderia 403 — não é, e não pode ser confundido com, autorização.
   const ehAdmin = getStoredUser()?.role === 'admin';
+
+  // O mesmo número de leito pode existir em alas diferentes, então sem o nome
+  // da unidade "Leito 12" é ambíguo na tela de quem enxerga mais de uma.
+  const nomeDaUnidade = (unitId: number | null) =>
+    unidades.find((u) => u.id === unitId)?.nome ?? '—';
+
+  useEffect(() => {
+    unitsApi.list().then(setUnidades).catch(() => setUnidades([]));
+  }, []);
 
   const fetchPatients = async () => {
     try {
@@ -245,6 +257,14 @@ export function PatientsPage() {
                 </CardHeader>
                 <CardContent>
                   <div className="space-y-2 mb-4">
+                    {unidades.length > 1 && (
+                      <div className="flex justify-between">
+                        <span className="text-muted-foreground">Unidade:</span>
+                        <span className="text-foreground">
+                          {nomeDaUnidade(patient.unitId)}
+                        </span>
+                      </div>
+                    )}
                     <div className="flex justify-between">
                       <span className="text-muted-foreground">Quarto:</span>
                       <span className="text-foreground">{patient.room}</span>

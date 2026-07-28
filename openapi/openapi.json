@@ -630,6 +630,17 @@
               }
             ],
             "title": "Room"
+          },
+          "unitId": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unitid"
           }
         },
         "required": [
@@ -3498,6 +3509,7 @@
     },
     "/api/unidades": {
       "get": {
+        "description": "Unidades que o chamador enxerga.\n\nFica FORA do router de admin: a enfermeira precisa da lista para escolher\nonde admitir um paciente. O que muda por papel e o alcance — admin ve todas,\nos demais so as suas —, nao o direito de consultar.\n\nCriar e vincular seguem restritos a admin, logo abaixo: quem enxerga a ala\nnao pode ser quem decide enxerga-la.",
         "operationId": "listar_unidades_endpoint_api_unidades_get",
         "parameters": [
           {

@@ -306,17 +306,30 @@ def test_payload_de_broadcast_carrega_a_unidade(app_isolado, repo):
 # ------------------------------------------------------- administracao
 
 
-def test_endpoints_de_unidade_exigem_admin(client, cabecalho_auth, app_isolado):
+def test_criar_e_vincular_unidade_exigem_admin(client, cabecalho_auth, app_isolado):
     """Quem enxerga a ala nao pode ser quem decide enxerga-la."""
     staff = cabecalho_auth(username="enf.comum", role="staff")
 
-    assert client.get("/api/unidades", headers=staff).status_code == 403
     assert client.post(
         "/api/unidades", json={"nome": "Ala X"}, headers=staff
     ).status_code == 403
     assert client.put(
         "/api/usuarios/enf.comum/unidades", json={"unidades": [1]}, headers=staff
     ).status_code == 403
+
+
+def test_staff_lista_apenas_as_proprias_unidades(client, cabecalho_auth, app_isolado, unidade_b):
+    """LER unidades nao e privilegio: a enfermeira precisa da lista para escolher
+    onde admitir. O que muda por papel e o alcance, nao o direito de consultar.
+    """
+    cab = _usuario_da_unidade(app_isolado, cabecalho_auth, "enf.a", [UNIDADE_A])
+    admin = cabecalho_auth(username="chefe", role="admin")
+
+    do_staff = client.get("/api/unidades", headers=cab).json()
+    do_admin = client.get("/api/unidades", headers=admin).json()
+
+    assert [u["id"] for u in do_staff] == [UNIDADE_A]
+    assert {u["id"] for u in do_admin} == {UNIDADE_A, unidade_b}
 
 
 def test_admin_cria_unidade_e_vincula_usuario(client, cabecalho_auth, app_isolado, repo):
@@ -354,3 +367,35 @@ def test_remover_vinculo_tem_efeito_imediato(client, cabecalho_auth, app_isolado
     )
 
     assert client.get("/api/frontend/alerts", headers=cab_enf).json() == []
+
+
+def test_admissao_pela_api_respeita_a_unidade_escolhida(
+    client, cabecalho_auth, app_isolado, unidade_b
+):
+    """Sem `unitId` no schema, todo cadastro novo caia na unidade padrao — e a
+    tela nao teria como admitir na segunda ala."""
+    admin = cabecalho_auth(username="chefe", role="admin")
+
+    resposta = client.post(
+        "/api/pacientes",
+        json={"name": "Ana", "room": "700", "bed": "A", "riskLevel": "high",
+              "unitId": unidade_b},
+        headers=admin,
+    )
+
+    assert resposta.status_code == 201, resposta.text
+    assert resposta.json()["unitId"] == unidade_b
+
+
+def test_admissao_sem_unidade_cai_na_padrao(client, cabecalho_auth, app_isolado):
+    """Cliente antigo (e instalacao de uma ala so) continua funcionando."""
+    admin = cabecalho_auth(username="chefe", role="admin")
+
+    resposta = client.post(
+        "/api/pacientes",
+        json={"name": "Bruno", "room": "701", "bed": "A", "riskLevel": "low"},
+        headers=admin,
+    )
+
+    assert resposta.status_code == 201, resposta.text
+    assert resposta.json()["unitId"] == UNIDADE_A

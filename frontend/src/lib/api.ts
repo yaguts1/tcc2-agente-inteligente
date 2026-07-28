@@ -369,6 +369,13 @@ export interface Patient {
   repositioningInterval: number;
   createdAt: string;
   updatedAt: string;
+  /**
+   * Unidade (ala) em que o paciente está internado.
+   *
+   * Com mais de uma ala, "Leito 12" sozinho é ambíguo — existe um em cada.
+   * `null` só aparece em fichas anteriores à migração de unidades.
+   */
+  unitId: number | null;
 }
 
 export interface CreatePatientRequest {
@@ -383,7 +390,51 @@ export interface CreatePatientRequest {
    * do paciente. Use `patientsApi.getPerfisRisco()` para exibir o valor real.
    */
   repositioningInterval?: number;
+  /**
+   * Ala em que o paciente está sendo admitido. Ausente = unidade padrão, para
+   * a instalação de uma ala só continuar funcionando sem mudança.
+   *
+   * Só vale na ADMISSÃO. Mudar de ala é transferência, não edição de
+   * formulário: a transferência reinicia o motor de alertas, porque ser
+   * erguido para a maca é alívio de pressão real.
+   */
+  unitId?: number | null;
 }
+
+// Units API
+export interface Unit {
+  id: number;
+  nome: string;
+  descricao: string | null;
+  ativo: number;
+}
+
+export const unitsApi = {
+  /**
+   * Unidades que o usuário logado enxerga. Admin recebe todas.
+   *
+   * Ler não é privilégio — a enfermeira precisa da lista para escolher onde
+   * admitir. Criar e vincular exigem admin.
+   */
+  list: () => request<Unit[]>('/api/unidades'),
+
+  create: (nome: string, descricao?: string) =>
+    request<Unit>('/api/unidades', {
+      method: 'POST',
+      body: JSON.stringify({ nome, descricao: descricao || null }),
+    }),
+
+  getUserUnits: (username: string) =>
+    request<{ username: string; unidades: number[] }>(
+      `/api/usuarios/${encodeURIComponent(username)}/unidades`,
+    ),
+
+  setUserUnits: (username: string, unidades: number[]) =>
+    request<{ ok: boolean; username: string; unidades: number[] }>(
+      `/api/usuarios/${encodeURIComponent(username)}/unidades`,
+      { method: 'PUT', body: JSON.stringify({ unidades }) },
+    ),
+};
 
 // Simulation API
 export interface SimulationRequest {

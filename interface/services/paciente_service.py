@@ -113,7 +113,10 @@ class PatientService:
             "riskLevel": perfil_map.get(perfil, "medium"),
             "repositioningInterval": intervalo_horas(perfil),
             "createdAt": ficha.get("created_at"),
-            "updatedAt": ficha.get("updated_at")
+            "updatedAt": ficha.get("updated_at"),
+            # A tela precisa saber a qual ala o paciente pertence: com duas
+            # unidades, "Leito 12" sozinho e ambiguo — existe um em cada.
+            "unitId": ficha.get("unidade_id"),
         }
 
     def list_patients(
@@ -186,6 +189,7 @@ class PatientService:
             observacoes=payload.notes,
             rotinas=None,
             registrado_por=usuario,
+            unidade_id=payload.unitId,
         )
         return self._transform_patient(novo_paciente)
 
