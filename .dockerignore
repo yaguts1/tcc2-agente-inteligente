@@ -29,3 +29,39 @@ dados.db
 backups
 cleanup_backup
 *.backup_*
+
+# ---------------------------------------------------------------------------
+# Segredos. NAO remover.
+# ---------------------------------------------------------------------------
+#
+# O `Dockerfile` faz `COPY . .`, entao tudo que nao estiver aqui entra na
+# imagem. E imagem circula: registry, backup, `docker save`, maquina de quem
+# for depurar.
+#
+# `.env` carrega JWT_SECRET_KEY e UPP_AUDIT_KEY. Ele nao esta no git — esta
+# gitignorado — e mesmo assim ia para dentro da imagem, o que anulava a
+# protecao. Confirmado: `/app/.env`, 2832 bytes, na imagem em execucao.
+#
+# O container recebe as variaveis pelo `environment:` do docker-compose, que le
+# o `.env` do HOST em tempo de composicao. Ou seja, remover o arquivo da imagem
+# nao tira nada de quem sobe por compose — so tira o fallback de
+# `configuracao._load_env_file` para quem rodar a imagem sem passar as
+# variaveis, e nesse caso falhar e o comportamento certo.
+.env
+.env.*
+!.env.example
+
+# `firmware/esp32_replay/config.h` carrega SSID, senha do WiFi e o
+# DEVICE_TOKEN daquele aparelho. Tambem gitignorado, e tambem ia para a imagem.
+#
+# O diretorio inteiro sai: nada de `firmware/` e executado em runtime — o
+# servidor nao compila nem embarca nada. Ele existe no repositorio para ser
+# flasheado a partir da maquina de quem instala.
+firmware
+
+# Chaves e certificados, se algum dia aparecerem.
+*.pem
+*.key
+*.p12
+*.pfx
+

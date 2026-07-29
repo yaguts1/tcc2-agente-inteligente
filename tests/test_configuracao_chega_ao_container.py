@@ -104,3 +104,62 @@ def test_variavel_com_default_real_nao_e_repassada_vazia(variavel, default_no_co
         f"{variavel} precisa carregar o default real ({default_no_codigo}) no compose; "
         f"linha atual: {linha.strip()}"
     )
+
+
+# ---------------------------------------------------------------------------
+# O caminho inverso: segredo que NAO pode chegar ao container
+# ---------------------------------------------------------------------------
+#
+# Os testes acima garantem que variavel documentada chega ao container. Estes
+# garantem o oposto: que arquivo de segredo NAO entra na imagem.
+#
+# O `Dockerfile` faz `COPY . .`, entao tudo que nao esta no `.dockerignore`
+# entra. Dois arquivos gitignorados iam para a imagem assim mesmo, o que anulava
+# a protecao do gitignore:
+#
+#   * `.env`, com JWT_SECRET_KEY e UPP_AUDIT_KEY;
+#   * `firmware/esp32_replay/config.h`, com SSID, senha do WiFi e o
+#     DEVICE_TOKEN do aparelho.
+#
+# Imagem circula — registry, backup, `docker save`, maquina de quem depura — e
+# "esta no gitignore" nao protege nada contra `COPY . .`.
+
+
+def _dockerignore() -> list[str]:
+    from pathlib import Path
+
+    caminho = Path(__file__).resolve().parents[1] / ".dockerignore"
+    return [
+        linha.strip()
+        for linha in caminho.read_text(encoding="utf-8").splitlines()
+        if linha.strip() and not linha.strip().startswith("#")
+    ]
+
+
+def test_env_nao_entra_na_imagem():
+    """`.env` carrega JWT_SECRET_KEY e UPP_AUDIT_KEY.
+
+    O container recebe as variaveis pelo `environment:` do compose, que le o
+    `.env` do HOST — remover o arquivo da imagem nao tira nada de quem sobe por
+    compose.
+    """
+    assert ".env" in _dockerignore()
+
+
+def test_config_do_firmware_nao_entra_na_imagem():
+    """`firmware/esp32_replay/config.h` carrega senha de WiFi e DEVICE_TOKEN.
+
+    Nada de `firmware/` roda em runtime: o servidor nao compila nem embarca
+    nada. O diretorio existe no repositorio para ser flasheado da maquina de
+    quem instala.
+    """
+    padroes = _dockerignore()
+
+    assert "firmware" in padroes or "firmware/" in padroes
+
+
+def test_exemplo_de_env_continua_entrando():
+    """`.env.example` e DOCUMENTACAO, nao segredo, e o `.env.*` do ignore
+    pegaria ele por tabela. A negacao precisa estar la — sem ela, quem abrir a
+    imagem para entender a configuracao nao acha nada."""
+    assert "!.env.example" in _dockerignore()
