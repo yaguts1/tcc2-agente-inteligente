@@ -161,6 +161,44 @@ def get_stats(
             if total_relevant > 0 else 0
         )
 
+        # Tempo ate reconhecimento: quanto a ala demora para VER o alerta.
+        #
+        # Nao era derivavel do modelo. `duracao_min` e `fim - inicio`, ou seja
+        # deteccao -> resolucao; o intervalo que diz se a ala e RESPONSIVA
+        # (deteccao -> alguem viu) so existia como prosa na timeline, e
+        # portanto nao era consultavel nem agregavel.
+        #
+        # Mediana, e nao media: um unico alerta esquecido a noite inteira
+        # levaria a media para as alturas e esconderia que o resto da ala
+        # responde em minutos. A pergunta e "como e o plantao tipico", e para
+        # isso a mediana e a resposta honesta.
+        tempos_ate_ack = []
+        for a in all_alerts_24h:
+            reconhecido_em = a.get("reconhecido_em")
+            if not reconhecido_em:
+                continue
+            try:
+                inicio_dt = datetime.fromisoformat(str(a["inicio"])[:19])
+                ack_dt = datetime.fromisoformat(str(reconhecido_em)[:19])
+            except (ValueError, TypeError, KeyError):
+                continue
+            minutos = (ack_dt - inicio_dt).total_seconds() / 60.0
+            if minutos >= 0:
+                tempos_ate_ack.append(minutos)
+
+        tempos_ate_ack.sort()
+        if tempos_ate_ack:
+            meio = len(tempos_ate_ack) // 2
+            mediana_ack = (
+                tempos_ate_ack[meio]
+                if len(tempos_ate_ack) % 2
+                else (tempos_ate_ack[meio - 1] + tempos_ate_ack[meio]) / 2
+            )
+        else:
+            # `None`, e nao 0: zero minutos de resposta seria um numero
+            # excelente, e "ninguem reconheceu nada" e o oposto disso.
+            mediana_ack = None
+
         # A taxa que responde "a equipe esta virando os pacientes?" — a pergunta
         # que a coordenacao faz. `completionRate` continua existindo porque a
         # tela ja o consome, mas ele responde outra coisa: "quantos alertas
@@ -188,6 +226,8 @@ def get_stats(
             "totalPatients": total_patients,
             "completionRate": round(completion_rate, 1),
             "teamCompletionRate": round(team_completion_rate, 1),
+            "medianAckMinutes": None if mediana_ack is None else round(mediana_ack, 1),
+            "acknowledgedCount": len(tempos_ate_ack),
             "unmonitoredPatients": saude["sem_monitoramento"],
             "monitoringLimitMin": saude["limite_min"],
         }

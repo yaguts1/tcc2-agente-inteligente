@@ -3,7 +3,12 @@ from __future__ import annotations
 
 import sqlite3
 from typing import Optional, Dict
+
+import structlog
+
 from interface.db_core import connect, utc_now_iso
+
+logger = structlog.get_logger(__name__)
 
 class UltimoAdmin(RuntimeError):
     """A operacao deixaria a instalacao sem nenhum administrador ativo.
@@ -84,7 +89,8 @@ class UserRepository:
         with connect(self.db_path) as conn:
             self._ensure_users_role_column(conn)
             linhas = conn.execute(
-                "SELECT username, display_name, role, ativo, created_at"
+                "SELECT username, display_name, role, ativo, created_at,"
+                "       coren, categoria"
                 " FROM users ORDER BY created_at"
             ).fetchall()
         return [
@@ -193,3 +199,47 @@ class UserRepository:
             )
             row = cur.fetchone()
         return None if row is None else dict(row)
+
+    # ------------------------------------------------------------------
+    # Identificacao profissional
+    # ------------------------------------------------------------------
+    CATEGORIAS_VALIDAS = {"enfermeiro", "tecnico", "auxiliar", "outro"}
+
+    def definir_registro_profissional(
+        self, username: str, coren: str | None, categoria: str | None
+    ) -> dict:
+        """Numero no conselho e categoria de quem opera o sistema.
+
+        COFEN Res. 429/2012 exige que o registro de enfermagem identifique o
+        profissional por nome E numero de registro. Com um `username` solto, o
+        que este sistema produz e apoio de plantao — nao documentacao — e a
+        equipe segue registrando reposicionamento a parte no prontuario, que e
+        o caminho mais curto para a ferramenta ser abandonada.
+
+        Nao valida o formato do COREN: ele varia por estado e por categoria
+        (`COREN-SP 123456-ENF`), e uma expressao regular errada aqui recusaria
+        registro legitimo — que e pior que aceitar um digitado torto, porque o
+        primeiro impede o trabalho e o segundo e corrigivel.
+        """
+        categoria_norm = None if categoria is None else str(categoria).strip().lower()
+        if categoria_norm is not None and categoria_norm not in self.CATEGORIAS_VALIDAS:
+            raise ValueError(
+                f"categoria invalida: {categoria!r}"
+                f" (aceitas: {sorted(self.CATEGORIAS_VALIDAS)})"
+            )
+        coren_norm = None if coren is None else str(coren).strip().upper() or None
+
+        with connect(self.db_path) as conn:
+            cur = conn.execute(
+                "UPDATE users SET coren = ?, categoria = ? WHERE username = ?",
+                (coren_norm, categoria_norm, username),
+            )
+            if cur.rowcount == 0:
+                raise LookupError(f"Usuario {username} nao encontrado.")
+        logger.info(
+            "registro_profissional_definido",
+            usuario=username,
+            categoria=categoria_norm,
+            tem_coren=bool(coren_norm),
+        )
+        return {"username": username, "coren": coren_norm, "categoria": categoria_norm}

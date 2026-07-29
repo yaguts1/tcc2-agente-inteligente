@@ -115,6 +115,29 @@ class DeviceRegisterRequest(BaseModel):
 class BatchAlertRequest(BaseModel):
     """Request body for batch alert operations."""
     alert_ids: List[str]
+    # Por que o alerta foi fechado. Ignorado em `acknowledge`, que so registra
+    # que alguem VIU. Ausente vale como `reposicionado`, o caso comum — ver
+    # `MotivoFechamento`.
+    motivo: str | None = None
+
+
+class MotivoFechamento(BaseModel):
+    """Justificativa de fechamento de alerta.
+
+    Concluir nao recebia justificativa nenhuma: o dialogo era sim/nao. Entao
+    "reposicionei o paciente", "estava em cirurgia", "o paciente recusou",
+    "contraindicado por retalho na regiao sacral" e "falso alarme, o sensor
+    deslocou" viravam exatamente a mesma linha — e cada um e um fato clinico
+    diferente, que pede acao diferente.
+
+    O default e `reposicionado`, o caso comum: exigir escolha explicita em toda
+    conclusao adicionaria atrito na acao mais frequente da ala, e atrito na
+    acao frequente e o que faz a equipe procurar o atalho. Quem faz o comum nao
+    escolhe nada; a excecao e que precisa ser dita.
+    """
+
+    motivo: str | None = None
+    observacao: str | None = Field(None, max_length=255)
 
 
 class RegisterRequest(BaseModel):

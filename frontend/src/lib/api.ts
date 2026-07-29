@@ -226,6 +226,44 @@ export const authApi = {
 };
 
 // Alert API
+/**
+ * Por que o alerta foi fechado.
+ *
+ * Concluir não recebia justificativa: o diálogo era sim/não. Então
+ * "reposicionei", "estava em cirurgia", "o paciente recusou", "contraindicado"
+ * e "falso alarme, o sensor deslocou" viravam a MESMA linha — e cada um é um
+ * fato clínico diferente, que pede ação diferente.
+ *
+ * `falso_alarme` é o que justifica a lista existir: sem separá-lo, a taxa de
+ * falso-positivo é incognoscível, logo inmelhorável. Fadiga de alarme é a razão
+ * dominante pela qual sistemas de alerta clínico são abandonados.
+ *
+ * Ausente vale como `reposicionado` — o caso comum não pede escolha.
+ */
+export type MotivoFechamento =
+  | 'reposicionado'
+  | 'em_procedimento'
+  | 'recusa_do_paciente'
+  | 'contraindicado'
+  | 'falso_alarme'
+  | 'superficie_especial'
+  | 'outro';
+
+/** Rótulo e ajuda de cada motivo, na ordem em que a tela oferece. */
+export const MOTIVOS_DE_FECHAMENTO: ReadonlyArray<{
+  valor: MotivoFechamento;
+  rotulo: string;
+  ajuda?: string;
+}> = [
+  { valor: 'reposicionado', rotulo: 'Reposicionado' },
+  { valor: 'em_procedimento', rotulo: 'Em procedimento', ajuda: 'Cirurgia, exame, banho' },
+  { valor: 'recusa_do_paciente', rotulo: 'Recusa do paciente' },
+  { valor: 'contraindicado', rotulo: 'Contraindicado', ajuda: 'Retalho, fixador, instabilidade' },
+  { valor: 'superficie_especial', rotulo: 'Superfície de redistribuição' },
+  { valor: 'falso_alarme', rotulo: 'Falso alarme', ajuda: 'Sensor deslocado ou leitura errada' },
+  { valor: 'outro', rotulo: 'Outro' },
+];
+
 export interface Alert {
   id: string;
   patientName: string;
@@ -308,9 +346,10 @@ export const alertsApi = {
       method: 'POST',
     }),
 
-  complete: (id: string) =>
+  complete: (id: string, motivo?: MotivoFechamento) =>
     request<void>(`/api/frontend/alerts/${id}/complete`, {
       method: 'POST',
+      body: JSON.stringify({ motivo: motivo ?? null }),
     }),
 
   batchAcknowledge: (alertIds: string[]) =>
@@ -319,10 +358,10 @@ export const alertsApi = {
       body: JSON.stringify({ alert_ids: alertIds }),
     }),
 
-  batchComplete: (alertIds: string[]) =>
+  batchComplete: (alertIds: string[], motivo?: MotivoFechamento) =>
     request<BatchResult>('/api/frontend/alerts/batch/complete', {
       method: 'POST',
-      body: JSON.stringify({ alert_ids: alertIds }),
+      body: JSON.stringify({ alert_ids: alertIds, motivo: motivo ?? null }),
     }),
 };
 

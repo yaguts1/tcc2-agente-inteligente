@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { Alert, BatchResult } from '../../lib/api';
+import { Alert, BatchResult, MotivoFechamento, MOTIVOS_DE_FECHAMENTO } from '../../lib/api';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Checkbox } from '../ui/checkbox';
@@ -30,7 +30,7 @@ import {
 interface AlertsTableProps {
   alerts: Alert[];
   onAcknowledge: (alertId: string) => void;
-  onComplete: (alertId: string) => void;
+  onComplete: (alertId: string, motivo?: MotivoFechamento) => void;
   /** Ações em lote. Usam o endpoint de lote, que reporta sucesso parcial. */
   onBulkAcknowledge: (alertIds: string[]) => Promise<BatchResult>;
   onBulkComplete: (alertIds: string[]) => Promise<BatchResult>;
@@ -46,6 +46,7 @@ export function AlertsTable({
   isLoading,
 }: AlertsTableProps) {
   const [confirmingComplete, setConfirmingComplete] = useState<string | null>(null);
+  const [motivo, setMotivo] = useState<MotivoFechamento>('reposicionado');
   const [processingId, setProcessingId] = useState<string | null>(null);
   
   // Initialize alert selection
@@ -160,15 +161,18 @@ export function AlertsTable({
     }
   };
 
-  const handleCompleteClick = async (alertId: string) => {
+  const handleCompleteClick = async (alertId: string, motivoEscolhido: MotivoFechamento) => {
     setProcessingId(alertId);
     try {
-      await onComplete(alertId);
+      await onComplete(alertId, motivoEscolhido);
     } catch (err) {
       semRelancar(err);
     } finally {
       setProcessingId(null);
       setConfirmingComplete(null);
+      // Volta ao padrão: o motivo da exceção anterior não pode vazar para o
+      // próximo paciente que alguém encerrar.
+      setMotivo('reposicionado');
     }
   };
 
@@ -359,21 +363,64 @@ export function AlertsTable({
       {/* Confirmation Dialog */}
       <AlertDialog
         open={confirmingComplete !== null}
-        onOpenChange={(open: boolean) => !open && setConfirmingComplete(null)}
+        onOpenChange={(open: boolean) => {
+          if (!confirmingComplete) return;
+          setConfirmingComplete(null);
+          setMotivo('reposicionado');
+        }}
       >
         <AlertDialogContent>
           <AlertDialogHeader>
-            <AlertDialogTitle>Confirmar Reposicionamento</AlertDialogTitle>
+            <AlertDialogTitle>Encerrar alerta</AlertDialogTitle>
             <AlertDialogDescription>
-              Você confirma que o paciente foi reposicionado? Esta ação irá
-              encerrar o alerta e registrar o evento.
+              O que aconteceu com este paciente?
             </AlertDialogDescription>
           </AlertDialogHeader>
+          {/*
+            "Reposicionado" vem marcado: é o caso comum, e exigir escolha
+            explícita em toda conclusão adicionaria atrito na ação mais
+            frequente da ala — atrito na ação frequente é o que faz a equipe
+            procurar o atalho. Quem faz o comum confirma direto; a exceção é
+            que precisa ser dita.
+
+            Radio e não select: as sete opções cabem, e um select esconderia
+            justamente as exceções, que são as que interessam registrar.
+          */}
+          <div className="space-y-2" role="radiogroup" aria-label="Motivo do encerramento">
+            {MOTIVOS_DE_FECHAMENTO.map((opcao) => (
+              <label
+                key={opcao.valor}
+                className="flex items-start gap-2 text-sm cursor-pointer"
+              >
+                <input
+                  type="radio"
+                  name="motivo-fechamento"
+                  className="mt-1"
+                  checked={motivo === opcao.valor}
+                  onChange={() => setMotivo(opcao.valor)}
+                />
+                <span>
+                  {opcao.rotulo}
+                  {opcao.ajuda && (
+                    <span className="block text-xs text-muted-foreground">
+                      {opcao.ajuda}
+                    </span>
+                  )}
+                </span>
+              </label>
+            ))}
+          </div>
+          {motivo !== 'reposicionado' && (
+            <p className="text-xs text-muted-foreground" role="note">
+              O paciente não foi reposicionado: o relógio da próxima virada
+              continua correndo.
+            </p>
+          )}
           <AlertDialogFooter>
             <AlertDialogCancel>Cancelar</AlertDialogCancel>
             <AlertDialogAction
               onClick={() =>
-                confirmingComplete && handleCompleteClick(confirmingComplete)
+                confirmingComplete && handleCompleteClick(confirmingComplete, motivo)
               }
             >
               Confirmar

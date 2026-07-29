@@ -20,6 +20,18 @@ from interface.dao import (
 )
 
 logger = structlog.get_logger(__name__)
+# Rotulos legiveis dos motivos de fechamento. O relatorio vai para a
+# coordenacao: `recusa_do_paciente` numa planilha e ruido, "Recusa do paciente"
+# e informacao.
+_MOTIVOS_EM_PORTUGUES = {
+    "reposicionado": "Reposicionado",
+    "em_procedimento": "Em procedimento",
+    "recusa_do_paciente": "Recusa do paciente",
+    "contraindicado": "Contraindicado",
+    "falso_alarme": "Falso alarme",
+    "superficie_especial": "Superfície de redistribuição",
+    "outro": "Outro",
+}
 
 # Timezone configuration
 TZ_BR = ZoneInfo("America/Sao_Paulo")
@@ -450,6 +462,15 @@ class ExportService:
             # se mexeu sozinho. Este relatorio e o que chega a coordenacao, e sem
             # esta coluna ele documenta adesao que talvez nunca tenha existido.
             'Resolvido por',
+            # Quem VIU o alerta e em quanto tempo. E o par de colunas que
+            # responde "a ala e responsiva?", que era a pergunta que o relatorio
+            # nao conseguia responder de jeito nenhum.
+            'Reconhecido por',
+            'Tempo até ver',
+            # Sem separar "falso alarme" dos demais, a taxa de falso-positivo e
+            # incognoscivel — e fadiga de alarme e a razao dominante pela qual
+            # sistemas de alerta clinico sao abandonados.
+            'Motivo',
         ]
         
         data = [header]
@@ -492,11 +513,38 @@ class ExportService:
                 status_map.get(str(alert.get('status', '')).lower(), str(alert.get('status', ''))),
                 duracao,
                 self._descrever_resolucao(alert),
+                alert.get('reconhecido_por') or '-',
+                self._tempo_ate_ver(alert),
+                _MOTIVOS_EM_PORTUGUES.get(
+                    str(alert.get('motivo_fechamento') or ''), '-'
+                ),
             ]
             data.append(row)
         
         return data
     
+    def _tempo_ate_ver(self, alert: Dict[str, Any]) -> str:
+        """Deteccao -> reconhecimento, em texto.
+
+        Nao e `duracao_min`, que e deteccao -> resolucao. Sao perguntas
+        diferentes: uma mede quanto tempo o paciente ficou esperando, a outra
+        quanto tempo o alerta ficou sem ninguem olhar.
+        """
+        reconhecido = alert.get('reconhecido_em')
+        if not reconhecido:
+            return '-'
+        try:
+            inicio = datetime.fromisoformat(str(alert.get('inicio'))[:19])
+            visto = datetime.fromisoformat(str(reconhecido)[:19])
+        except (ValueError, TypeError):
+            return '-'
+        minutos = int((visto - inicio).total_seconds() // 60)
+        if minutos < 0:
+            return '-'
+        if minutos >= 60:
+            return f"{minutos // 60}h {minutos % 60}min"
+        return f"{minutos} min"
+
     def _descrever_resolucao(self, alert: Dict[str, Any]) -> str:
         """Quem fechou o alerta, em texto para o relatorio.
 
@@ -525,10 +573,14 @@ class ExportService:
 
     def _create_table(self, data: List[List[str]]) -> Table:
         """Cria tabela formatada para PDF."""
-        # Paciente, Início, Fim, Tipo, Perfil, Status, Duração, Resolvido por
+        # Paciente, Início, Fim, Tipo, Perfil, Status, Duração, Resolvido por,
+        # Reconhecido por, Tempo até ver, Motivo
         table = Table(
             data,
-            colWidths=[1.6*inch, 1.15*inch, 1.15*inch, 0.85*inch, 0.7*inch, 0.9*inch, 0.9*inch, 1.35*inch],
+            colWidths=[
+                1.25*inch, 0.95*inch, 0.95*inch, 0.7*inch, 0.55*inch, 0.7*inch,
+                0.7*inch, 1.05*inch, 0.95*inch, 0.75*inch, 1.0*inch,
+            ],
         )
         
         table.setStyle(TableStyle([

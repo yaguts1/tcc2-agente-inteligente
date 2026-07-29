@@ -193,7 +193,7 @@ describe('concluir alerta', () => {
 
     await userEvent.click(screen.getByRole('button', { name: 'concluir' }));
 
-    expect(alertsApi.complete).toHaveBeenCalledWith(alertaExemplo.id);
+    expect(alertsApi.complete).toHaveBeenCalledWith(alertaExemplo.id, undefined);
     await waitFor(() => {
       expect(screen.getByTestId('alerta')).toHaveTextContent('completed');
     });

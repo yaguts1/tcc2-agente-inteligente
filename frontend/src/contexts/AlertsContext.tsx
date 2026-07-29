@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useCallback, useEffect, ReactNode } from 'react';
-import { alertsApi, Alert, ApiException, BatchResult } from '../lib/api';
+import { alertsApi, Alert, ApiException, BatchResult, MotivoFechamento } from '../lib/api';
 import { useWebSocketContext } from './WebSocketContext';
 import { usePolling } from '../hooks/usePolling';
 import { useCriticalAlerts, CriticalAlert } from '../hooks/useCriticalAlerts';
@@ -27,7 +27,7 @@ interface AlertsContextType {
   totalTruncadoEm: number | null;
   fetchAlerts: () => Promise<void>;
   acknowledgeAlert: (id: string) => Promise<void>;
-  completeAlert: (id: string) => Promise<void>;
+  completeAlert: (id: string, motivo?: MotivoFechamento) => Promise<void>;
   acknowledgeAlertsEmLote: (ids: string[]) => Promise<BatchResult>;
   completeAlertsEmLote: (ids: string[]) => Promise<BatchResult>;
   criticalAlertsData: CriticalAlertsData;
@@ -175,10 +175,10 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const completeAlert = async (alertId: string) => {
+  const completeAlert = async (alertId: string, motivo?: MotivoFechamento) => {
     stop(); // Pause polling
     try {
-      await alertsApi.complete(alertId);
+      await alertsApi.complete(alertId, motivo);
       
       // Update status to completed
       setAlerts((prev) =>
@@ -189,7 +189,15 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
         )
       );
       
-      toast.success('Paciente reposicionado com sucesso');
+      // A mensagem segue o que de fato aconteceu. "Reposicionado com sucesso"
+      // para um alerta encerrado como "recusa do paciente" ou "falso alarme"
+      // afirmaria um alívio de pressão que não houve — e é essa afirmação que
+      // depois vira número de adesão.
+      toast.success(
+        motivo && motivo !== 'reposicionado'
+          ? 'Alerta encerrado'
+          : 'Paciente reposicionado com sucesso',
+      );
     } catch (err) {
       await fetchAlerts(); // Revert on error
       if (err instanceof ApiException) {

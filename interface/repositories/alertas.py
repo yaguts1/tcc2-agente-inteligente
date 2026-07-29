@@ -203,7 +203,8 @@ def listar_alertas_abertos(db_path: str) -> List[dict]:
 # caminho do EXPORT, o menos exercitado.
 _COLUNAS_ALERTA = (
     "paciente_id, inicio, fim, tipo, perfil, janela_min, status, duracao_min, "
-    "fechado_por, origem_fechamento"
+    "fechado_por, origem_fechamento, reconhecido_por, reconhecido_em, "
+    "motivo_fechamento"
 )
 
 
@@ -287,6 +288,46 @@ ORIGEM_SENSOR = "sensor"    # o motor detectou movimento espontaneo
 ORIGEM_SISTEMA = "sistema"  # regra automatica (alta, transferencia, expurgo)
 ORIGENS_VALIDAS = {ORIGEM_EQUIPE, ORIGEM_SENSOR, ORIGEM_SISTEMA}
 
+# Por que o alerta foi fechado.
+#
+# Concluir nao recebia justificativa nenhuma — o dialogo era sim/nao —, entao
+# "reposicionei", "estava em cirurgia", "o paciente recusou", "contraindicado
+# por retalho na regiao sacral" e "falso alarme, o sensor deslocou" viravam a
+# mesma linha. Cada um e um fato clinico diferente e pede acao diferente.
+#
+# `FALSO_ALARME` e o que justifica a lista existir: sem separa-lo dos demais, a
+# taxa de falso-positivo e estruturalmente incognoscivel — logo, inmelhoravel. E
+# fadiga de alarme e a razao dominante pela qual sistemas de alerta clinico sao
+# abandonados.
+MOTIVO_REPOSICIONADO = "reposicionado"
+MOTIVO_EM_PROCEDIMENTO = "em_procedimento"
+MOTIVO_RECUSA_DO_PACIENTE = "recusa_do_paciente"
+MOTIVO_CONTRAINDICADO = "contraindicado"
+MOTIVO_FALSO_ALARME = "falso_alarme"
+MOTIVO_SUPERFICIE_ESPECIAL = "superficie_especial"
+MOTIVO_OUTRO = "outro"
+
+MOTIVOS_VALIDOS = {
+    MOTIVO_REPOSICIONADO,
+    MOTIVO_EM_PROCEDIMENTO,
+    MOTIVO_RECUSA_DO_PACIENTE,
+    MOTIVO_CONTRAINDICADO,
+    MOTIVO_FALSO_ALARME,
+    MOTIVO_SUPERFICIE_ESPECIAL,
+    MOTIVO_OUTRO,
+}
+
+# Motivos em que o paciente NAO foi reposicionado. Contam separado na adesao:
+# somar "recusa do paciente" a "reposicionei" inflaria a adesao com casos em que
+# o alivio de pressao nao aconteceu.
+MOTIVOS_SEM_REPOSICIONAMENTO = {
+    MOTIVO_EM_PROCEDIMENTO,
+    MOTIVO_RECUSA_DO_PACIENTE,
+    MOTIVO_CONTRAINDICADO,
+    MOTIVO_FALSO_ALARME,
+    MOTIVO_SUPERFICIE_ESPECIAL,
+}
+
 
 class TransicaoInvalida(ValueError):
     """Tentativa de retroceder o status de um alerta."""
@@ -301,6 +342,8 @@ def alterar_status_alerta(
     now_dt: datetime | None = None,
     fechado_por: str | None = None,
     origem_fechamento: str = ORIGEM_EQUIPE,
+    usuario: str | None = None,
+    motivo: str | None = None,
 ) -> None:
     """Avanca o status de um alerta: aberto -> reconhecido -> fechado.
 
@@ -336,10 +379,15 @@ def alterar_status_alerta(
         raise ValueError(f"status invalido: {status_destino!r}")
     if origem_fechamento not in ORIGENS_VALIDAS:
         raise ValueError(f"origem_fechamento invalida: {origem_fechamento!r}")
+    if motivo is not None and motivo not in MOTIVOS_VALIDOS:
+        raise ValueError(
+            f"motivo invalido: {motivo!r} (aceitos: {sorted(MOTIVOS_VALIDOS)})"
+        )
 
     with connect(db_path) as conn:
         cur = conn.execute(
-            "SELECT status, fim FROM alertas WHERE paciente_id = ? AND inicio = ?",
+            "SELECT status, fim, reconhecido_em FROM alertas"
+            " WHERE paciente_id = ? AND inicio = ?",
             (paciente_id, inicio),
         )
         atual = cur.fetchone()
@@ -375,7 +423,8 @@ def alterar_status_alerta(
                 """
                 UPDATE alertas
                 SET status = :status, fim = :fim, duracao_min = :duracao_min,
-                    fechado_por = :fechado_por, origem_fechamento = :origem
+                    fechado_por = :fechado_por, origem_fechamento = :origem,
+                    motivo_fechamento = :motivo
                 WHERE paciente_id = :paciente_id AND inicio = :inicio
                 """,
                 {
@@ -384,6 +433,7 @@ def alterar_status_alerta(
                     "inicio": inicio,
                     "fim": fim_iso,
                     "duracao_min": duracao_min,
+                    "motivo": motivo,
                     # Gravados junto de `fim`, no mesmo UPDATE condicional: a
                     # autoria acompanha o fechamento e herda a mesma garantia de
                     # ser escrita UMA vez. Separar em outro UPDATE abriria a
@@ -394,12 +444,34 @@ def alterar_status_alerta(
                 },
             )
         else:
+            # Reconhecimento: grava QUEM viu e QUANDO.
+            #
+            # E o que torna o tempo-ate-reconhecimento derivavel. `duracao_min`
+            # e `fim - inicio` (deteccao -> resolucao); o intervalo que diz se a
+            # ala e responsiva — deteccao -> alguem viu — nao existia em lugar
+            # nenhum consultavel, so como prosa na timeline.
+            #
+            # Gravado uma vez so, como `fim`: quem viu primeiro e quem viu, e um
+            # segundo clique nao pode reescrever o tempo de resposta da ala.
+            escreve_ack = destino == "reconhecido" and atual["reconhecido_em"] is None
             conn.execute(
                 """
                 UPDATE alertas
-                SET status = :status
+                SET status = :status,
+                    reconhecido_por = CASE WHEN :escreve_ack THEN :usuario
+                                           ELSE reconhecido_por END,
+                    reconhecido_em  = CASE WHEN :escreve_ack THEN :agora
+                                           ELSE reconhecido_em END
                 WHERE paciente_id = :paciente_id AND inicio = :inicio
                 """,
-                {"status": status_destino, **params},
+                {
+                    "status": status_destino,
+                    "escreve_ack": 1 if escreve_ack else 0,
+                    "usuario": usuario,
+                    "agora": (now_dt or agora_utc_naive())
+                    .replace(microsecond=0)
+                    .strftime("%Y-%m-%dT%H:%M:%S"),
+                    **params,
+                },
             )
         conn.commit()

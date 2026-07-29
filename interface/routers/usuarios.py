@@ -302,3 +302,57 @@ async def definir_unidades_endpoint(username: str, payload: UnidadesDoUsuario) -
 
     await api_cache.clear()
     return {"ok": True, "username": username, "unidades": unidades}
+
+
+class RegistroProfissional(BaseModel):
+    coren: str | None = Field(None, max_length=40)
+    categoria: str | None = Field(
+        None, description="enfermeiro | tecnico | auxiliar | outro"
+    )
+
+
+@router_proprio.put("/usuarios/eu/registro", status_code=status.HTTP_200_OK)
+def definir_proprio_registro(
+    payload: RegistroProfissional, usuario: str = Depends(get_current_user)
+) -> dict:
+    """COREN e categoria do proprio usuario.
+
+    Fora do router de admin de proposito: o registro no conselho e do
+    profissional, e quem sabe o numero dele e ele. Exigir um administrador para
+    cada enfermeiro cadastrar o proprio COREN transformaria uma informacao que
+    a pessoa tem no bolso num chamado de suporte — e o resultado previsivel e
+    o campo ficar vazio na instalacao inteira.
+    """
+    try:
+        return _repo().definir_registro_profissional(
+            usuario, payload.coren, payload.categoria
+        )
+    except LookupError as exc:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            detail={"code": "usuario_nao_encontrado", "message": str(exc)},
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail={"code": "categoria_invalida", "message": str(exc)},
+        ) from exc
+
+
+@router.put("/usuarios/{username}/registro", status_code=status.HTTP_200_OK)
+def definir_registro_de_usuario(username: str, payload: RegistroProfissional) -> dict:
+    """Idem, por administrador — para corrigir registro digitado errado."""
+    try:
+        return _repo().definir_registro_profissional(
+            username, payload.coren, payload.categoria
+        )
+    except LookupError as exc:
+        raise HTTPException(
+            status.HTTP_404_NOT_FOUND,
+            detail={"code": "usuario_nao_encontrado", "message": str(exc)},
+        ) from exc
+    except ValueError as exc:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail={"code": "categoria_invalida", "message": str(exc)},
+        ) from exc

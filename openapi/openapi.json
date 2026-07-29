@@ -412,6 +412,17 @@
             },
             "title": "Alert Ids",
             "type": "array"
+          },
+          "motivo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Motivo"
           }
         },
         "required": [
@@ -663,6 +674,36 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "MotivoFechamento": {
+        "description": "Justificativa de fechamento de alerta.\n\nConcluir nao recebia justificativa nenhuma: o dialogo era sim/nao. Entao\n\"reposicionei o paciente\", \"estava em cirurgia\", \"o paciente recusou\",\n\"contraindicado por retalho na regiao sacral\" e \"falso alarme, o sensor\ndeslocou\" viravam exatamente a mesma linha — e cada um e um fato clinico\ndiferente, que pede acao diferente.\n\nO default e `reposicionado`, o caso comum: exigir escolha explicita em toda\nconclusao adicionaria atrito na acao mais frequente da ala, e atrito na\nacao frequente e o que faz a equipe procurar o atalho. Quem faz o comum nao\nescolhe nada; a excecao e que precisa ser dita.",
+        "properties": {
+          "motivo": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Motivo"
+          },
+          "observacao": {
+            "anyOf": [
+              {
+                "maxLength": 255,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observacao"
+          }
+        },
+        "title": "MotivoFechamento",
+        "type": "object"
+      },
       "PacienteConfigResponse": {
         "properties": {
           "cama_id": {
@@ -754,6 +795,36 @@
           "password"
         ],
         "title": "RegisterRequest",
+        "type": "object"
+      },
+      "RegistroProfissional": {
+        "properties": {
+          "categoria": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "description": "enfermeiro | tecnico | auxiliar | outro",
+            "title": "Categoria"
+          },
+          "coren": {
+            "anyOf": [
+              {
+                "maxLength": 40,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coren"
+          }
+        },
+        "title": "RegistroProfissional",
         "type": "object"
       },
       "RotinaConfig": {
@@ -2540,7 +2611,7 @@
     },
     "/api/frontend/alerts/{alert_id}/complete": {
       "post": {
-        "description": "Completa/fecha um alerta e registra evento na timeline.",
+        "description": "Completa/fecha um alerta, com o motivo, e registra evento na timeline.\n\nCorpo opcional: sem ele o motivo vale `reposicionado`, o caso comum. Manter\na rota funcionando sem corpo e o que permite a SPA e qualquer script\nexistente continuarem chamando enquanto migram.",
         "operationId": "frontend_complete_api_frontend_alerts__alert_id__complete_post",
         "parameters": [
           {
@@ -2553,6 +2624,23 @@
             }
           }
         ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "anyOf": [
+                  {
+                    "$ref": "#/components/schemas/MotivoFechamento"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Payload"
+              }
+            }
+          }
+        },
         "responses": {
           "200": {
             "content": {
@@ -3750,6 +3838,50 @@
         ]
       }
     },
+    "/api/usuarios/eu/registro": {
+      "put": {
+        "description": "COREN e categoria do proprio usuario.\n\nFora do router de admin de proposito: o registro no conselho e do\nprofissional, e quem sabe o numero dele e ele. Exigir um administrador para\ncada enfermeiro cadastrar o proprio COREN transformaria uma informacao que\na pessoa tem no bolso num chamado de suporte — e o resultado previsivel e\no campo ficar vazio na instalacao inteira.",
+        "operationId": "definir_proprio_registro_api_usuarios_eu_registro_put",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistroProfissional"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Definir Proprio Registro Api Usuarios Eu Registro Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Definir Proprio Registro",
+        "tags": [
+          "usuarios"
+        ]
+      }
+    },
     "/api/usuarios/eu/senha": {
       "post": {
         "description": "Troca da propria senha, exigindo a senha atual.\n\nExigir a atual impede que alguem com uma sessao aberta esquecida assuma a\nconta trocando a credencial.",
@@ -3897,6 +4029,61 @@
           }
         },
         "summary": "Alterar Papel",
+        "tags": [
+          "usuarios"
+        ]
+      }
+    },
+    "/api/usuarios/{username}/registro": {
+      "put": {
+        "description": "Idem, por administrador — para corrigir registro digitado errado.",
+        "operationId": "definir_registro_de_usuario_api_usuarios__username__registro_put",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "username",
+            "required": true,
+            "schema": {
+              "title": "Username",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/RegistroProfissional"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Definir Registro De Usuario Api Usuarios  Username  Registro Put",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Definir Registro De Usuario",
         "tags": [
           "usuarios"
         ]

@@ -7,7 +7,7 @@ from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from fastapi.responses import StreamingResponse
 
 from interface.api_shared import DB_PATH, _check_api_rate_limit, _check_batch_rate_limit
-from interface.schemas import BatchAlertRequest
+from interface.schemas import BatchAlertRequest, MotivoFechamento
 from interface.ws_manager_optimized import ws_manager_optimized, WebSocketFilter
 from interface.dependencies import (
     escopo_de_unidades,
@@ -88,8 +88,13 @@ async def batch_complete(
     _: None = Depends(_check_batch_rate_limit)
 ) -> dict:
     """Complete multiple alerts at once."""
-    logger.info("batch_complete_called", alert_ids_count=len(payload.alert_ids), user=user)
-    return await processar_lote(payload.alert_ids, user, "complete")
+    logger.info(
+        "batch_complete_called",
+        alert_ids_count=len(payload.alert_ids),
+        user=user,
+        motivo=payload.motivo,
+    )
+    return await processar_lote(payload.alert_ids, user, "complete", motivo=payload.motivo)
 
 
 @router.post("/frontend/alerts/{alert_id}/acknowledge", status_code=status.HTTP_200_OK)
@@ -116,14 +121,23 @@ async def frontend_acknowledge(alert_id: str, user: str = Depends(get_current_us
 
 
 @router.post("/frontend/alerts/{alert_id}/complete", status_code=status.HTTP_200_OK)
-async def frontend_complete(alert_id: str, user: str = Depends(get_current_user)) -> dict:
-    """Completa/fecha um alerta e registra evento na timeline."""
+async def frontend_complete(
+    alert_id: str,
+    payload: MotivoFechamento | None = None,
+    user: str = Depends(get_current_user),
+) -> dict:
+    """Completa/fecha um alerta, com o motivo, e registra evento na timeline.
+
+    Corpo opcional: sem ele o motivo vale `reposicionado`, o caso comum. Manter
+    a rota funcionando sem corpo e o que permite a SPA e qualquer script
+    existente continuarem chamando enquanto migram.
+    """
     try:
         alert_id.split("__", 1)
     except Exception:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={"code": "invalid_alert_id", "message": "Invalid alert id"})
     try:
-        await completar_alerta(alert_id, user)
+        await completar_alerta(alert_id, user, motivo=payload.motivo if payload else None)
     except LookupError:
         raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"code": "not_found", "message": "Alert not found"})
     except TransicaoInvalida as exc:

@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { AlertTriangle, Bell, Calendar } from 'lucide-react';
-import { statsApi, DashboardStats, patientsApi, ApiException, Alert, monitoramentoApi, StatusMonitoramento } from '../../lib/api';
+import { statsApi, DashboardStats, patientsApi, ApiException, Alert, monitoramentoApi, StatusMonitoramento, MotivoFechamento } from '../../lib/api';
 import { AlertFilters } from '../../hooks/useAlertFilters';
 import { useAlerts } from '../../contexts/AlertsContext';
 import { FilterBar } from '../alerts/FilterBar';
@@ -153,8 +153,13 @@ export function DashboardPage() {
     await acknowledgeAlert(alertId);
   };
 
-  const handleComplete = async (alertId: string) => {
-    await completeAlert(alertId);
+  const handleComplete = async (alertId: string, motivo?: MotivoFechamento) => {
+    // O `motivo` PRECISA ser repassado explicitamente: em TypeScript uma função
+    // de menos parâmetros é atribuível a um tipo de mais, então esquecê-lo aqui
+    // não gera erro de compilação — o motivo simplesmente sumiria no caminho e
+    // todo fechamento cairia no default, deixando a taxonomia inteira morta
+    // sem nada acusando.
+    await completeAlert(alertId, motivo);
   };
 
   // Métricas exibidas nos cards.

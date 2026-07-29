@@ -19,7 +19,11 @@ from interface.dao import (
     listar_fichas_pacientes,
     selecionar_alertas_janela,
 )
-from interface.repositories.alertas import ORIGEM_EQUIPE
+from interface.repositories.alertas import (
+    MOTIVO_REPOSICIONADO,
+    MOTIVOS_SEM_REPOSICIONAMENTO,
+    ORIGEM_EQUIPE,
+)
 from interface.repositories.timeline import ultimo_evento_por_paciente
 from interface.services.paciente_service import dividir_cama
 from interface.tempo import agora_utc_naive, para_iso_utc
@@ -378,6 +382,22 @@ async def anunciar_alertas_novos(alertas: list[dict]) -> None:
             logger.warning("broadcast_alerta_novo_falhou", paciente_id=paciente_id, exc_info=True)
 
 
+def _motivo_efetivo(definir_fim: bool, motivo: str | None) -> str | None:
+    """Motivo que sera gravado.
+
+    Ausente vale como `reposicionado`, o caso comum: exigir escolha explicita
+    em toda conclusao adicionaria atrito na acao mais frequente da ala, e atrito
+    na acao frequente e o que faz a equipe procurar o atalho. Quem faz o comum
+    nao escolhe nada; a excecao e que precisa ser dita.
+
+    `acknowledge` nao grava motivo nenhum: reconhecer e dizer "eu vi", nao
+    resolver.
+    """
+    if not definir_fim:
+        return None
+    return motivo or MOTIVO_REPOSICIONADO
+
+
 def _avisar_motor_do_reposicionamento(paciente_id: str) -> None:
     """Fecha o ciclo entre o clique da enfermagem e o estado do motor.
 
@@ -401,11 +421,17 @@ def _avisar_motor_do_reposicionamento(paciente_id: str) -> None:
         logger.warning("motor_nao_soube_do_reposicionamento", paciente_id=paciente_id, exc_info=True)
 
 
-async def _aplicar_operacao(alert_id: str, user: str, operacao: Literal["acknowledge", "complete"]) -> None:
+async def _aplicar_operacao(
+    alert_id: str,
+    user: str,
+    operacao: Literal["acknowledge", "complete"],
+    motivo: str | None = None,
+) -> None:
     """Aplica reconhecer/completar a um único alerta: atualiza status,
     registra timeline, faz broadcast via WS e invalida o cache."""
     config = _OPERACOES[operacao]
     paciente_id, inicio = alert_id.split("__", 1)
+    motivo = _motivo_efetivo(config["definir_fim"], motivo)
 
     alterar_status_alerta(
         DB_PATH,
@@ -415,10 +441,26 @@ async def _aplicar_operacao(alert_id: str, user: str, operacao: Literal["acknowl
         config["definir_fim"],
         fechado_por=user if config["definir_fim"] else None,
         origem_fechamento=ORIGEM_EQUIPE,
+        usuario=user,
+        motivo=motivo,
     )
 
     if config["definir_fim"]:
-        _avisar_motor_do_reposicionamento(paciente_id)
+        # So reinicia o motor quando o paciente foi DE FATO reposicionado.
+        #
+        # "Recusa do paciente", "em procedimento", "contraindicado" e "falso
+        # alarme" fecham a linha na tela, mas NAO houve alivio de pressao —
+        # zerar a corrida ali daria ao paciente credito por um movimento que
+        # nao aconteceu, e adiaria o proximo alerta de uma janela inteira
+        # justamente em quem continua imovel.
+        if motivo is None or motivo not in MOTIVOS_SEM_REPOSICIONAMENTO:
+            _avisar_motor_do_reposicionamento(paciente_id)
+        else:
+            logger.info(
+                "motor_nao_reiniciado_por_motivo",
+                paciente_id=paciente_id,
+                motivo=motivo,
+            )
 
     try:
         # Idem: UTC naive, o formato do resto do banco.
@@ -460,14 +502,20 @@ async def reconhecer_alerta(alert_id: str, user: str) -> None:
     await _aplicar_operacao(alert_id, user, "acknowledge")
 
 
-async def completar_alerta(alert_id: str, user: str) -> None:
-    await _aplicar_operacao(alert_id, user, "complete")
+async def completar_alerta(alert_id: str, user: str, motivo: str | None = None) -> None:
+    await _aplicar_operacao(alert_id, user, "complete", motivo=motivo)
 
 
-async def processar_lote(alert_ids: List[str], user: str, operacao: Literal["acknowledge", "complete"]) -> dict:
+async def processar_lote(
+    alert_ids: List[str],
+    user: str,
+    operacao: Literal["acknowledge", "complete"],
+    motivo: str | None = None,
+) -> dict:
     """Aplica reconhecer/completar a vários alertas em paralelo (thread pool
     para as operações de banco), com broadcast em background e métricas."""
     config = _OPERACOES[operacao]
+    motivo = _motivo_efetivo(config["definir_fim"], motivo)
     processed = 0
     failed = 0
     errors: List[dict] = []
@@ -486,9 +534,13 @@ async def processar_lote(alert_ids: List[str], user: str, operacao: Literal["ack
                     config["definir_fim"],
                     fechado_por=user if config["definir_fim"] else None,
                     origem_fechamento=ORIGEM_EQUIPE,
+                    usuario=user,
+                    motivo=motivo,
                 )
             )
-            if config["definir_fim"]:
+            if config["definir_fim"] and (
+                motivo is None or motivo not in MOTIVOS_SEM_REPOSICIONAMENTO
+            ):
                 # O lote precisa do MESMO aviso ao motor que a operacao unitaria:
                 # e por aqui que passa a maior parte dos fechamentos (o botao de
                 # selecionar tudo da tela), entao esquecer aqui deixaria o defeito

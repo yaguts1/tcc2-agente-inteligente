@@ -87,7 +87,10 @@ describe('acoes individuais', () => {
     await userEvent.click(within(dialogo).getByRole('button', { name: /confirmar|sim/i }));
 
     await waitFor(() => {
-      expect(onComplete).toHaveBeenCalledWith('PAC-0001__2026-01-01T10:00:00');
+      expect(onComplete).toHaveBeenCalledWith(
+        'PAC-0001__2026-01-01T10:00:00',
+        'reposicionado',
+      );
     });
   });
 
@@ -214,5 +217,52 @@ describe('acoes em lote', () => {
     expect(within(linhaQueFalhou).getByRole('checkbox')).toBeChecked();
     const linhaQuePassou = screen.getByRole('row', { name: /Maria Silva/i });
     expect(within(linhaQuePassou).getByRole('checkbox')).not.toBeChecked();
+  });
+});
+
+describe('motivo do encerramento', () => {
+  const abrirDialogo = async () => {
+    await userEvent.click(screen.getAllByRole('button', { name: /reposicionar/i })[0]);
+    return screen.findByRole('radiogroup', { name: /motivo/i });
+  };
+
+  const opcao = (grupo: HTMLElement, texto: string) =>
+    within(grupo)
+      .getAllByRole('radio')
+      .find((r) => r.closest('label')?.textContent?.includes(texto))!;
+
+  it('vem com "Reposicionado" marcado', async () => {
+    renderizar();
+    const grupo = await abrirDialogo();
+
+    const marcado = within(grupo)
+      .getAllByRole('radio')
+      .find((r) => (r as HTMLInputElement).checked);
+
+    expect(marcado).toBeDefined();
+    expect(marcado?.closest('label')).toHaveTextContent('Reposicionado');
+  });
+
+  it('envia o motivo escolhido', async () => {
+    const { onComplete } = renderizar();
+    const grupo = await abrirDialogo();
+
+    await userEvent.click(opcao(grupo, 'Falso alarme'));
+    await userEvent.click(screen.getByRole('button', { name: /^confirmar$/i }));
+
+    await waitFor(() =>
+      expect(onComplete).toHaveBeenCalledWith(expect.any(String), 'falso_alarme'),
+    );
+  });
+
+  it('avisa que o relogio continua correndo quando nao houve reposicionamento', async () => {
+    renderizar();
+    const grupo = await abrirDialogo();
+
+    await userEvent.click(opcao(grupo, 'Recusa'));
+
+    expect(
+      await screen.findByText(/rel[oó]gio da pr[oó]xima virada continua correndo/i),
+    ).toBeInTheDocument();
   });
 });
