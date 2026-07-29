@@ -41,6 +41,8 @@ const usuario = (over: Partial<Usuario> = {}): Usuario => ({
   role: 'staff',
   ativo: true,
   created_at: '2026-01-01T10:00:00',
+  coren: null,
+  categoria: null,
   ...over,
 });
 

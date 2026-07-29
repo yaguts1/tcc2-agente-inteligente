@@ -22,6 +22,7 @@ from interface.dao import (
 from interface.db_core import connect
 from interface.dependencies import escopo_de_unidades, get_current_user
 from interface.repositories.alertas import ORIGEM_EQUIPE, ORIGEM_SENSOR
+from interface.schemas import DashboardStatsResponse, MonitoramentoResponse
 from interface.repositories.monitoramento import (
     resumo as resumo_monitoramento,
     status_por_paciente,
@@ -85,7 +86,7 @@ def health_check() -> dict:
 
 # `/health` fica FORA do rate limit de proposito (ver `_check_api_rate_limit`):
 # healthcheck limitado faz o monitoramento derrubar o servico que ele vigia.
-@router.get("/stats", status_code=status.HTTP_200_OK)
+@router.get("/stats", response_model=DashboardStatsResponse, status_code=status.HTTP_200_OK)
 def get_stats(
     _: None = Depends(_check_api_rate_limit),
     unidades: set[int] | None = Depends(escopo_de_unidades),
@@ -239,7 +240,11 @@ def get_stats(
         ) from exc
 
 
-@router.get("/monitoramento", status_code=status.HTTP_200_OK)
+@router.get(
+    "/monitoramento",
+    response_model=MonitoramentoResponse,
+    status_code=status.HTTP_200_OK,
+)
 def status_monitoramento(
     _: None = Depends(_check_api_rate_limit),
     unidades: set[int] | None = Depends(escopo_de_unidades),

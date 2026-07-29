@@ -15,7 +15,15 @@
  * Não editar à mão.
  */
 import type { components } from './api-gerada';
-import type { Alert, Patient } from './api';
+import type {
+  Alert,
+  BatchResult,
+  DashboardStats,
+  MonitoramentoResponse,
+  Patient,
+  Unit,
+  Usuario,
+} from './api';
 
 type DoBackend = components['schemas'];
 
@@ -48,3 +56,26 @@ type PatientDaTela = Pick<Patient, 'id' | 'name' | 'room' | 'bed' | 'riskLevel'>
 // As duas linhas abaixo são o teste. Não têm efeito em runtime.
 export const _alertaConfere: Identico<AlertDoBackend, AlertDaTela> = true;
 export const _pacienteConfere: Identico<PatientDoBackend, PatientDaTela> = true;
+
+// Demais respostas que a SPA consome. Cada uma foi ligada a um `response_model`
+// no backend: sem ele a rota não entra no spec com forma nenhuma, e não há
+// contra o que comparar — o tipo daqui volta a ser declaração independente,
+// mantida em sincronia por disciplina.
+type StatsDoBackend = DoBackend['DashboardStatsResponse'];
+type MonitoramentoDoBackend = DoBackend['MonitoramentoResponse'];
+type LoteDoBackend = DoBackend['BatchResultResponse'];
+type UnidadeDoBackend = DoBackend['UnidadeResponse'];
+type UsuarioDoBackend = Pick<
+  DoBackend['UsuarioResponse'],
+  'username' | 'role' | 'ativo' | 'coren' | 'categoria'
+>;
+type UsuarioDaTela = Pick<Usuario, 'username' | 'role' | 'ativo' | 'coren' | 'categoria'>;
+
+export const _statsConfere: Identico<StatsDoBackend, DashboardStats> = true;
+export const _monitoramentoConfere: Identico<
+  MonitoramentoDoBackend,
+  MonitoramentoResponse
+> = true;
+export const _loteConfere: Identico<LoteDoBackend, BatchResult> = true;
+export const _unidadeConfere: Identico<UnidadeDoBackend, Unit> = true;
+export const _usuarioConfere: Identico<UsuarioDoBackend, UsuarioDaTela> = true;

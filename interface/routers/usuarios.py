@@ -32,6 +32,7 @@ from interface.dependencies import escopo_de_unidades
 from interface.dependencies import exigir_papel, get_current_user
 from interface.repositories.sessoes import revogar_sessoes_do_usuario
 from interface.repositories.users import UltimoAdmin, UserRepository
+from interface.schemas import UnidadeResponse, UsuarioResponse
 
 logger = structlog.get_logger(__name__)
 
@@ -86,7 +87,9 @@ class DefinirSenha(BaseModel):
     nova_senha: str
 
 
-@router.get("/usuarios", status_code=status.HTTP_200_OK)
+@router.get(
+    "/usuarios", response_model=list[UsuarioResponse], status_code=status.HTTP_200_OK
+)
 def listar_usuarios() -> list[dict]:
     """Lista os usuarios (sem hash de senha)."""
     return _repo().listar()
@@ -220,7 +223,9 @@ class UnidadesDoUsuario(BaseModel):
     unidades: list[int] = Field(default_factory=list)
 
 
-@router_proprio.get("/unidades", status_code=status.HTTP_200_OK)
+@router_proprio.get(
+    "/unidades", response_model=list[UnidadeResponse], status_code=status.HTTP_200_OK
+)
 def listar_unidades_endpoint(
     incluir_inativas: bool = False,
     unidades_visiveis: set[int] | None = Depends(escopo_de_unidades),
@@ -248,7 +253,9 @@ def listar_unidades_endpoint(
     return [u for u in todas if int(u["id"]) in unidades_visiveis]
 
 
-@router.post("/unidades", status_code=status.HTTP_201_CREATED)
+@router.post(
+    "/unidades", response_model=UnidadeResponse, status_code=status.HTTP_201_CREATED
+)
 def criar_unidade_endpoint(payload: UnidadeCreate) -> dict:
     from interface.repositories.unidades import criar_unidade
 

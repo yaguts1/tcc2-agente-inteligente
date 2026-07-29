@@ -8,7 +8,12 @@ from fastapi.responses import StreamingResponse
 
 from interface.api_shared import DB_PATH, _check_api_rate_limit, _check_batch_rate_limit
 from interface.alert_id import AlertIdInvalido, partir_alert_id
-from interface.schemas import BatchAlertRequest, FrontendAlert, MotivoFechamento
+from interface.schemas import (
+    BatchAlertRequest,
+    BatchResultResponse,
+    FrontendAlert,
+    MotivoFechamento,
+)
 from interface.ws_manager_optimized import ws_manager_optimized, WebSocketFilter
 from interface.dependencies import (
     escopo_de_unidades,
@@ -73,7 +78,11 @@ async def frontend_alerts(
     return pagina.itens
 
 
-@router.post("/frontend/alerts/batch/acknowledge", status_code=status.HTTP_200_OK)
+@router.post(
+    "/frontend/alerts/batch/acknowledge",
+    response_model=BatchResultResponse,
+    status_code=status.HTTP_200_OK,
+)
 async def batch_acknowledge(
     payload: BatchAlertRequest,
     request: Request,
@@ -85,7 +94,11 @@ async def batch_acknowledge(
     return await processar_lote(payload.alert_ids, user, "acknowledge")
 
 
-@router.post("/frontend/alerts/batch/complete", status_code=status.HTTP_200_OK)
+@router.post(
+    "/frontend/alerts/batch/complete",
+    response_model=BatchResultResponse,
+    status_code=status.HTTP_200_OK,
+)
 async def batch_complete(
     payload: BatchAlertRequest,
     request: Request,

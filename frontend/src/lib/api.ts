@@ -315,7 +315,14 @@ export interface BatchResult {
   ok: boolean;
   processed: number;
   failed: number;
-  errors: Array<{ alert_id: string; error: string }>;
+  /**
+   * `alert_id` é opcional: há dois caminhos que alimentam esta lista. O normal
+   * reporta qual alerta falhou; o outro é quando a própria task levanta, e ali
+   * só existe a exceção — o alerta nem chegou a ser identificado. Estava
+   * declarado obrigatório, então a tela exibiria `undefined` no lugar do
+   * identificador justamente no caso mais confuso para quem está olhando.
+   */
+  errors: Array<{ alert_id?: string | null; error: string }>;
 }
 
 /**
@@ -785,6 +792,17 @@ export interface DashboardStats {
    * significar que está tudo bem, ou que o sistema parou de receber dados.
    */
   unmonitoredPatients: number;
+  /**
+   * Mediana de detecção → alguém viu, em minutos. `null` quando ninguém
+   * reconheceu nada: zero seria um número excelente, e "ninguém olhou" é o
+   * oposto disso.
+   *
+   * Mediana e não média — um alerta esquecido a noite inteira levaria a média
+   * às alturas e esconderia que o resto da ala responde em minutos.
+   */
+  medianAckMinutes: number | null;
+  /** Quantos alertas entraram no cálculo acima. */
+  acknowledgedCount: number;
   /** Minutos sem dados a partir dos quais o paciente conta como não monitorado. */
   monitoringLimitMin: number;
 }
@@ -915,7 +933,15 @@ export interface Usuario {
   display_name: string | null;
   role: PapelUsuario;
   ativo: boolean;
-  created_at: string;
+  created_at: string | null;
+  /**
+   * Registro no conselho e categoria profissional.
+   *
+   * COFEN Res. 429/2012 exige identificação por nome E registro. Sem eles, o
+   * que o sistema produz é apoio de plantão, não documentação.
+   */
+  coren: string | null;
+  categoria: string | null;
 }
 
 export const usuariosApi = {

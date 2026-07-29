@@ -431,6 +431,63 @@
         "title": "BatchAlertRequest",
         "type": "object"
       },
+      "BatchErrorItem": {
+        "description": "Uma falha dentro de um lote.\n\n`alert_id` e OPCIONAL, e nao por descuido: ha dois caminhos que alimentam\nesta lista. O normal reporta qual alerta falhou; o outro e quando a propria\ntask levanta, e ali so existe a excecao — o alerta nem chegou a ser\nidentificado. Declarar obrigatorio faria a tela exibir `undefined` no lugar\ndo identificador justamente no caso mais confuso para quem esta olhando.",
+        "properties": {
+          "alert_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Alert Id"
+          },
+          "error": {
+            "title": "Error",
+            "type": "string"
+          }
+        },
+        "required": [
+          "error"
+        ],
+        "title": "BatchErrorItem",
+        "type": "object"
+      },
+      "BatchResultResponse": {
+        "description": "Resultado de acao em lote.\n\n`processed` e `failed` sao o que torna a falha PARCIAL visivel: o lote pode\nter sucesso para a maioria e falhar para alguns (tipicamente 409, quando\noutra pessoa ja agiu sobre o mesmo alerta).",
+        "properties": {
+          "errors": {
+            "items": {
+              "$ref": "#/components/schemas/BatchErrorItem"
+            },
+            "title": "Errors",
+            "type": "array"
+          },
+          "failed": {
+            "title": "Failed",
+            "type": "integer"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          },
+          "processed": {
+            "title": "Processed",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "ok",
+          "processed",
+          "failed",
+          "errors"
+        ],
+        "title": "BatchResultResponse",
+        "type": "object"
+      },
       "Body_api_admin_import_alerts_api_admin_import_alerts_post": {
         "properties": {
           "arquivo": {
@@ -476,6 +533,86 @@
           "arquivo"
         ],
         "title": "Body_receber_grade_api_grade_post",
+        "type": "object"
+      },
+      "DashboardStatsResponse": {
+        "properties": {
+          "acknowledgedAlerts": {
+            "title": "Acknowledgedalerts",
+            "type": "integer"
+          },
+          "acknowledgedCount": {
+            "title": "Acknowledgedcount",
+            "type": "integer"
+          },
+          "activeAlerts": {
+            "title": "Activealerts",
+            "type": "integer"
+          },
+          "completedBySensor": {
+            "title": "Completedbysensor",
+            "type": "integer"
+          },
+          "completedByTeam": {
+            "title": "Completedbyteam",
+            "type": "integer"
+          },
+          "completedToday": {
+            "title": "Completedtoday",
+            "type": "integer"
+          },
+          "completedUnknownOrigin": {
+            "title": "Completedunknownorigin",
+            "type": "integer"
+          },
+          "completionRate": {
+            "title": "Completionrate",
+            "type": "number"
+          },
+          "medianAckMinutes": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Medianackminutes"
+          },
+          "monitoringLimitMin": {
+            "title": "Monitoringlimitmin",
+            "type": "integer"
+          },
+          "teamCompletionRate": {
+            "title": "Teamcompletionrate",
+            "type": "number"
+          },
+          "totalPatients": {
+            "title": "Totalpatients",
+            "type": "integer"
+          },
+          "unmonitoredPatients": {
+            "title": "Unmonitoredpatients",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "activeAlerts",
+          "acknowledgedAlerts",
+          "completedToday",
+          "completedByTeam",
+          "completedBySensor",
+          "completedUnknownOrigin",
+          "totalPatients",
+          "completionRate",
+          "teamCompletionRate",
+          "medianAckMinutes",
+          "acknowledgedCount",
+          "unmonitoredPatients",
+          "monitoringLimitMin"
+        ],
+        "title": "DashboardStatsResponse",
         "type": "object"
       },
       "DefinirSenha": {
@@ -810,6 +947,50 @@
         "title": "HTTPValidationError",
         "type": "object"
       },
+      "MonitoramentoResponse": {
+        "properties": {
+          "limite_min": {
+            "title": "Limite Min",
+            "type": "integer"
+          },
+          "monitorados": {
+            "title": "Monitorados",
+            "type": "integer"
+          },
+          "pacientes": {
+            "items": {
+              "$ref": "#/components/schemas/StatusMonitoramentoItem"
+            },
+            "title": "Pacientes",
+            "type": "array"
+          },
+          "pacientes_sem_monitoramento": {
+            "items": {
+              "$ref": "#/components/schemas/StatusMonitoramentoItem"
+            },
+            "title": "Pacientes Sem Monitoramento",
+            "type": "array"
+          },
+          "sem_monitoramento": {
+            "title": "Sem Monitoramento",
+            "type": "integer"
+          },
+          "total_com_leito": {
+            "title": "Total Com Leito",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "limite_min",
+          "total_com_leito",
+          "monitorados",
+          "sem_monitoramento",
+          "pacientes_sem_monitoramento",
+          "pacientes"
+        ],
+        "title": "MonitoramentoResponse",
+        "type": "object"
+      },
       "MotivoFechamento": {
         "description": "Justificativa de fechamento de alerta.\n\nConcluir nao recebia justificativa nenhuma: o dialogo era sim/nao. Entao\n\"reposicionei o paciente\", \"estava em cirurgia\", \"o paciente recusou\",\n\"contraindicado por retalho na regiao sacral\" e \"falso alarme, o sensor\ndeslocou\" viravam exatamente a mesma linha — e cada um e um fato clinico\ndiferente, que pede acao diferente.\n\nO default e `reposicionado`, o caso comum: exigir escolha explicita em toda\nconclusao adicionaria atrito na acao mais frequente da ala, e atrito na\nacao frequente e o que faz a equipe procurar o atalho. Quem faz o comum nao\nescolhe nada; a excecao e que precisa ser dita.",
         "properties": {
@@ -1068,6 +1249,77 @@
         "title": "SimulationResult",
         "type": "object"
       },
+      "StatusMonitoramentoItem": {
+        "properties": {
+          "cama_id": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Cama Id"
+          },
+          "minutos_sem_dados": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Minutos Sem Dados"
+          },
+          "monitorado": {
+            "title": "Monitorado",
+            "type": "boolean"
+          },
+          "nome": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nome"
+          },
+          "nunca_recebeu_dados": {
+            "title": "Nunca Recebeu Dados",
+            "type": "boolean"
+          },
+          "paciente_id": {
+            "title": "Paciente Id",
+            "type": "string"
+          },
+          "ultima_leitura": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Ultima Leitura"
+          }
+        },
+        "required": [
+          "paciente_id",
+          "nome",
+          "cama_id",
+          "ultima_leitura",
+          "minutos_sem_dados",
+          "monitorado",
+          "nunca_recebeu_dados"
+        ],
+        "title": "StatusMonitoramentoItem",
+        "type": "object"
+      },
       "SuppressionCheckResponse": {
         "description": "Resposta da verificação de supressão.",
         "properties": {
@@ -1212,6 +1464,41 @@
         "title": "UnidadeCreate",
         "type": "object"
       },
+      "UnidadeResponse": {
+        "properties": {
+          "ativo": {
+            "title": "Ativo",
+            "type": "integer"
+          },
+          "descricao": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Descricao"
+          },
+          "id": {
+            "title": "Id",
+            "type": "integer"
+          },
+          "nome": {
+            "title": "Nome",
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "nome",
+          "descricao",
+          "ativo"
+        ],
+        "title": "UnidadeResponse",
+        "type": "object"
+      },
       "UnidadesDoUsuario": {
         "properties": {
           "unidades": {
@@ -1223,6 +1510,81 @@
           }
         },
         "title": "UnidadesDoUsuario",
+        "type": "object"
+      },
+      "UsuarioResponse": {
+        "properties": {
+          "ativo": {
+            "title": "Ativo",
+            "type": "boolean"
+          },
+          "categoria": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Categoria"
+          },
+          "coren": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coren"
+          },
+          "created_at": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Created At"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "role": {
+            "enum": [
+              "admin",
+              "staff"
+            ],
+            "title": "Role",
+            "type": "string"
+          },
+          "username": {
+            "title": "Username",
+            "type": "string"
+          }
+        },
+        "required": [
+          "username",
+          "display_name",
+          "role",
+          "ativo",
+          "created_at",
+          "coren",
+          "categoria"
+        ],
+        "title": "UsuarioResponse",
         "type": "object"
       },
       "ValidationError": {
@@ -2632,9 +2994,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Batch Acknowledge Api Frontend Alerts Batch Acknowledge Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/BatchResultResponse"
                 }
               }
             },
@@ -2676,9 +3036,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Batch Complete Api Frontend Alerts Batch Complete Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/BatchResultResponse"
                 }
               }
             },
@@ -2882,9 +3240,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Status Monitoramento Api Monitoramento Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/MonitoramentoResponse"
                 }
               }
             },
@@ -3723,9 +4079,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Get Stats Api Stats Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/DashboardStatsResponse"
                 }
               }
             },
@@ -3873,8 +4227,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/UnidadeResponse"
                   },
                   "title": "Response Listar Unidades Endpoint Api Unidades Get",
                   "type": "array"
@@ -3916,9 +4269,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Criar Unidade Endpoint Api Unidades Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/UnidadeResponse"
                 }
               }
             },
@@ -3951,8 +4302,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/UsuarioResponse"
                   },
                   "title": "Response Listar Usuarios Api Usuarios Get",
                   "type": "array"

@@ -218,3 +218,108 @@ class RegisterRequest(BaseModel):
     username: str
     password: str
     display_name: str | None = None
+
+
+# ---------------------------------------------------------------------------
+# Respostas consumidas pela SPA
+# ---------------------------------------------------------------------------
+#
+# Cada modelo abaixo foi escrito CONFERINDO o dict que a rota devolve, chave por
+# chave. Nao e zelo excessivo: `response_model` FILTRA o que nao esta declarado,
+# entao um campo esquecido aqui nao vira erro — vira campo que some da resposta,
+# em silencio, e a tela para de mostrar algo sem nada acusando.
+#
+# E o motivo de eles existirem: sem `response_model` a rota nao entra no
+# `openapi.json` com forma nenhuma, e a ancora de `frontend/src/lib/contrato.ts`
+# nao tem contra o que comparar. O tipo do frontend volta a ser uma declaracao
+# independente, mantida em sincronia por disciplina — que foi como
+# `room: string` conviveu com um backend que devolve `null`.
+
+
+class DashboardStatsResponse(BaseModel):
+    activeAlerts: int
+    acknowledgedAlerts: int
+    completedToday: int
+    completedByTeam: int
+    completedBySensor: int
+    completedUnknownOrigin: int
+    totalPatients: int
+    completionRate: float
+    teamCompletionRate: float
+    # `None` quando ninguem reconheceu nada. Zero seria um numero excelente, e
+    # "ninguem olhou" e o oposto disso.
+    medianAckMinutes: float | None
+    acknowledgedCount: int
+    unmonitoredPatients: int
+    monitoringLimitMin: int
+
+
+class StatusMonitoramentoItem(BaseModel):
+    paciente_id: str
+    nome: str | None
+    cama_id: str | None
+    ultima_leitura: str | None
+    minutos_sem_dados: float | None
+    monitorado: bool
+    # Distingue "o sensor parou" de "nunca chegou dado nenhum" — a segunda
+    # costuma ser erro de instalacao ou de vinculo device<->leito, e a acao
+    # corretiva e outra.
+    nunca_recebeu_dados: bool
+
+
+class MonitoramentoResponse(BaseModel):
+    limite_min: int
+    total_com_leito: int
+    monitorados: int
+    sem_monitoramento: int
+    pacientes_sem_monitoramento: List[StatusMonitoramentoItem]
+    pacientes: List[StatusMonitoramentoItem]
+
+
+class BatchResultResponse(BaseModel):
+    """Resultado de acao em lote.
+
+    `processed` e `failed` sao o que torna a falha PARCIAL visivel: o lote pode
+    ter sucesso para a maioria e falhar para alguns (tipicamente 409, quando
+    outra pessoa ja agiu sobre o mesmo alerta).
+    """
+
+    ok: bool
+    processed: int
+    failed: int
+    errors: List["BatchErrorItem"]
+
+
+class BatchErrorItem(BaseModel):
+    """Uma falha dentro de um lote.
+
+    `alert_id` e OPCIONAL, e nao por descuido: ha dois caminhos que alimentam
+    esta lista. O normal reporta qual alerta falhou; o outro e quando a propria
+    task levanta, e ali so existe a excecao — o alerta nem chegou a ser
+    identificado. Declarar obrigatorio faria a tela exibir `undefined` no lugar
+    do identificador justamente no caso mais confuso para quem esta olhando.
+    """
+
+    alert_id: str | None = None
+    error: str
+
+
+class UnidadeResponse(BaseModel):
+    id: int
+    nome: str
+    descricao: str | None
+    ativo: int
+
+
+class UsuarioResponse(BaseModel):
+    username: str
+    display_name: str | None
+    # `Literal`, e nao `str`: `repositories/users.PAPEIS_VALIDOS` so tem estes
+    # dois, e `exigir_papel` decide autorizacao a partir deles. Um `str` solto
+    # obrigava a tela a declarar a uniao por conta propria — e e assim que as
+    # duas pontas passam a discordar sobre quais papeis existem.
+    role: Literal["admin", "staff"]
+    ativo: bool
+    created_at: str | None
+    coren: str | None
+    categoria: str | None

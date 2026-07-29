@@ -1516,6 +1516,40 @@ export interface components {
             /** Motivo */
             motivo?: string | null;
         };
+        /**
+         * BatchErrorItem
+         * @description Uma falha dentro de um lote.
+         *
+         *     `alert_id` e OPCIONAL, e nao por descuido: ha dois caminhos que alimentam
+         *     esta lista. O normal reporta qual alerta falhou; o outro e quando a propria
+         *     task levanta, e ali so existe a excecao — o alerta nem chegou a ser
+         *     identificado. Declarar obrigatorio faria a tela exibir `undefined` no lugar
+         *     do identificador justamente no caso mais confuso para quem esta olhando.
+         */
+        BatchErrorItem: {
+            /** Alert Id */
+            alert_id?: string | null;
+            /** Error */
+            error: string;
+        };
+        /**
+         * BatchResultResponse
+         * @description Resultado de acao em lote.
+         *
+         *     `processed` e `failed` sao o que torna a falha PARCIAL visivel: o lote pode
+         *     ter sucesso para a maioria e falhar para alguns (tipicamente 409, quando
+         *     outra pessoa ja agiu sobre o mesmo alerta).
+         */
+        BatchResultResponse: {
+            /** Errors */
+            errors: components["schemas"]["BatchErrorItem"][];
+            /** Failed */
+            failed: number;
+            /** Ok */
+            ok: boolean;
+            /** Processed */
+            processed: number;
+        };
         /** Body_api_admin_import_alerts_api_admin_import_alerts_post */
         Body_api_admin_import_alerts_api_admin_import_alerts_post: {
             /** Arquivo */
@@ -1532,6 +1566,35 @@ export interface components {
              * Format: binary
              */
             arquivo: string;
+        };
+        /** DashboardStatsResponse */
+        DashboardStatsResponse: {
+            /** Acknowledgedalerts */
+            acknowledgedAlerts: number;
+            /** Acknowledgedcount */
+            acknowledgedCount: number;
+            /** Activealerts */
+            activeAlerts: number;
+            /** Completedbysensor */
+            completedBySensor: number;
+            /** Completedbyteam */
+            completedByTeam: number;
+            /** Completedtoday */
+            completedToday: number;
+            /** Completedunknownorigin */
+            completedUnknownOrigin: number;
+            /** Completionrate */
+            completionRate: number;
+            /** Medianackminutes */
+            medianAckMinutes: number | null;
+            /** Monitoringlimitmin */
+            monitoringLimitMin: number;
+            /** Teamcompletionrate */
+            teamCompletionRate: number;
+            /** Totalpatients */
+            totalPatients: number;
+            /** Unmonitoredpatients */
+            unmonitoredPatients: number;
         };
         /** DefinirSenha */
         DefinirSenha: {
@@ -1658,6 +1721,21 @@ export interface components {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
         };
+        /** MonitoramentoResponse */
+        MonitoramentoResponse: {
+            /** Limite Min */
+            limite_min: number;
+            /** Monitorados */
+            monitorados: number;
+            /** Pacientes */
+            pacientes: components["schemas"]["StatusMonitoramentoItem"][];
+            /** Pacientes Sem Monitoramento */
+            pacientes_sem_monitoramento: components["schemas"]["StatusMonitoramentoItem"][];
+            /** Sem Monitoramento */
+            sem_monitoramento: number;
+            /** Total Com Leito */
+            total_com_leito: number;
+        };
         /**
          * MotivoFechamento
          * @description Justificativa de fechamento de alerta.
@@ -1763,6 +1841,23 @@ export interface components {
             /** Success */
             success: boolean;
         };
+        /** StatusMonitoramentoItem */
+        StatusMonitoramentoItem: {
+            /** Cama Id */
+            cama_id: string | null;
+            /** Minutos Sem Dados */
+            minutos_sem_dados: number | null;
+            /** Monitorado */
+            monitorado: boolean;
+            /** Nome */
+            nome: string | null;
+            /** Nunca Recebeu Dados */
+            nunca_recebeu_dados: boolean;
+            /** Paciente Id */
+            paciente_id: string;
+            /** Ultima Leitura */
+            ultima_leitura: string | null;
+        };
         /**
          * SuppressionCheckResponse
          * @description Resposta da verificação de supressão.
@@ -1807,10 +1902,41 @@ export interface components {
             /** Nome */
             nome: string;
         };
+        /** UnidadeResponse */
+        UnidadeResponse: {
+            /** Ativo */
+            ativo: number;
+            /** Descricao */
+            descricao: string | null;
+            /** Id */
+            id: number;
+            /** Nome */
+            nome: string;
+        };
         /** UnidadesDoUsuario */
         UnidadesDoUsuario: {
             /** Unidades */
             unidades?: number[];
+        };
+        /** UsuarioResponse */
+        UsuarioResponse: {
+            /** Ativo */
+            ativo: boolean;
+            /** Categoria */
+            categoria: string | null;
+            /** Coren */
+            coren: string | null;
+            /** Created At */
+            created_at: string | null;
+            /** Display Name */
+            display_name: string | null;
+            /**
+             * Role
+             * @enum {string}
+             */
+            role: "admin" | "staff";
+            /** Username */
+            username: string;
         };
         /** ValidationError */
         ValidationError: {
@@ -2639,9 +2765,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["BatchResultResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2674,9 +2798,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["BatchResultResponse"];
                 };
             };
             /** @description Validation Error */
@@ -2830,9 +2952,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["MonitoramentoResponse"];
                 };
             };
         };
@@ -3413,9 +3533,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["DashboardStatsResponse"];
                 };
             };
         };
@@ -3474,9 +3592,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["UnidadeResponse"][];
                 };
             };
             /** @description Validation Error */
@@ -3509,9 +3625,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    };
+                    "application/json": components["schemas"]["UnidadeResponse"];
                 };
             };
             /** @description Validation Error */
@@ -3540,9 +3654,7 @@ export interface operations {
                     [name: string]: unknown;
                 };
                 content: {
-                    "application/json": {
-                        [key: string]: unknown;
-                    }[];
+                    "application/json": components["schemas"]["UsuarioResponse"][];
                 };
             };
         };
