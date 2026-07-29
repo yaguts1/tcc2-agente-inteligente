@@ -4766,6 +4766,30 @@
         ]
       }
     },
+    "/api/versoes": {
+      "get": {
+        "description": "Versoes da API atendidas por esta instalacao.\n\nExiste para o prefixo versionado ser DESCOBRIVEL. Sem isto, `/api/v1`\nresponderia sem que nenhum consumidor tivesse como saber que ele existe — e\num mecanismo de versionamento que ninguem encontra nao serve para nada.",
+        "operationId": "listar_versoes_api_versoes_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Listar Versoes Api Versoes Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Listar Versoes",
+        "tags": [
+          "meta"
+        ]
+      }
+    },
     "/healthz": {
       "get": {
         "operationId": "global_health_check_healthz_get",

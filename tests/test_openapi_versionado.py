@@ -68,16 +68,32 @@ def test_rotas_do_app_estao_no_spec(spec_atual):
     Sem isto, um `app.openapi()` degradado passaria na comparacao (arquivo e
     codigo igualmente errados) e o teste acima nao protegeria nada.
     """
+    from interface.api import API_VERSAO_ATUAL
     from interface.web import app
 
-    rotas_reais = {
+    alias_versionado = f"/api/{API_VERSAO_ATUAL}/"
+
+    todas = {
         rota.path
         for rota in app.routes
         if getattr(rota, "methods", None) and rota.path.startswith("/api")
     }
-    no_spec = set(spec_atual["paths"])
+    # O alias versionado fica FORA do spec de proposito: e o mesmo conjunto de
+    # rotas montado duas vezes, entao documenta-lo dobraria o arquivo e os tipos
+    # gerados sem acrescentar informacao (ver interface/api.py).
+    do_alias = {caminho for caminho in todas if caminho.startswith(alias_versionado)}
+    rotas_reais = todas - do_alias
 
-    faltando = sorted(rotas_reais - no_spec)
+    # A exclusao acima so e segura enquanto o alias existir. Se ele for removido
+    # e este filtro ficar, ele deixaria de excluir nada — mas se o PREFIXO
+    # mudar, o filtro passaria a esconder rotas de verdade. Exigir que o alias
+    # esteja povoado prende as duas pontas.
+    assert do_alias, (
+        f"nenhuma rota sob {alias_versionado}: o alias sumiu, ou o prefixo mudou"
+        " e este filtro passaria a esconder rotas reais do spec"
+    )
+
+    faltando = sorted(rotas_reais - set(spec_atual["paths"]))
     assert not faltando, f"rotas da app ausentes do spec: {faltando}"
 
 

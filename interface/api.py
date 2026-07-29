@@ -83,27 +83,71 @@ __all__ = [
     "usuarios",
 ]
 
-# Create main router to aggregate all modules. Mounted into the real app
-# (interface.web:app, the only app actually served — see Dockerfile) with
-# the "/api" prefix already baked in here.
-router = APIRouter(prefix="/api")
-router.include_router(auth.router)
-router.include_router(pacientes.router)
-router.include_router(pacientes.router_dispositivos)
-router.include_router(devices.router)
-router.include_router(alerts.router)
-router.include_router(dashboard.router)
-router.include_router(ingestao.router)
-router.include_router(backup.router)
-router.include_router(admin.router)
+# Versao corrente da API. Ver `router` abaixo.
+API_VERSAO_ATUAL = "v1"
+
+# As rotas, SEM prefixo. Montadas mais abaixo em `/api` e em `/api/v1`.
+#
+# Antes o prefixo `/api` vinha embutido aqui, o que impedia servir o mesmo
+# conjunto em dois caminhos.
+_rotas = APIRouter()
+_rotas.include_router(auth.router)
+_rotas.include_router(pacientes.router)
+_rotas.include_router(pacientes.router_dispositivos)
+_rotas.include_router(devices.router)
+_rotas.include_router(alerts.router)
+_rotas.include_router(dashboard.router)
+_rotas.include_router(ingestao.router)
+_rotas.include_router(backup.router)
+_rotas.include_router(admin.router)
 # IMPORTANTE: router_proprio ANTES de usuarios.router. O FastAPI casa rotas na
 # ordem de registro, e /usuarios/eu/senha casaria com /usuarios/{username}/senha
 # (do router administrativo) se este viesse primeiro — o usuario receberia 403
 # ao tentar trocar a propria senha. Mesmo problema que /agenda/check ja teve.
-router.include_router(usuarios.router_proprio)
-router.include_router(usuarios.router)
-router.include_router(auditoria.router)
-router.include_router(endpoints_agenda.router)
+_rotas.include_router(usuarios.router_proprio)
+_rotas.include_router(usuarios.router)
+_rotas.include_router(auditoria.router)
+_rotas.include_router(endpoints_agenda.router)
+
+
+@_rotas.get("/versoes", tags=["meta"])
+def listar_versoes() -> dict:
+    """Versoes da API atendidas por esta instalacao.
+
+    Existe para o prefixo versionado ser DESCOBRIVEL. Sem isto, `/api/v1`
+    responderia sem que nenhum consumidor tivesse como saber que ele existe — e
+    um mecanismo de versionamento que ninguem encontra nao serve para nada.
+    """
+    return {
+        "atual": API_VERSAO_ATUAL,
+        "versoes": [API_VERSAO_ATUAL],
+        # `/api` sem versao continua atendendo, e responde exatamente o mesmo:
+        # e o que a SPA e o firmware ja instalados usam.
+        "sem_versao_atendido": True,
+    }
+
+
+# O router montado no app (interface.web:app, o unico servido — ver Dockerfile).
+#
+# O MESMO conjunto de rotas atende em dois caminhos:
+#
+#   /api/...      caminho historico, usado pela SPA e pelo firmware ja
+#                 instalados. Continua sendo o documentado.
+#   /api/v1/...   caminho versionado, para um consumidor poder FIXAR a versao e
+#                 nao ser quebrado por uma mudanca futura.
+#
+# O versionado sai do schema (`include_in_schema=False`) de proposito. Hoje os
+# dois sao identicos POR CONSTRUCAO — sao o mesmo objeto montado duas vezes —,
+# entao documentar ambos dobraria o `openapi.json` e os tipos gerados a partir
+# dele sem acrescentar UMA informacao. Quem descobre a versao usa
+# `GET /api/versoes`.
+#
+# No dia em que `/api/v1` divergir de `/api` — que e quando versionar passa a
+# valer o custo — e ele que vira o documentado, e o `/api` sem versao e que
+# passa a ser o alias oculto.
+router = APIRouter()
+router.include_router(_rotas, prefix="/api")
+router.include_router(_rotas, prefix=f"/api/{API_VERSAO_ATUAL}", include_in_schema=False)
 
 # Test helpers (Facade)
 def reset_processador() -> None:

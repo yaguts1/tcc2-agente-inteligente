@@ -23,6 +23,12 @@
 #ifndef REPLAY_COMUM_H
 #define REPLAY_COMUM_H
 
+// Prefixo da API (ver config.example.h). Compatibilidade: um `config.h` que
+// nao o define continua compilando e falando `/api`, como sempre falou.
+#ifndef API_PREFIXO
+#define API_PREFIXO ""
+#endif
+
 #include "esp32_replay.h"
 #include "config.h"
 #include "logica_pura.h"

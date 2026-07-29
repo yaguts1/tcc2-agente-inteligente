@@ -1331,6 +1331,30 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/versoes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Listar Versoes
+         * @description Versoes da API atendidas por esta instalacao.
+         *
+         *     Existe para o prefixo versionado ser DESCOBRIVEL. Sem isto, `/api/v1`
+         *     responderia sem que nenhum consumidor tivesse como saber que ele existe — e
+         *     um mecanismo de versionamento que ninguem encontra nao serve para nada.
+         */
+        get: operations["listar_versoes_api_versoes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/healthz": {
         parameters: {
             query?: never;
@@ -3976,6 +4000,28 @@ export interface operations {
                 };
                 content: {
                     "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listar_versoes_api_versoes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
                 };
             };
         };

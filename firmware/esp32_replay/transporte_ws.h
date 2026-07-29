@@ -35,7 +35,7 @@ unsigned long    g_enviadoEmMs = 0;
 static const unsigned long TIMEOUT_ACK_MS = 15000;
 
 inline void configurarPadraoDoTransporte() {
-  if (g_config.endpoint.isEmpty()) g_config.endpoint = "/api/ws/eventos";
+  if (g_config.endpoint.isEmpty()) g_config.endpoint = String("/api") + API_PREFIXO + "/ws/eventos";
 }
 
 inline void aoEventoWebSocket(WStype_t tipo, uint8_t *payload, size_t length) {

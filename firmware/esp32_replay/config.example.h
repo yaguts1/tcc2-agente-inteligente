@@ -28,6 +28,23 @@
 #define SERVER_IP   "192.168.0.10"
 #define SERVER_PORT 8000
 
+// Prefixo da API. Duas opções, e as duas atendidas pelo servidor:
+//
+//   ""      -> /api/eventos           (caminho histórico, o padrão)
+//   "/v1"   -> /api/v1/eventos        (versão FIXADA)
+//
+// Fixar a versão importa MAIS para o firmware que para qualquer outro
+// consumidor: atualizá-lo exige reflash físico de cada aparelho preso a um
+// leito. Um servidor que mude de contrato quebraria a frota inteira de uma vez,
+// e a correção passaria por visitar leito a leito.
+//
+// Com "/v1", este aparelho continua falando a v1 mesmo depois de o servidor
+// passar a servir uma v2 — e a migração vira uma decisão, não um acidente de
+// deploy.
+//
+// `GET /api/versoes` lista o que o servidor atende.
+#define API_PREFIXO ""
+
 // Token que autentica ESTE dispositivo na ingestão.
 //
 // O X-Device-Id que o firmware envia é escolhido pelo próprio dispositivo —
