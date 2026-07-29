@@ -597,6 +597,80 @@
         "title": "Body_receber_grade_api_grade_post",
         "type": "object"
       },
+      "BradenCreate": {
+        "description": "Os seis subescores. Todos obrigatorios.\n\nUm Braden com cinco dos seis campos nao e um Braden: o total resultante\ncolocaria o paciente numa faixa de risco MAIS LEVE que a real, que e o erro\nque mais importa evitar. Por isso nao ha default em nenhum campo.",
+        "properties": {
+          "atividade": {
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Atividade",
+            "type": "integer"
+          },
+          "friccao_cisalhamento": {
+            "maximum": 3.0,
+            "minimum": 1.0,
+            "title": "Friccao Cisalhamento",
+            "type": "integer"
+          },
+          "mobilidade": {
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Mobilidade",
+            "type": "integer"
+          },
+          "nutricao": {
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Nutricao",
+            "type": "integer"
+          },
+          "observacoes": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observacoes"
+          },
+          "percepcao_sensorial": {
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Percepcao Sensorial",
+            "type": "integer"
+          },
+          "quando": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quando"
+          },
+          "umidade": {
+            "maximum": 4.0,
+            "minimum": 1.0,
+            "title": "Umidade",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "percepcao_sensorial",
+          "umidade",
+          "atividade",
+          "mobilidade",
+          "nutricao",
+          "friccao_cisalhamento"
+        ],
+        "title": "BradenCreate",
+        "type": "object"
+      },
       "DashboardStatsResponse": {
         "properties": {
           "acknowledgedAlerts": {
@@ -609,6 +683,18 @@
           },
           "activeAlerts": {
             "title": "Activealerts",
+            "type": "integer"
+          },
+          "bradenLimiteHoras": {
+            "title": "Bradenlimitehoras",
+            "type": "integer"
+          },
+          "bradenNuncaAvaliado": {
+            "title": "Bradennuncaavaliado",
+            "type": "integer"
+          },
+          "bradenPendentes": {
+            "title": "Bradenpendentes",
             "type": "integer"
           },
           "completedBySensor": {
@@ -672,7 +758,10 @@
           "medianAckMinutes",
           "acknowledgedCount",
           "unmonitoredPatients",
-          "monitoringLimitMin"
+          "monitoringLimitMin",
+          "bradenPendentes",
+          "bradenNuncaAvaliado",
+          "bradenLimiteHoras"
         ],
         "title": "DashboardStatsResponse",
         "type": "object"
@@ -2582,6 +2671,82 @@
         ]
       }
     },
+    "/api/braden/escala": {
+      "get": {
+        "description": "Subescalas, intervalos, faixas e o mapeamento faixa -> perfil.\n\nA tela monta o formulario a partir DAQUI, e o mapeamento vem junto para que\na enfermeira veja qual janela de reposicionamento o escore vai produzir ANTES\nde salvar. Sem isso, a relacao entre o instrumento que ela preenche e o\ncomportamento do sistema fica invisivel — que era o estado anterior, com o\nperfil num dropdown e as janelas em variavel de ambiente.",
+        "operationId": "descrever_escala_api_braden_escala_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Descrever Escala Api Braden Escala Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Descrever Escala",
+        "tags": [
+          "braden"
+        ]
+      }
+    },
+    "/api/braden/pendentes": {
+      "get": {
+        "description": "Quem esta com Braden vencido — ou nunca foi avaliado.\n\nOs dois casos vem separados: vencido e reavaliar; nunca avaliado e um\npaciente que entrou no sistema sem passar pelo instrumento, e o problema\nesta no fluxo de admissao, nao no plantao.",
+        "operationId": "pendentes_api_braden_pendentes_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "horas",
+            "required": false,
+            "schema": {
+              "anyOf": [
+                {
+                  "type": "integer"
+                },
+                {
+                  "type": "null"
+                }
+              ],
+              "title": "Horas"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Pendentes Api Braden Pendentes Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Pendentes",
+        "tags": [
+          "braden"
+        ]
+      }
+    },
     "/api/device_events": {
       "get": {
         "operationId": "api_list_device_events_api_device_events_get",
@@ -4320,6 +4485,106 @@
         "summary": "Dar Alta Endpoint",
         "tags": [
           "pacientes"
+        ]
+      }
+    },
+    "/api/pacientes/{paciente_id}/braden": {
+      "get": {
+        "operationId": "listar_api_pacientes__paciente_id__braden_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "paciente_id",
+            "required": true,
+            "schema": {
+              "title": "Paciente Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Listar Api Pacientes  Paciente Id  Braden Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Listar",
+        "tags": [
+          "braden"
+        ]
+      },
+      "post": {
+        "description": "Registra a avaliacao e APLICA o perfil derivado.\n\nAplicar, e nao sugerir: manter as duas classificacoes lado a lado — a do\ndropdown e a de Braden — reproduziria o problema que esta entidade existe\npara resolver.",
+        "operationId": "registrar_api_pacientes__paciente_id__braden_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "paciente_id",
+            "required": true,
+            "schema": {
+              "title": "Paciente Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BradenCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Registrar Api Pacientes  Paciente Id  Braden Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Registrar",
+        "tags": [
+          "braden"
         ]
       }
     },

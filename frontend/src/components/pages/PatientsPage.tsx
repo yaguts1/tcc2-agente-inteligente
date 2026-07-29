@@ -10,10 +10,11 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Skeleton } from '../ui/skeleton';
 import { ErrorBanner } from '../shared/ErrorBanner';
 import { EmptyState } from '../shared/EmptyState';
-import { Users, Plus, Edit, Trash2, Calendar, X, LogOut, ArrowRightLeft, Activity } from 'lucide-react';
+import { Users, Plus, Edit, Trash2, Calendar, X, LogOut, ArrowRightLeft, Activity, ClipboardList } from 'lucide-react';
 import { PatientForm } from '../patients/PatientForm';
 import { AgendaPanel } from '../patients/AgendaPanel';
 import { LesoesPanel } from '../patients/LesoesPanel';
+import { BradenPanel } from '../patients/BradenPanel';
 import { toast } from 'sonner';
 import {
   AlertDialog,
@@ -35,6 +36,7 @@ export function PatientsPage() {
   const [deletingPatient, setDeletingPatient] = useState<Patient | null>(null);
   const [selectedPatientForAgenda, setSelectedPatientForAgenda] = useState<Patient | null>(null);
   const [pacienteDasLesoes, setPacienteDasLesoes] = useState<Patient | null>(null);
+  const [pacienteDoBraden, setPacienteDoBraden] = useState<Patient | null>(null);
   // Nome das alas, para o cartão não mostrar um id cru. Só é exibido quando há
   // mais de uma: com ala única o rótulo seria ruído constante.
   const [unidades, setUnidades] = useState<Unit[]>([]);
@@ -172,6 +174,19 @@ export function PatientsPage() {
         return null;
     }
   };
+
+  // Sub-view de Braden. `onSalvo` recarrega a lista porque a avaliação APLICA o
+  // perfil na ficha — sem isso o cartão continuaria mostrando o risco antigo.
+  if (pacienteDoBraden) {
+    return (
+      <BradenPanel
+        pacienteId={pacienteDoBraden.id}
+        pacienteNome={pacienteDoBraden.name}
+        onClose={() => setPacienteDoBraden(null)}
+        onSalvo={fetchPatients}
+      />
+    );
+  }
 
   // Sub-view de lesões, no mesmo padrão da de agendas.
   if (pacienteDasLesoes) {
@@ -414,6 +429,15 @@ export function PatientsPage() {
                     >
                       <Activity className="w-4 h-4 mr-1" aria-hidden="true" />
                       Lesões
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => setPacienteDoBraden(patient)}
+                    >
+                      <ClipboardList className="w-4 h-4 mr-1" aria-hidden="true" />
+                      Braden
                     </Button>
                     <Button
                       variant="outline"

@@ -255,6 +255,12 @@ class DashboardStatsResponse(BaseModel):
     acknowledgedCount: int
     unmonitoredPatients: int
     monitoringLimitMin: int
+    # Braden vencido ou nunca feito. Fica ao lado do watchdog de sensor porque
+    # sao as duas formas de o sistema estar cego: um nao recebe dados, o outro
+    # vigia com uma classificacao de risco que pode nao valer mais.
+    bradenPendentes: int
+    bradenNuncaAvaliado: int
+    bradenLimiteHoras: int
 
 
 class StatusMonitoramentoItem(BaseModel):

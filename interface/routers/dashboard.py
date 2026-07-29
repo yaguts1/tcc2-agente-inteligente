@@ -217,6 +217,17 @@ def get_stats(
         # distinguir "está tudo bem" de "parei de receber dados".
         saude = resumo_monitoramento(DB_PATH, unidades=unidades)
 
+        # Braden vencido entra no MESMO payload, ao lado do watchdog de sensor,
+        # e pelo mesmo motivo: sao as duas formas de o sistema estar cego.
+        #
+        # O watchdog cobre "parei de receber dados"; este cobre "estou vigiando
+        # com uma classificacao de risco que pode nao valer mais". Um paciente
+        # que piorou e cuja janela continua a de 120 min esta sendo monitorado
+        # com o protocolo errado — e nada na tela diria isso.
+        from interface.repositories.braden import reavaliacoes_pendentes
+
+        braden = reavaliacoes_pendentes(DB_PATH, unidades=unidades)
+
         return {
             "activeAlerts": active_alerts,
             "acknowledgedAlerts": acked_alerts,
@@ -231,6 +242,9 @@ def get_stats(
             "acknowledgedCount": len(tempos_ate_ack),
             "unmonitoredPatients": saude["sem_monitoramento"],
             "monitoringLimitMin": saude["limite_min"],
+            "bradenPendentes": braden["pendentes"],
+            "bradenNuncaAvaliado": len(braden["nunca_avaliado"]),
+            "bradenLimiteHoras": braden["limite_horas"],
         }
     except Exception as exc:
         logger.exception("stats_error", erro=str(exc))

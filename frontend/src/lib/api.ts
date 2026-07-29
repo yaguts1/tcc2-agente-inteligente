@@ -548,6 +548,77 @@ export const unitsApi = {
     ),
 };
 
+// Escala de Braden — o instrumento que a enfermagem já usa
+//
+// O risco era um enum de três valores num dropdown, sem escore e sem
+// reavaliação, e as janelas de reposicionamento eram variáveis de ambiente
+// globais. Numa ala brasileira, Braden É o que vai para o prontuário: uma
+// ferramenta que não o consome pede uma SEGUNDA classificação de risco,
+// paralela à que a enfermeira já é obrigada a registrar.
+export interface BradenSubescores {
+  percepcao_sensorial: number;
+  umidade: number;
+  atividade: number;
+  mobilidade: number;
+  nutricao: number;
+  /** 1 a 3, não 1 a 4 — é assim na escala. */
+  friccao_cisalhamento: number;
+}
+
+export interface BradenAvaliacao extends BradenSubescores {
+  id: number;
+  paciente_id: string;
+  total: number;
+  /** Faixa original de Braden, cinco níveis. */
+  faixa: string;
+  /** Perfil deste sistema (três níveis), derivado da faixa. */
+  perfil: string;
+  avaliada_ts: string;
+  avaliada_por: string | null;
+  observacoes: string | null;
+}
+
+export interface BradenEscala {
+  subescalas: Record<string, { minimo: number; maximo: number }>;
+  total_minimo: number;
+  total_maximo: number;
+  perfil_por_faixa: Record<string, string>;
+  reavaliacao_horas: number;
+}
+
+export interface BradenPendentes {
+  limite_horas: number;
+  internados: number;
+  nunca_avaliado: Array<{ paciente_id: string; nome: string | null; cama_id: string | null }>;
+  vencidos: Array<{
+    paciente_id: string;
+    nome: string | null;
+    cama_id: string | null;
+    ultimo_total: number | null;
+    horas_desde_ultima?: number;
+  }>;
+  pendentes: number;
+}
+
+export const bradenApi = {
+  /** A escala vem do SERVIDOR, com o mapeamento faixa→perfil junto. */
+  escala: () => request<BradenEscala>('/api/braden/escala'),
+
+  pendentes: () => request<BradenPendentes>('/api/braden/pendentes'),
+
+  doPaciente: (pacienteId: string) =>
+    request<BradenAvaliacao[]>(`/api/pacientes/${encodeURIComponent(pacienteId)}/braden`),
+
+  registrar: (
+    pacienteId: string,
+    dados: BradenSubescores & { observacoes?: string | null },
+  ) =>
+    request<BradenAvaliacao>(`/api/pacientes/${encodeURIComponent(pacienteId)}/braden`, {
+      method: 'POST',
+      body: JSON.stringify(dados),
+    }),
+};
+
 // Lesões por pressão — a variável de DESFECHO
 //
 // O sistema media adesão ao reposicionamento e nunca registrava se a lesão
@@ -951,6 +1022,17 @@ export interface DashboardStats {
   acknowledgedCount: number;
   /** Minutos sem dados a partir dos quais o paciente conta como não monitorado. */
   monitoringLimitMin: number;
+  /**
+   * Pacientes com Braden vencido ou nunca avaliado.
+   *
+   * Fica ao lado de `unmonitoredPatients` porque são as duas formas de o sistema
+   * estar cego: um não recebe dados, o outro vigia com uma classificação de
+   * risco que pode não valer mais — e a janela de reposicionamento vem dela.
+   */
+  bradenPendentes: number;
+  /** Subconjunto dos pendentes que nunca passou pelo instrumento. */
+  bradenNuncaAvaliado: number;
+  bradenLimiteHoras: number;
 }
 
 export const statsApi = {

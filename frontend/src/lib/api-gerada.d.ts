@@ -361,6 +361,56 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/braden/escala": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Descrever Escala
+         * @description Subescalas, intervalos, faixas e o mapeamento faixa -> perfil.
+         *
+         *     A tela monta o formulario a partir DAQUI, e o mapeamento vem junto para que
+         *     a enfermeira veja qual janela de reposicionamento o escore vai produzir ANTES
+         *     de salvar. Sem isso, a relacao entre o instrumento que ela preenche e o
+         *     comportamento do sistema fica invisivel — que era o estado anterior, com o
+         *     perfil num dropdown e as janelas em variavel de ambiente.
+         */
+        get: operations["descrever_escala_api_braden_escala_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/braden/pendentes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Pendentes
+         * @description Quem esta com Braden vencido — ou nunca foi avaliado.
+         *
+         *     Os dois casos vem separados: vencido e reavaliar; nunca avaliado e um
+         *     paciente que entrou no sistema sem passar pelo instrumento, e o problema
+         *     esta no fluxo de admissao, nao no plantao.
+         */
+        get: operations["pendentes_api_braden_pendentes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/device_events": {
         parameters: {
             query?: never;
@@ -1080,6 +1130,31 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/pacientes/{paciente_id}/braden": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Listar */
+        get: operations["listar_api_pacientes__paciente_id__braden_get"];
+        put?: never;
+        /**
+         * Registrar
+         * @description Registra a avaliacao e APLICA o perfil derivado.
+         *
+         *     Aplicar, e nao sugerir: manter as duas classificacoes lado a lado — a do
+         *     dropdown e a de Braden — reproduziria o problema que esta entidade existe
+         *     para resolver.
+         */
+        post: operations["registrar_api_pacientes__paciente_id__braden_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/pacientes/{paciente_id}/lesoes": {
         parameters: {
             query?: never;
@@ -1728,6 +1803,32 @@ export interface components {
              */
             arquivo: string;
         };
+        /**
+         * BradenCreate
+         * @description Os seis subescores. Todos obrigatorios.
+         *
+         *     Um Braden com cinco dos seis campos nao e um Braden: o total resultante
+         *     colocaria o paciente numa faixa de risco MAIS LEVE que a real, que e o erro
+         *     que mais importa evitar. Por isso nao ha default em nenhum campo.
+         */
+        BradenCreate: {
+            /** Atividade */
+            atividade: number;
+            /** Friccao Cisalhamento */
+            friccao_cisalhamento: number;
+            /** Mobilidade */
+            mobilidade: number;
+            /** Nutricao */
+            nutricao: number;
+            /** Observacoes */
+            observacoes?: string | null;
+            /** Percepcao Sensorial */
+            percepcao_sensorial: number;
+            /** Quando */
+            quando?: string | null;
+            /** Umidade */
+            umidade: number;
+        };
         /** DashboardStatsResponse */
         DashboardStatsResponse: {
             /** Acknowledgedalerts */
@@ -1736,6 +1837,12 @@ export interface components {
             acknowledgedCount: number;
             /** Activealerts */
             activeAlerts: number;
+            /** Bradenlimitehoras */
+            bradenLimiteHoras: number;
+            /** Bradennuncaavaliado */
+            bradenNuncaAvaliado: number;
+            /** Bradenpendentes */
+            bradenPendentes: number;
             /** Completedbysensor */
             completedBySensor: number;
             /** Completedbyteam */
@@ -2579,6 +2686,61 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    descrever_escala_api_braden_escala_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    pendentes_api_braden_pendentes_get: {
+        parameters: {
+            query?: {
+                horas?: number | null;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
                 headers: {
                     [name: string]: unknown;
                 };
@@ -3760,6 +3922,76 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listar_api_pacientes__paciente_id__braden_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paciente_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    registrar_api_pacientes__paciente_id__braden_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paciente_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["BradenCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };

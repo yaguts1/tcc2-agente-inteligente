@@ -18,6 +18,7 @@ services:
       # assinatura da trilha de auditoria, e as duas seguiriam desligadas, com
       # o aviso de startup passando por ruido.
       - UPP_DEVICE_TOKEN=${UPP_DEVICE_TOKEN:-}
+      - BRADEN_REAVALIACAO_HORAS=${BRADEN_REAVALIACAO_HORAS:-}
       - UPP_AUDIT_KEY=${UPP_AUDIT_KEY:-}
       # O mesmo defeito das duas acima valia para TODAS as de ajuste abaixo:
       # documentadas no .env.example, lidas pelo codigo e nunca repassadas ao
