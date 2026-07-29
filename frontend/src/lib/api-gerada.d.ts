@@ -731,6 +731,112 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/lesoes/indicadores": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Indicadores
+         * @description Incidencia de LPP por 1000 paciente-dia, na janela.
+         *
+         *     O denominador e paciente-DIA, nao numero de pacientes: uma ala com 10
+         *     pacientes por 30 dias e uma com 300 por 1 dia tem o mesmo paciente-dia e
+         *     riscos completamente diferentes se comparadas por cabeca.
+         */
+        get: operations["indicadores_api_lesoes_indicadores_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lesoes/vocabulario": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Vocabulario
+         * @description Sitios, origens, estagios e desfechos aceitos.
+         *
+         *     Existe para a tela montar os seletores a partir do SERVIDOR. Uma copia da
+         *     lista no JavaScript e o comeco de duas listas divergentes — e ja aconteceu
+         *     neste projeto com o intervalo por perfil de risco, onde o motor usava
+         *     60/90/120 min e a tela dizia 2/3/4 h, o dobro.
+         */
+        get: operations["vocabulario_api_lesoes_vocabulario_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lesoes/{lesao_id}": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Obter Lesao */
+        get: operations["obter_lesao_api_lesoes__lesao_id__get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lesoes/{lesao_id}/avaliacoes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Avaliar Lesao
+         * @description Acrescenta uma avaliacao de estagio.
+         *
+         *     Nao sobrescreve a anterior: a TRAJETORIA e o dado clinico. "Estagio 2 que
+         *     cicatrizou em 6 dias" e "estagio 2 que virou 4" nao sao o mesmo desfecho.
+         */
+        post: operations["avaliar_lesao_api_lesoes__lesao_id__avaliacoes_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/lesoes/{lesao_id}/fechamento": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /** Fechar Lesao */
+        post: operations["fechar_lesao_api_lesoes__lesao_id__fechamento_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/monitoramento": {
         parameters: {
             query?: never;
@@ -968,6 +1074,24 @@ export interface paths {
          *     para o botao de excluir — que e destrutivo.
          */
         post: operations["dar_alta_endpoint_api_pacientes__paciente_id__alta_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/pacientes/{paciente_id}/lesoes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /** Listar Lesoes */
+        get: operations["listar_lesoes_api_pacientes__paciente_id__lesoes_get"];
+        put?: never;
+        /** Registrar Lesao */
+        post: operations["registrar_lesao_api_pacientes__paciente_id__lesoes_post"];
         delete?: never;
         options?: never;
         head?: never;
@@ -1530,6 +1654,19 @@ export interface components {
             /** Message */
             message: string;
         };
+        /** AvaliacaoCreate */
+        AvaliacaoCreate: {
+            /** Comprimento Cm */
+            comprimento_cm?: number | null;
+            /** Estagio */
+            estagio: string;
+            /** Largura Cm */
+            largura_cm?: number | null;
+            /** Observacoes */
+            observacoes?: string | null;
+            /** Quando */
+            quando?: string | null;
+        };
         /**
          * BatchAlertRequest
          * @description Request body for batch alert operations.
@@ -1633,6 +1770,14 @@ export interface components {
             meta?: {
                 [key: string]: unknown;
             } | null;
+        };
+        /** FecharLesao */
+        FecharLesao: {
+            /**
+             * Desfecho
+             * @description cicatrizada | alta_com_lesao | obito | erro_de_registro
+             */
+            desfecho: string;
         };
         /**
          * FrontendAlert
@@ -1744,6 +1889,29 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** LesaoCreate */
+        LesaoCreate: {
+            /** Comprimento Cm */
+            comprimento_cm?: number | null;
+            /**
+             * Estagio
+             * @description estagio_1..4 | nao_classificavel | ...
+             */
+            estagio: string;
+            /** Identificada Em */
+            identificada_em?: string | null;
+            /** Largura Cm */
+            largura_cm?: number | null;
+            /** Observacoes */
+            observacoes?: string | null;
+            /**
+             * Origem
+             * @description presente_na_admissao | adquirida
+             */
+            origem: string;
+            /** Sitio */
+            sitio: string;
         };
         /** MonitoramentoResponse */
         MonitoramentoResponse: {
@@ -2961,6 +3129,168 @@ export interface operations {
             };
         };
     };
+    indicadores_api_lesoes_indicadores_get: {
+        parameters: {
+            query?: {
+                horas?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    vocabulario_api_lesoes_vocabulario_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+        };
+    };
+    obter_lesao_api_lesoes__lesao_id__get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lesao_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    avaliar_lesao_api_lesoes__lesao_id__avaliacoes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lesao_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["AvaliacaoCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    fechar_lesao_api_lesoes__lesao_id__fechamento_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                lesao_id: number;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["FecharLesao"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
     status_monitoramento_api_monitoramento_get: {
         parameters: {
             query?: never;
@@ -3428,6 +3758,76 @@ export interface operations {
         responses: {
             /** @description Successful Response */
             200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listar_lesoes_api_pacientes__paciente_id__lesoes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paciente_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    }[];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    registrar_lesao_api_pacientes__paciente_id__lesoes_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paciente_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["LesaoCreate"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
                 headers: {
                     [name: string]: unknown;
                 };

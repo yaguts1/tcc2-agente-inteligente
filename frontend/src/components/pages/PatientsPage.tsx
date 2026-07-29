@@ -10,9 +10,10 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '.
 import { Skeleton } from '../ui/skeleton';
 import { ErrorBanner } from '../shared/ErrorBanner';
 import { EmptyState } from '../shared/EmptyState';
-import { Users, Plus, Edit, Trash2, Calendar, X, LogOut, ArrowRightLeft } from 'lucide-react';
+import { Users, Plus, Edit, Trash2, Calendar, X, LogOut, ArrowRightLeft, Activity } from 'lucide-react';
 import { PatientForm } from '../patients/PatientForm';
 import { AgendaPanel } from '../patients/AgendaPanel';
+import { LesoesPanel } from '../patients/LesoesPanel';
 import { toast } from 'sonner';
 import {
   AlertDialog,
@@ -33,6 +34,7 @@ export function PatientsPage() {
   const [editingPatient, setEditingPatient] = useState<Patient | null>(null);
   const [deletingPatient, setDeletingPatient] = useState<Patient | null>(null);
   const [selectedPatientForAgenda, setSelectedPatientForAgenda] = useState<Patient | null>(null);
+  const [pacienteDasLesoes, setPacienteDasLesoes] = useState<Patient | null>(null);
   // Nome das alas, para o cartão não mostrar um id cru. Só é exibido quando há
   // mais de uma: com ala única o rótulo seria ruído constante.
   const [unidades, setUnidades] = useState<Unit[]>([]);
@@ -170,6 +172,17 @@ export function PatientsPage() {
         return null;
     }
   };
+
+  // Sub-view de lesões, no mesmo padrão da de agendas.
+  if (pacienteDasLesoes) {
+    return (
+      <LesoesPanel
+        pacienteId={pacienteDasLesoes.id}
+        pacienteNome={pacienteDasLesoes.name}
+        onClose={() => setPacienteDasLesoes(null)}
+      />
+    );
+  }
 
   // Show AgendaPanel when patient is selected
   if (selectedPatientForAgenda) {
@@ -392,6 +405,15 @@ export function PatientsPage() {
                     >
                       <Calendar className="w-4 h-4 mr-1" />
                       Agendas
+                    </Button>
+                    <Button
+                      variant="outline"
+                      size="sm"
+                      className="flex-1"
+                      onClick={() => setPacienteDasLesoes(patient)}
+                    >
+                      <Activity className="w-4 h-4 mr-1" aria-hidden="true" />
+                      Lesões
                     </Button>
                     <Button
                       variant="outline"

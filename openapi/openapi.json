@@ -403,6 +403,68 @@
         "title": "ApiResponse",
         "type": "object"
       },
+      "AvaliacaoCreate": {
+        "properties": {
+          "comprimento_cm": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comprimento Cm"
+          },
+          "estagio": {
+            "title": "Estagio",
+            "type": "string"
+          },
+          "largura_cm": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Largura Cm"
+          },
+          "observacoes": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observacoes"
+          },
+          "quando": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Quando"
+          }
+        },
+        "required": [
+          "estagio"
+        ],
+        "title": "AvaliacaoCreate",
+        "type": "object"
+      },
       "BatchAlertRequest": {
         "description": "Request body for batch alert operations.",
         "properties": {
@@ -651,6 +713,20 @@
           "device_id"
         ],
         "title": "DeviceRegisterRequest",
+        "type": "object"
+      },
+      "FecharLesao": {
+        "properties": {
+          "desfecho": {
+            "description": "cicatrizada | alta_com_lesao | obito | erro_de_registro",
+            "title": "Desfecho",
+            "type": "string"
+          }
+        },
+        "required": [
+          "desfecho"
+        ],
+        "title": "FecharLesao",
         "type": "object"
       },
       "FrontendAlert": {
@@ -945,6 +1021,80 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "LesaoCreate": {
+        "properties": {
+          "comprimento_cm": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Comprimento Cm"
+          },
+          "estagio": {
+            "description": "estagio_1..4 | nao_classificavel | ...",
+            "title": "Estagio",
+            "type": "string"
+          },
+          "identificada_em": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Identificada Em"
+          },
+          "largura_cm": {
+            "anyOf": [
+              {
+                "maximum": 100.0,
+                "minimum": 0.0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Largura Cm"
+          },
+          "observacoes": {
+            "anyOf": [
+              {
+                "maxLength": 1000,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Observacoes"
+          },
+          "origem": {
+            "description": "presente_na_admissao | adquirida",
+            "title": "Origem",
+            "type": "string"
+          },
+          "sitio": {
+            "title": "Sitio",
+            "type": "string"
+          }
+        },
+        "required": [
+          "sitio",
+          "origem",
+          "estagio"
+        ],
+        "title": "LesaoCreate",
         "type": "object"
       },
       "MonitoramentoResponse": {
@@ -3231,6 +3381,229 @@
         ]
       }
     },
+    "/api/lesoes/indicadores": {
+      "get": {
+        "description": "Incidencia de LPP por 1000 paciente-dia, na janela.\n\nO denominador e paciente-DIA, nao numero de pacientes: uma ala com 10\npacientes por 30 dias e uma com 300 por 1 dia tem o mesmo paciente-dia e\nriscos completamente diferentes se comparadas por cabeca.",
+        "operationId": "indicadores_api_lesoes_indicadores_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "horas",
+            "required": false,
+            "schema": {
+              "default": 720,
+              "title": "Horas",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Indicadores Api Lesoes Indicadores Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Indicadores",
+        "tags": [
+          "lesoes"
+        ]
+      }
+    },
+    "/api/lesoes/vocabulario": {
+      "get": {
+        "description": "Sitios, origens, estagios e desfechos aceitos.\n\nExiste para a tela montar os seletores a partir do SERVIDOR. Uma copia da\nlista no JavaScript e o comeco de duas listas divergentes — e ja aconteceu\nneste projeto com o intervalo por perfil de risco, onde o motor usava\n60/90/120 min e a tela dizia 2/3/4 h, o dobro.",
+        "operationId": "vocabulario_api_lesoes_vocabulario_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Vocabulario Api Lesoes Vocabulario Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Vocabulario",
+        "tags": [
+          "lesoes"
+        ]
+      }
+    },
+    "/api/lesoes/{lesao_id}": {
+      "get": {
+        "operationId": "obter_lesao_api_lesoes__lesao_id__get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "lesao_id",
+            "required": true,
+            "schema": {
+              "title": "Lesao Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Obter Lesao Api Lesoes  Lesao Id  Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Obter Lesao",
+        "tags": [
+          "lesoes"
+        ]
+      }
+    },
+    "/api/lesoes/{lesao_id}/avaliacoes": {
+      "post": {
+        "description": "Acrescenta uma avaliacao de estagio.\n\nNao sobrescreve a anterior: a TRAJETORIA e o dado clinico. \"Estagio 2 que\ncicatrizou em 6 dias\" e \"estagio 2 que virou 4\" nao sao o mesmo desfecho.",
+        "operationId": "avaliar_lesao_api_lesoes__lesao_id__avaliacoes_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "lesao_id",
+            "required": true,
+            "schema": {
+              "title": "Lesao Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AvaliacaoCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Avaliar Lesao Api Lesoes  Lesao Id  Avaliacoes Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Avaliar Lesao",
+        "tags": [
+          "lesoes"
+        ]
+      }
+    },
+    "/api/lesoes/{lesao_id}/fechamento": {
+      "post": {
+        "operationId": "fechar_lesao_api_lesoes__lesao_id__fechamento_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "lesao_id",
+            "required": true,
+            "schema": {
+              "title": "Lesao Id",
+              "type": "integer"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/FecharLesao"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Fechar Lesao Api Lesoes  Lesao Id  Fechamento Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Fechar Lesao",
+        "tags": [
+          "lesoes"
+        ]
+      }
+    },
     "/api/monitoramento": {
       "get": {
         "description": "Quais pacientes estão (ou não) com dados chegando.\n\nResponde à pergunta que o dashboard não conseguia responder: \"não há\nalertas porque está tudo bem, ou porque parei de receber dados?\".\n\n`nunca_recebeu_dados` separa \"o sensor parou\" de \"nunca chegou leitura\nnenhuma\" — a segunda costuma ser erro de instalação ou de vínculo\ndevice↔leito, e a ação corretiva é diferente.",
@@ -3935,6 +4308,105 @@
         "summary": "Dar Alta Endpoint",
         "tags": [
           "pacientes"
+        ]
+      }
+    },
+    "/api/pacientes/{paciente_id}/lesoes": {
+      "get": {
+        "operationId": "listar_lesoes_api_pacientes__paciente_id__lesoes_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "paciente_id",
+            "required": true,
+            "schema": {
+              "title": "Paciente Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "additionalProperties": true,
+                    "type": "object"
+                  },
+                  "title": "Response Listar Lesoes Api Pacientes  Paciente Id  Lesoes Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Listar Lesoes",
+        "tags": [
+          "lesoes"
+        ]
+      },
+      "post": {
+        "operationId": "registrar_lesao_api_pacientes__paciente_id__lesoes_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "paciente_id",
+            "required": true,
+            "schema": {
+              "title": "Paciente Id",
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/LesaoCreate"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Registrar Lesao Api Pacientes  Paciente Id  Lesoes Post",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Registrar Lesao",
+        "tags": [
+          "lesoes"
         ]
       }
     },

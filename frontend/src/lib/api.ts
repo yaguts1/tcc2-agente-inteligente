@@ -505,6 +505,109 @@ export const unitsApi = {
     ),
 };
 
+// Lesões por pressão — a variável de DESFECHO
+//
+// O sistema media adesão ao reposicionamento e nunca registrava se a lesão
+// aconteceu. Sem isto, a correlação que o projeto existe para demonstrar
+// (adesão ao protocolo vs. incidência de LPP) não é computável nem em
+// princípio: media-se o processo e ignorava-se o resultado.
+export interface LesaoAvaliacao {
+  ts: string;
+  estagio: string;
+  comprimento_cm: number | null;
+  largura_cm: number | null;
+  avaliada_por: string | null;
+  observacoes: string | null;
+}
+
+export interface Lesao {
+  id: number;
+  paciente_id: string;
+  internacao_id: number | null;
+  unidade_id: number | null;
+  sitio: string;
+  /**
+   * `presente_na_admissao` | `adquirida`.
+   *
+   * Separa prevalência de incidência: lesão que o paciente trouxe não é falha
+   * do cuidado desta unidade. Somar as duas pune quem recebe paciente grave de
+   * outro serviço — e é esse número que faz uma equipe deixar de registrar.
+   */
+  origem: string;
+  identificada_ts: string;
+  identificada_por: string | null;
+  fechada_ts: string | null;
+  desfecho: string | null;
+  observacoes: string | null;
+  /** Derivado da avaliação mais recente, nunca duplicado numa coluna. */
+  estagio_atual: string | null;
+  estagio_inicial: string | null;
+  avaliacoes: number;
+  historico?: LesaoAvaliacao[];
+}
+
+export interface VocabularioLesao {
+  sitios: string[];
+  origens: string[];
+  estagios: string[];
+  desfechos: string[];
+}
+
+export interface IndicadoresLesao {
+  janela_horas: number;
+  lesoes_adquiridas: number;
+  lesoes_presentes_na_admissao: number;
+  pacientes_dia: number;
+  /**
+   * `null` quando não há paciente-dia na janela. Zero seria o melhor resultado
+   * possível, e "não há denominador" é outra coisa.
+   */
+  incidencia_por_1000_pacientes_dia: number | null;
+  pacientes_internados: number;
+}
+
+export const lesoesApi = {
+  /** Vocabulário vem do SERVIDOR: uma cópia no JS é o começo de duas listas divergentes. */
+  vocabulario: () => request<VocabularioLesao>('/api/lesoes/vocabulario'),
+
+  indicadores: (horas = 720) =>
+    request<IndicadoresLesao>(`/api/lesoes/indicadores?horas=${horas}`),
+
+  doPaciente: (pacienteId: string) =>
+    request<Lesao[]>(`/api/pacientes/${encodeURIComponent(pacienteId)}/lesoes`),
+
+  registrar: (
+    pacienteId: string,
+    dados: {
+      sitio: string;
+      origem: string;
+      estagio: string;
+      observacoes?: string | null;
+      comprimento_cm?: number | null;
+      largura_cm?: number | null;
+    },
+  ) =>
+    request<Lesao>(`/api/pacientes/${encodeURIComponent(pacienteId)}/lesoes`, {
+      method: 'POST',
+      body: JSON.stringify(dados),
+    }),
+
+  avaliar: (
+    lesaoId: number,
+    dados: { estagio: string; comprimento_cm?: number | null; observacoes?: string | null },
+  ) =>
+    request<Lesao>(`/api/lesoes/${lesaoId}/avaliacoes`, {
+      method: 'POST',
+      body: JSON.stringify(dados),
+    }),
+
+  fechar: (lesaoId: number, desfecho: string) =>
+    request<Lesao>(`/api/lesoes/${lesaoId}/fechamento`, {
+      method: 'POST',
+      body: JSON.stringify({ desfecho }),
+    }),
+};
+
 // Simulation API
 export interface SimulationRequest {
   duracao_horas: number;

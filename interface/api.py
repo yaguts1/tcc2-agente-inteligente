@@ -41,7 +41,8 @@ from interface.routers import (
     dashboard,
     ingestao,
     backup,
-    admin
+    admin,
+    lesoes,
 )
 from interface import endpoints_agenda
 
@@ -107,6 +108,7 @@ _rotas.include_router(admin.router)
 _rotas.include_router(usuarios.router_proprio)
 _rotas.include_router(usuarios.router)
 _rotas.include_router(auditoria.router)
+_rotas.include_router(lesoes.router)
 _rotas.include_router(endpoints_agenda.router)
 
 
