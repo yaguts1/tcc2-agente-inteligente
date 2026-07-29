@@ -109,6 +109,23 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      # Os tipos do backend sao GERADOS do openapi.json, e `src/lib/contrato.ts`
+      # ancora neles as interfaces escritas a mao. Regerar aqui e comparar e o
+      # que impede as duas pontas de divergirem: sem esta etapa, o arquivo
+      # gerado ficaria congelado no commit e a ancora passaria a comparar o
+      # frontend com uma foto antiga do backend — parecendo verde justamente
+      # quando o contrato mudou.
+      - name: Regerar tipos do contrato
+        run: npm run gen:api-types
+
+      - name: Conferir que os tipos gerados estao em dia
+        run: |
+          if ! git diff --exit-code -- src/lib/api-gerada.d.ts; then
+            echo "::error::Tipos do contrato desatualizados."
+            echo "Rode: python -m openapi.generate_openapi && cd frontend && npm run gen:api-types"
+            exit 1
+          fi
+
       - name: Type-check
         run: npm run typecheck
 

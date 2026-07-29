@@ -356,7 +356,14 @@ export function PatientsPage() {
                       size="sm"
                       className="flex-1"
                       onClick={() => {
-                        setDestino({ room: patient.room, bed: patient.bed, unitId: patient.unitId });
+                        // `?? ''` porque quarto e leito são opcionais: um
+                        // paciente sem leito é caso válido, e passar `null`
+                        // para o `value` do input o tornaria não-controlado.
+                        setDestino({
+                          room: patient.room ?? '',
+                          bed: patient.bed ?? '',
+                          unitId: patient.unitId,
+                        });
                         setTransferindo(patient);
                       }}
                     >

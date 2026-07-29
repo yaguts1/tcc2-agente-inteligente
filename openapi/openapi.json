@@ -517,47 +517,71 @@
         "type": "object"
       },
       "FrontendAlert": {
-        "additionalProperties": true,
+        "description": "Alerta no formato que a SPA consome.\n\nExistia como JSON-Schema ESCRITO A MAO dentro de `openapi/generate_openapi.py`,\ncosturado no spec depois de gerado. Ou seja, a mesma forma tinha TRES\ndefinicoes independentes — o dict literal montado em `alerts_service`, o\nJSON-Schema do gerador, e a interface TypeScript — e as tres so coincidiam\npor disciplina.\n\nJa tinham divergido: o schema a mao declarava `room`/`bed` opcionais e\n`[\"string\",\"null\"]`, enquanto o TS os declarava `string` obrigatorio.\n\nComo modelo pydantic, o schema passa a ser DERIVADO do que a rota promete, e\no gerador volta a ser so um gerador.",
         "properties": {
           "bed": {
+            "title": "Bed",
             "type": "string"
           },
           "closedBy": {
-            "type": [
-              "string",
-              "null"
-            ]
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Closedby"
           },
           "closureOrigin": {
-            "enum": [
-              "equipe",
-              "sensor",
-              "sistema",
-              null
+            "anyOf": [
+              {
+                "enum": [
+                  "equipe",
+                  "sensor",
+                  "sistema"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
             ],
-            "type": [
-              "string",
-              "null"
-            ]
+            "title": "Closureorigin"
           },
           "id": {
+            "title": "Id",
             "type": "string"
           },
           "lastRepositioning": {
-            "format": "date-time",
-            "type": [
-              "string",
-              "null"
-            ]
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Lastrepositioning"
           },
           "nextRepositioning": {
-            "format": "date-time",
-            "type": [
-              "string",
-              "null"
-            ]
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Nextrepositioning"
+          },
+          "patientId": {
+            "title": "Patientid",
+            "type": "string"
           },
           "patientName": {
+            "title": "Patientname",
             "type": "string"
           },
           "riskLevel": {
@@ -566,9 +590,11 @@
               "medium",
               "low"
             ],
+            "title": "Risklevel",
             "type": "string"
           },
           "room": {
+            "title": "Room",
             "type": "string"
           },
           "status": {
@@ -577,15 +603,24 @@
               "acknowledged",
               "completed"
             ],
+            "title": "Status",
             "type": "string"
           }
         },
         "required": [
           "id",
+          "patientId",
           "patientName",
+          "room",
+          "bed",
+          "lastRepositioning",
+          "nextRepositioning",
           "riskLevel",
-          "status"
+          "status",
+          "closureOrigin",
+          "closedBy"
         ],
+        "title": "FrontendAlert",
         "type": "object"
       },
       "FrontendCreatePatient": {
@@ -659,6 +694,107 @@
           "riskLevel"
         ],
         "title": "FrontendCreatePatient",
+        "type": "object"
+      },
+      "FrontendPatient": {
+        "description": "Paciente no formato que a SPA consome.\n\nExistia com ZERO referencias: as rotas declaravam `response_model=dict`, que\nnao gera schema nenhum e nao valida nada. O resultado nao era so falta de\ndocumentacao — era divergencia real e ja instalada:\n\n    `services/paciente_service._transform_patient` devolve `room` e `bed`\n    possivelmente `None` (paciente sem leito, e depois da alta e o caso\n    NORMAL), enquanto `lib/api.ts` declarava os dois como `string`\n    obrigatorio.\n\nOu seja, o TypeScript strict do frontend estava mentindo, e `patient.room`\nera `undefined` num campo tipado como `string` — o tipo de erro que so\naparece em runtime, num `.toLowerCase()` qualquer.\n\nLigando o modelo aqui, o `null` passa a constar no spec, o gerador de tipos\ndo front o propaga, e o `strict` volta a dizer a verdade.",
+        "properties": {
+          "bed": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Bed"
+          },
+          "createdAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Createdat"
+          },
+          "id": {
+            "title": "Id",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "repositioningInterval": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Repositioninginterval"
+          },
+          "riskLevel": {
+            "enum": [
+              "high",
+              "medium",
+              "low"
+            ],
+            "title": "Risklevel",
+            "type": "string"
+          },
+          "room": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Room"
+          },
+          "unitId": {
+            "anyOf": [
+              {
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Unitid"
+          },
+          "updatedAt": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Updatedat"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "room",
+          "bed",
+          "riskLevel",
+          "repositioningInterval",
+          "createdAt",
+          "updatedAt",
+          "unitId"
+        ],
+        "title": "FrontendPatient",
         "type": "object"
       },
       "HTTPValidationError": {
@@ -2453,6 +2589,7 @@
                   "items": {
                     "$ref": "#/components/schemas/FrontendAlert"
                   },
+                  "title": "Response Frontend Alerts Api Frontend Alerts Get",
                   "type": "array"
                 }
               }
@@ -2782,8 +2919,7 @@
               "application/json": {
                 "schema": {
                   "items": {
-                    "additionalProperties": true,
-                    "type": "object"
+                    "$ref": "#/components/schemas/FrontendPatient"
                   },
                   "title": "Response Listar Pacientes Endpoint Api Pacientes Get",
                   "type": "array"
@@ -2826,9 +2962,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Criar Paciente Endpoint Api Pacientes Post",
-                  "type": "object"
+                  "$ref": "#/components/schemas/FrontendPatient"
                 }
               }
             },
@@ -3000,9 +3134,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Obter Paciente Endpoint Api Pacientes  Paciente Id  Get",
-                  "type": "object"
+                  "$ref": "#/components/schemas/FrontendPatient"
                 }
               }
             },
@@ -3053,9 +3185,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "additionalProperties": true,
-                  "title": "Response Atualizar Paciente Endpoint Api Pacientes  Paciente Id  Patch",
-                  "type": "object"
+                  "$ref": "#/components/schemas/FrontendPatient"
                 }
               }
             },

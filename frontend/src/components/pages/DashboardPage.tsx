@@ -71,8 +71,11 @@ export function DashboardPage() {
     
     // Filter by patient ID
     if (filters.patientId) {
-      const alertPatientId = alert.id.split('__')[0];
-      if (alertPatientId !== filters.patientId) {
+      // `alert.patientId`, e não `alert.id.split('__')[0]`: desmontar o
+      // identificador aqui reimplementava o formato dele do lado do cliente,
+      // onde ele quebraria em silêncio no dia em que o formato mudasse — e o
+      // sintoma seria um filtro que simplesmente para de casar, sem erro.
+      if (alert.patientId !== filters.patientId) {
         return false;
       }
     }

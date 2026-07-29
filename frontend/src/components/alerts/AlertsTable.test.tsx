@@ -17,6 +17,7 @@ const AGORA = new Date('2026-01-01T12:00:00Z');
 function alerta(over: Partial<Alert> = {}): Alert {
   return {
     id: 'PAC-0001__2026-01-01T10:00:00',
+    patientId: 'PAC-0001',
     patientName: 'Maria Silva',
     room: '101',
     bed: 'A',

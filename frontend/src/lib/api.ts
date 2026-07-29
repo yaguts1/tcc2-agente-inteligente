@@ -266,7 +266,21 @@ export const MOTIVOS_DE_FECHAMENTO: ReadonlyArray<{
 
 export interface Alert {
   id: string;
+  /**
+   * Paciente do alerta, explícito.
+   *
+   * A tela obtinha isto desmontando `id` com `split('__')[0]`, o que
+   * reimplementava o formato do identificador no cliente. O backend passou a
+   * mandá-lo pronto — o formato do `id` volta a ser assunto só do servidor.
+   */
+  patientId: string;
   patientName: string;
+  /**
+   * Aqui são `string` (possivelmente vazia), diferente de `Patient`, onde são
+   * anuláveis. O caminho do alerta passa por `dividir_cama`, que devolve `''`
+   * para paciente sem leito; o de paciente devolve `null`. A âncora em
+   * `contrato.ts` é o que garante que essa diferença continue verdadeira.
+   */
   room: string;
   bed: string;
   lastRepositioning: string;
@@ -342,12 +356,12 @@ export const alertsApi = {
   },
 
   acknowledge: (id: string) =>
-    request<void>(`/api/frontend/alerts/${id}/acknowledge`, {
+    request<void>(`/api/frontend/alerts/${encodeURIComponent(id)}/acknowledge`, {
       method: 'POST',
     }),
 
   complete: (id: string, motivo?: MotivoFechamento) =>
-    request<void>(`/api/frontend/alerts/${id}/complete`, {
+    request<void>(`/api/frontend/alerts/${encodeURIComponent(id)}/complete`, {
       method: 'POST',
       body: JSON.stringify({ motivo: motivo ?? null }),
     }),
@@ -402,8 +416,17 @@ export const timelineApi = {
 export interface Patient {
   id: string;
   name: string;
-  room: string;
-  bed: string;
+  /**
+   * Quarto e leito são OPCIONAIS.
+   *
+   * Estavam declarados como `string` obrigatório enquanto o backend devolve
+   * `null` para paciente sem leito — e depois da alta esse é o estado normal.
+   * O `strict` do TypeScript estava mentindo: `patient.room` chegava
+   * `undefined` num campo tipado como `string`, e o erro só apareceria em
+   * runtime, num `.toLowerCase()` qualquer.
+   */
+  room: string | null;
+  bed: string | null;
   riskLevel: 'high' | 'medium' | 'low';
   repositioningInterval: number;
   createdAt: string;

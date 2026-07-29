@@ -14,7 +14,12 @@ from interface.dependencies import (
     verificar_token_dispositivo,
 )
 from interface.tempo import agora_utc_naive
-from interface.schemas import PacienteConfigResponse, RotinaConfig, FrontendCreatePatient
+from interface.schemas import (
+    FrontendCreatePatient,
+    FrontendPatient,
+    PacienteConfigResponse,
+    RotinaConfig,
+)
 from interface.repositories.pacientes import JaTeveAlta, PatientRepository
 from interface.services.paciente_service import PatientService, UnidadeForaDoEscopo
 from dados_simulados.gerador import (
@@ -52,7 +57,7 @@ repository = PatientRepository(DB_PATH)
 service = PatientService(repository)
 
 
-@router.post("/pacientes", response_model=dict, status_code=status.HTTP_201_CREATED)
+@router.post("/pacientes", response_model=FrontendPatient, status_code=status.HTTP_201_CREATED)
 def criar_paciente_endpoint(payload: FrontendCreatePatient) -> dict:
     """Criar um novo paciente."""
     try:
@@ -61,7 +66,7 @@ def criar_paciente_endpoint(payload: FrontendCreatePatient) -> dict:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
 
 
-@router.get("/pacientes", response_model=List[dict], status_code=status.HTTP_200_OK)
+@router.get("/pacientes", response_model=List[FrontendPatient], status_code=status.HTTP_200_OK)
 def listar_pacientes_endpoint(
     incluir_alta: bool = False,
     unidades: set[int] | None = Depends(escopo_de_unidades),
@@ -139,7 +144,7 @@ async def obter_paciente_por_cama_endpoint(cama_id: str) -> PacienteConfigRespon
     )
 
 
-@router.get("/pacientes/{paciente_id}", response_model=dict, status_code=status.HTTP_200_OK)
+@router.get("/pacientes/{paciente_id}", response_model=FrontendPatient, status_code=status.HTTP_200_OK)
 def obter_paciente_endpoint(paciente_id: str) -> dict:
     """Obter um paciente pelo ID."""
     paciente = service.get_patient(paciente_id)
@@ -147,7 +152,7 @@ def obter_paciente_endpoint(paciente_id: str) -> dict:
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paciente nao encontrado")
     return paciente
 
-@router.patch("/pacientes/{paciente_id}", response_model=dict, status_code=status.HTTP_200_OK)
+@router.patch("/pacientes/{paciente_id}", response_model=FrontendPatient, status_code=status.HTTP_200_OK)
 def atualizar_paciente_endpoint(paciente_id: str, payload: FrontendCreatePatient) -> dict:
     """Atualizar um paciente existente."""
     try:

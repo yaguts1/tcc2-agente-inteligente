@@ -37,46 +37,17 @@ def generate_openapi(output: Path | None = None) -> Dict[str, Any]:
 
     spec = app.openapi() or {}
 
-    # ensure components.schemas exists
-    components = spec.setdefault("components", {})
-    schemas = components.setdefault("schemas", {})
-
-    # Define the FrontendAlert schema expected by the React app
-    frontend_alert_schema = {
-        "type": "object",
-        "properties": {
-            "id": {"type": "string"},
-            "patientName": {"type": "string"},
-            "room": {"type": "string"},
-            "bed": {"type": "string"},
-            "lastRepositioning": {"type": ["string", "null"], "format": "date-time"},
-            "nextRepositioning": {"type": ["string", "null"], "format": "date-time"},
-            "riskLevel": {"type": "string", "enum": ["high", "medium", "low"]},
-            "status": {"type": "string", "enum": ["pending", "acknowledged", "completed"]},
-            "closureOrigin": {
-                "type": ["string", "null"],
-                "enum": ["equipe", "sensor", "sistema", None],
-            },
-            "closedBy": {"type": ["string", "null"]},
-        },
-        "required": ["id", "patientName", "riskLevel", "status"],
-        "additionalProperties": True,
-    }
-
-    schemas["FrontendAlert"] = frontend_alert_schema
-
-    # Patch the /api/frontend/alerts GET response to reference this schema
-    paths = spec.setdefault("paths", {})
-    target = "/api/frontend/alerts"
-    if target not in paths:
-        paths[target] = {}
-    get_op = paths[target].setdefault("get", {})
-    responses = get_op.setdefault("responses", {})
-    resp200 = responses.setdefault("200", {})
-    content = resp200.setdefault("content", {})
-    app_json = content.setdefault("application/json", {})
-    # set schema to array of FrontendAlert
-    app_json["schema"] = {"type": "array", "items": {"$ref": "#/components/schemas/FrontendAlert"}}
+    # O schema de FrontendAlert NAO e mais escrito aqui.
+    #
+    # Ele era um JSON-Schema a mao, costurado no spec depois de gerado — a
+    # mesma forma tinha TRES definicoes independentes (o dict literal do
+    # servico, este bloco, e a interface TypeScript), e as tres so coincidiam
+    # por disciplina. Ja tinham divergido: aqui `room`/`bed` eram opcionais,
+    # no TS eram obrigatorios.
+    #
+    # Agora `interface/schemas.FrontendAlert` e um modelo pydantic declarado na
+    # rota, entao o FastAPI deriva o schema sozinho e este gerador volta a ser
+    # so um gerador.
 
     if output is not None:
         output.parent.mkdir(parents=True, exist_ok=True)

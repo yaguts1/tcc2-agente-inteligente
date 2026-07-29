@@ -1,13 +1,14 @@
 from __future__ import annotations
 
-from typing import Optional
+from typing import List, Optional
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 
 from interface.api_shared import DB_PATH, _check_api_rate_limit, _check_batch_rate_limit
-from interface.schemas import BatchAlertRequest, MotivoFechamento
+from interface.alert_id import AlertIdInvalido, partir_alert_id
+from interface.schemas import BatchAlertRequest, FrontendAlert, MotivoFechamento
 from interface.ws_manager_optimized import ws_manager_optimized, WebSocketFilter
 from interface.dependencies import (
     escopo_de_unidades,
@@ -28,7 +29,11 @@ logger = structlog.get_logger(__name__)
 router = APIRouter(tags=["alerts"])
 
 
-@router.get("/frontend/alerts", status_code=status.HTTP_200_OK)
+@router.get(
+    "/frontend/alerts",
+    response_model=List[FrontendAlert],
+    status_code=status.HTTP_200_OK,
+)
 async def frontend_alerts(
     response: Response,
     horas: int | None = 24,
@@ -100,10 +105,16 @@ async def batch_complete(
 @router.post("/frontend/alerts/{alert_id}/acknowledge", status_code=status.HTTP_200_OK)
 async def frontend_acknowledge(alert_id: str, user: str = Depends(get_current_user)) -> dict:
     """Reconhece um alerta e registra evento na timeline."""
+    # `split` solto nunca levantava: qualquer string passava, e o erro so
+    # aparecia adiante como "alerta nao encontrado" — ou, pior, resolvia para
+    # outro alerta. `partir_alert_id` valida a FORMA.
     try:
-        alert_id.split("__", 1)
-    except Exception:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={"code": "invalid_alert_id", "message": "Invalid alert id"})
+        partir_alert_id(alert_id)
+    except AlertIdInvalido as exc:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail={"code": "invalid_alert_id", "message": str(exc)},
+        ) from exc
     try:
         await reconhecer_alerta(alert_id, user)
     except LookupError:
@@ -132,10 +143,16 @@ async def frontend_complete(
     a rota funcionando sem corpo e o que permite a SPA e qualquer script
     existente continuarem chamando enquanto migram.
     """
+    # `split` solto nunca levantava: qualquer string passava, e o erro so
+    # aparecia adiante como "alerta nao encontrado" — ou, pior, resolvia para
+    # outro alerta. `partir_alert_id` valida a FORMA.
     try:
-        alert_id.split("__", 1)
-    except Exception:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={"code": "invalid_alert_id", "message": "Invalid alert id"})
+        partir_alert_id(alert_id)
+    except AlertIdInvalido as exc:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            detail={"code": "invalid_alert_id", "message": str(exc)},
+        ) from exc
     try:
         await completar_alerta(alert_id, user, motivo=payload.motivo if payload else None)
     except LookupError:

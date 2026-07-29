@@ -19,6 +19,7 @@ from interface.dao import (
     listar_fichas_pacientes,
     selecionar_alertas_janela,
 )
+from interface.alert_id import montar_alert_id, partir_alert_id
 from interface.repositories.alertas import (
     MOTIVO_REPOSICIONADO,
     MOTIVOS_SEM_REPOSICIONAMENTO,
@@ -155,7 +156,10 @@ async def listar_alertas_frontend_paginado(
 
     def _quarto_e_leito(paciente_id: str) -> tuple[str, str, str]:
         ficha = fichas.get(str(paciente_id))
-        nome = ficha.get("nome") if ficha else paciente_id
+        # `or paciente_id` fecha o caso de ficha existente com `nome` NULL, que
+        # o banco permite. Sem ele o contrato prometeria `patientName: str` e
+        # entregaria `null` — e a tela quebraria num `.toLowerCase()` da busca.
+        nome = (ficha.get("nome") if ficha else None) or paciente_id
         # Mesma funcao que a tela de Pacientes usa. Aqui a separacao era por
         # BARRA enquanto o cadastro junta com HIFEN, entao nunca casava: o
         # dashboard mostrava o `cama_id` inteiro como quarto e o leito vazio.
@@ -221,7 +225,12 @@ async def listar_alertas_frontend_paginado(
 
         results.append(
             {
-                "id": f"{paciente_id}__{inicio}",
+                "id": montar_alert_id(paciente_id, inicio),
+                # O paciente, explicito. A tela precisava dele para filtrar e o
+                # obtinha desmontando o `id` com `split('__')[0]` — reimplementando
+                # o formato do identificador do lado do cliente, onde ele passa a
+                # quebrar em silencio no dia em que o formato mudar.
+                "patientId": paciente_id,
                 "patientName": patient_name,
                 "room": room_val,
                 "bed": bed,
@@ -256,7 +265,7 @@ def _montar_payload_broadcast(alert_id: str, paciente_id: str, ws_status: str) -
     severity = None
     alert_type = None
     try:
-        _, inicio = alert_id.split("__", 1)
+        _, inicio = partir_alert_id(alert_id)
         for a in selecionar_alertas_janela(DB_PATH, horas=None):
             if a.get("paciente_id") == paciente_id and a.get("inicio") == inicio:
                 severity = _RISK_MAP.get(str(a.get("perfil") or "").lower())
@@ -304,7 +313,7 @@ def montar_payload_alerta_novo(paciente_id: str, alerta: dict) -> dict:
     inicio = str(alerta.get("inicio") or "")
     return {
         "type": "alert_new",
-        "alert_id": f"{paciente_id}__{inicio}",
+        "alert_id": montar_alert_id(paciente_id, inicio),
         "status": _STATUS_MAP.get(str(alerta.get("status") or "aberto"), "pending"),
         "patient_id": paciente_id,
         "severity": _RISK_MAP.get(str(alerta.get("perfil") or "").lower()),
@@ -430,7 +439,7 @@ async def _aplicar_operacao(
     """Aplica reconhecer/completar a um único alerta: atualiza status,
     registra timeline, faz broadcast via WS e invalida o cache."""
     config = _OPERACOES[operacao]
-    paciente_id, inicio = alert_id.split("__", 1)
+    paciente_id, inicio = partir_alert_id(alert_id)
     motivo = _motivo_efetivo(config["definir_fim"], motivo)
 
     alterar_status_alerta(
@@ -523,7 +532,7 @@ async def processar_lote(
 
     async def _process_alert(alert_id: str) -> tuple[bool, dict | None]:
         try:
-            paciente_id, inicio = alert_id.split("__", 1)
+            paciente_id, inicio = partir_alert_id(alert_id)
             await asyncio.to_thread(
                 partial(
                     alterar_status_alerta,

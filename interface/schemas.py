@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 from datetime import datetime, timezone
-from typing import Any, List
+from typing import Any, List, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
+
+from interface.alert_id import PADRAO_PACIENTE_ID
 
 class EventPayload(BaseModel):
     """Modelo de evento recebido pelos endpoints."""
@@ -10,7 +12,14 @@ class EventPayload(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     device_id: str = Field(..., min_length=1, max_length=64)
-    paciente_id: str | None = Field(None)
+    # `pattern` porque este campo vira CHAVE: ele compoe o `alert_id`
+    # (`{paciente_id}__{inicio}`) e vai direto para `INSERT INTO pacientes(id)`.
+    # Era texto livre vindo de payload de dispositivo, entao um `__` fazia o
+    # identificador de um alerta resolver para OUTRO, e um `/` quebrava a rota.
+    # Ver interface/alert_id.py.
+    paciente_id: str | None = Field(
+        None, max_length=64, pattern=PADRAO_PACIENTE_ID
+    )
     cama_id: str | None = Field(None)
     postura: str = Field(..., min_length=1, max_length=64)
     confianca: float = Field(..., ge=0.0, le=1.0)
@@ -94,17 +103,82 @@ class FrontendCreatePatient(BaseModel):
 
 
 class FrontendPatient(BaseModel):
+    """Paciente no formato que a SPA consome.
+
+    Existia com ZERO referencias: as rotas declaravam `response_model=dict`, que
+    nao gera schema nenhum e nao valida nada. O resultado nao era so falta de
+    documentacao — era divergencia real e ja instalada:
+
+        `services/paciente_service._transform_patient` devolve `room` e `bed`
+        possivelmente `None` (paciente sem leito, e depois da alta e o caso
+        NORMAL), enquanto `lib/api.ts` declarava os dois como `string`
+        obrigatorio.
+
+    Ou seja, o TypeScript strict do frontend estava mentindo, e `patient.room`
+    era `undefined` num campo tipado como `string` — o tipo de erro que so
+    aparece em runtime, num `.toLowerCase()` qualquer.
+
+    Ligando o modelo aqui, o `null` passa a constar no spec, o gerador de tipos
+    do front o propaga, e o `strict` volta a dizer a verdade.
+    """
+
+    # Sem default, pelo mesmo motivo de `FrontendAlert`: `_transform_patient`
+    # emite todas as chaves. O valor pode ser nulo (paciente sem leito existe, e
+    # depois da alta e o estado normal); a CHAVE nao falta.
     id: str
     name: str
-    room: str | None = None
-    bed: str | None = None
-    riskLevel: str
+    room: str | None
+    bed: str | None
+    # `Literal`, e nao `str`: `_transform_patient` faz
+    # `perfil_map.get(perfil, "medium")`, entao a saida e sempre um dos tres. O
+    # `str` solto obrigava a tela a declarar a uniao por conta propria — que e
+    # como as duas pontas passam a discordar sem ninguem notar.
+    riskLevel: Literal["high", "medium", "low"]
     # float: com a janela do motor, o perfil medio da 1.5h — um int truncaria
     # para 1h e a tela voltaria a divergir do comportamento real.
-    repositioningInterval: float | None = None
-    createdAt: str | None = None
-    updatedAt: str | None = None
-    unitId: int | None = None
+    repositioningInterval: float | None
+    createdAt: str | None
+    updatedAt: str | None
+    unitId: int | None
+
+
+class FrontendAlert(BaseModel):
+    """Alerta no formato que a SPA consome.
+
+    Existia como JSON-Schema ESCRITO A MAO dentro de `openapi/generate_openapi.py`,
+    costurado no spec depois de gerado. Ou seja, a mesma forma tinha TRES
+    definicoes independentes — o dict literal montado em `alerts_service`, o
+    JSON-Schema do gerador, e a interface TypeScript — e as tres so coincidiam
+    por disciplina.
+
+    Ja tinham divergido: o schema a mao declarava `room`/`bed` opcionais e
+    `["string","null"]`, enquanto o TS os declarava `string` obrigatorio.
+
+    Como modelo pydantic, o schema passa a ser DERIVADO do que a rota promete, e
+    o gerador volta a ser so um gerador.
+    """
+
+    # Sem default: `alerts_service` monta o dict com TODAS estas chaves, sempre.
+    # Com `= None` o pydantic as marcaria opcionais no schema, e o tipo gerado
+    # viraria `bed?: string | null` — "a chave pode nao vir", que nao e verdade.
+    # Nullable e opcional sao coisas diferentes, e descrever a resposta errado e
+    # o que faz o consumidor programar defensivamente contra um caso que nao
+    # existe (ou deixar de programar contra um que existe).
+    id: str
+    patientId: str
+    patientName: str
+    # `str`, e nao `str | None`: diferente de `FrontendPatient`, este caminho
+    # passa por `dividir_cama`, que devolve string vazia — nunca `None` — para
+    # paciente sem leito. Declarar nullable aqui obrigaria a tela a se defender
+    # de um caso que nao acontece, e esconderia que o caso REAL e string vazia.
+    room: str
+    bed: str
+    lastRepositioning: str | None
+    nextRepositioning: str | None
+    riskLevel: Literal["high", "medium", "low"]
+    status: Literal["pending", "acknowledged", "completed"]
+    closureOrigin: Literal["equipe", "sensor", "sistema"] | None
+    closedBy: str | None
 
 
 class DeviceRegisterRequest(BaseModel):

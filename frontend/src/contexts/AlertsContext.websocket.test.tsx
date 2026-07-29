@@ -51,6 +51,7 @@ import type { Alert, PaginaDeAlertas } from '../lib/api';
 
 const alerta = (id: string) => ({
   id,
+  patientId: id.split('__')[0],
   patientName: `Paciente ${id}`,
   room: '201',
   bed: 'A',
