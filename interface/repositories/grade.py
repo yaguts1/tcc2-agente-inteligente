@@ -52,9 +52,20 @@ def inserir_grade(
     else:
         confiancas = [1.0] * len(timestamps)
 
+    # `pressao_pico` era DECLARADO no schema, atravessava o exportador JSONL e
+    # nunca era gravado: um dado que o firmware ja envia e que o sistema jogava
+    # fora a cada amostra. E o unico sinal capaz de distinguir "o rotulo de
+    # postura mudou" de "a carga sobre o sacro foi aliviada".
+    if "pressao_pico" in df_grade.columns:
+        pressoes = [None if pd.isna(v) else float(v) for v in df_grade["pressao_pico"]]
+    else:
+        pressoes = [None] * len(timestamps)
+
     registros = [
-        (paciente_id, ts, ts_ms, postura, conf)
-        for ts, ts_ms, postura, conf in zip(timestamps, ts_ms_series, posturas, confiancas)
+        (paciente_id, ts, ts_ms, postura, conf, pressao)
+        for ts, ts_ms, postura, conf, pressao in zip(
+            timestamps, ts_ms_series, posturas, confiancas, pressoes
+        )
         if ts is not None and ts_ms is not None
     ]
 
@@ -66,8 +77,9 @@ def inserir_grade(
         _ensure_grade_confianca_column(conn)
         before = conn.total_changes
         conn.executemany(
-            "INSERT OR IGNORE INTO grade (paciente_id, ts, ts_ms, postura, confianca)"
-            " VALUES (?, ?, ?, ?, ?)",
+            "INSERT OR IGNORE INTO grade"
+            " (paciente_id, ts, ts_ms, postura, confianca, pressao_pico)"
+            " VALUES (?, ?, ?, ?, ?, ?)",
             registros,
         )
         inseridos = conn.total_changes - before

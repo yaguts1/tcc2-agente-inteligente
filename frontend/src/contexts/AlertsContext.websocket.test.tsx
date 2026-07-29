@@ -61,6 +61,7 @@ const alerta = (id: string) => ({
   status: 'pending' as const,
   closureOrigin: null,
   closedBy: null,
+  site: null,
 });
 
 function Sonda() {

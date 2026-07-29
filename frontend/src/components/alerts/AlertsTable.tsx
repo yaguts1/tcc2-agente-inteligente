@@ -1,5 +1,11 @@
 import { useState } from 'react';
-import { Alert, BatchResult, MotivoFechamento, MOTIVOS_DE_FECHAMENTO } from '../../lib/api';
+import {
+  Alert,
+  BatchResult,
+  MotivoFechamento,
+  MOTIVOS_DE_FECHAMENTO,
+  rotuloDeSitio,
+} from '../../lib/api';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { Checkbox } from '../ui/checkbox';
@@ -307,6 +313,17 @@ export function AlertsTable({
                       )}
                       <span className="truncate">{alert.patientName}</span>
                     </div>
+                    {/*
+                      O sítio sob carga, abaixo do nome.
+                      "Vire o paciente" é menos útil que "trocânter D": a segunda
+                      informação diz PARA QUAL LADO virar — e é a diferença entre
+                      um alerta que orienta e um que só interrompe.
+                    */}
+                    {rotuloDeSitio(alert.site) && (
+                      <span className="block text-xs text-muted-foreground pl-6">
+                        {rotuloDeSitio(alert.site)}
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell className="whitespace-nowrap">
                     {alert.room} / {alert.bed}

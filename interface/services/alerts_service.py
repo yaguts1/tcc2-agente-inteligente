@@ -247,6 +247,11 @@ async def listar_alertas_frontend_paginado(
                 # que `completedByTeam` existe para separar.
                 "closureOrigin": a.get("origem_fechamento"),
                 "closedBy": a.get("fechado_por"),
+                # ONDE a carga se acumulou. "Vire o paciente" e menos util que
+                # "o trocanter direito esta sob carga ha 60 min": a segunda
+                # informacao diz PARA QUAL LADO virar. `null` nos alertas
+                # abertos antes de o motor distinguir sitio.
+                "site": a.get("sitio"),
             }
         )
 

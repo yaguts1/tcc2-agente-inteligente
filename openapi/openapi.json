@@ -810,6 +810,17 @@
             "title": "Room",
             "type": "string"
           },
+          "site": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Site"
+          },
           "status": {
             "enum": [
               "pending",
@@ -831,7 +842,8 @@
           "riskLevel",
           "status",
           "closureOrigin",
-          "closedBy"
+          "closedBy",
+          "site"
         ],
         "title": "FrontendAlert",
         "type": "object"

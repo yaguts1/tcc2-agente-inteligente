@@ -56,6 +56,7 @@ const alertaExemplo = {
   status: 'pending' as const,
   closureOrigin: null,
   closedBy: null,
+  site: null,
 };
 
 /** Componente sonda: expõe o estado do contexto como texto verificável. */

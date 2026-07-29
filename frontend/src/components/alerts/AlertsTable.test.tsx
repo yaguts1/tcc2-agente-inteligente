@@ -28,6 +28,7 @@ function alerta(over: Partial<Alert> = {}): Alert {
     status: 'pending',
     closureOrigin: null,
     closedBy: null,
+    site: null,
     ...over,
   };
 }
@@ -265,5 +266,29 @@ describe('motivo do encerramento', () => {
     expect(
       await screen.findByText(/rel[oó]gio da pr[oó]xima virada continua correndo/i),
     ).toBeInTheDocument();
+  });
+});
+
+describe('sitio sob carga', () => {
+  it('mostra o sitio ao lado do paciente', async () => {
+    renderizar({ alerts: [alerta({ site: 'trocanter_direito' })] });
+
+    expect(await screen.findByText('Trocânter D')).toBeInTheDocument();
+  });
+
+  it('nao mostra nada quando o alerta nao tem sitio', async () => {
+    renderizar({ alerts: [alerta({ site: null })] });
+    await screen.findByText('Maria Silva');
+
+    expect(screen.queryByText(/Trocânter/)).not.toBeInTheDocument();
+  });
+
+  it('nao exibe sitio sintetico de postura desconhecida', async () => {
+    // `postura:algo_exotico` diz o nome da POSTURA, nao uma regiao do corpo.
+    // Exibi-lo como se fosse anatomia confundiria quem le.
+    renderizar({ alerts: [alerta({ site: 'postura:algo_exotico' })] });
+    await screen.findByText('Maria Silva');
+
+    expect(screen.queryByText(/algo.exotico/i)).not.toBeInTheDocument();
   });
 });

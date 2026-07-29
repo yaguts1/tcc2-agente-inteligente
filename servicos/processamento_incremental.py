@@ -160,6 +160,13 @@ def _estado_para_dict(estado: EstadoDecisor) -> dict:
     "run_postura": estado.run_postura,
     "run_inicio": _dt(estado.run_inicio),
     "ultimo_timestamp": _dt(estado.ultimo_timestamp),
+    # Carga por sitio anatomico. PRECISA ser persistida: sem ela, um restart do
+    # processo devolveria todo paciente para carga zero — e o sacro que estava
+    # a 55 dos 60 minutos voltaria ao inicio, adiando o alerta por uma janela
+    # inteira exatamente em quem estava mais perto de precisar.
+    "carga_por_sitio": dict(estado.carga_por_sitio),
+    "alivio_por_sitio": dict(estado.alivio_por_sitio),
+    "sitio_do_alerta": estado.sitio_do_alerta,
   }
   return dados
 
@@ -184,6 +191,13 @@ def _dict_para_estado(dados: Mapping[str, object]) -> EstadoDecisor:
   estado.run_postura = dados.get("run_postura") or None
   estado.run_inicio = _dt(dados.get("run_inicio"))
   estado.ultimo_timestamp = _dt(dados.get("ultimo_timestamp"))
+  # `or {}` porque estados gravados ANTES da carga por sitio nao tem as chaves.
+  # Um paciente monitorado durante o deploy volta com carga zero — nao ha de
+  # onde tirar o acumulado — mas segue sendo avaliado, o que e melhor que
+  # quebrar a desserializacao e perder o estado inteiro.
+  estado.carga_por_sitio = dict(dados.get("carga_por_sitio") or {})
+  estado.alivio_por_sitio = dict(dados.get("alivio_por_sitio") or {})
+  estado.sitio_do_alerta = dados.get("sitio_do_alerta") or None
   return estado
 
 

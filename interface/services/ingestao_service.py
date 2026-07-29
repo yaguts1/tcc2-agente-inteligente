@@ -72,7 +72,10 @@ def _event_to_grade_df(payload: EventPayload) -> pd.DataFrame:
     return pd.DataFrame([{
         "timestamp": ts_iso,
         "postura": payload.postura,
-        "confianca": payload.confianca
+        "confianca": payload.confianca,
+        # O firmware ja enviava, `EventPayload` ja declarava, e ninguem gravava:
+        # o valor era descartado a cada amostra. Ver migrations/0015.
+        "pressao_pico": payload.pressao_pico,
     }])
 
 

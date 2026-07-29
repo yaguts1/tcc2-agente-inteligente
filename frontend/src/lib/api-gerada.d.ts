@@ -1819,6 +1819,8 @@ export interface components {
             riskLevel: "high" | "medium" | "low";
             /** Room */
             room: string;
+            /** Site */
+            site: string | null;
             /**
              * Status
              * @enum {string}

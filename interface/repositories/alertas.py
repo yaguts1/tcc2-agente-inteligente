@@ -90,6 +90,7 @@ def inserir_alertas(db_path: str, alertas: List[dict]) -> int:
                 int(alerta.get("janela_min", 0)),
                 str(alerta.get("status", "")),
                 duracao_val,
+                alerta.get("sitio"),
                 # Quem chega aqui e o MOTOR, nunca a tela: a enfermagem passa por
                 # `alterar_status_alerta`. Entao um fechamento vindo deste caminho
                 # e, por construcao, movimento espontaneo do paciente — e e isso
@@ -126,8 +127,8 @@ def inserir_alertas(db_path: str, alertas: List[dict]) -> int:
             """
             INSERT INTO alertas
             (paciente_id, inicio, fim, tipo, perfil, janela_min, status, duracao_min,
-             origem_fechamento)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+             sitio, origem_fechamento)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(paciente_id, inicio) DO UPDATE SET
                 fim = excluded.fim,
                 status = excluded.status,
@@ -204,7 +205,7 @@ def listar_alertas_abertos(db_path: str) -> List[dict]:
 _COLUNAS_ALERTA = (
     "paciente_id, inicio, fim, tipo, perfil, janela_min, status, duracao_min, "
     "fechado_por, origem_fechamento, reconhecido_por, reconhecido_em, "
-    "motivo_fechamento"
+    "motivo_fechamento, sitio"
 )
 
 

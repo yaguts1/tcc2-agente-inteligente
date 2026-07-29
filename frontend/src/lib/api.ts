@@ -264,6 +264,41 @@ export const MOTIVOS_DE_FECHAMENTO: ReadonlyArray<{
   { valor: 'outro', rotulo: 'Outro' },
 ];
 
+/** Rótulos legíveis de sítio anatômico, para a tabela de alertas. */
+export const ROTULO_DE_SITIO: Record<string, string> = {
+  sacro: 'Sacro',
+  coccige: 'Cóccix',
+  trocanter_direito: 'Trocânter D',
+  trocanter_esquerdo: 'Trocânter E',
+  isquio_direito: 'Ísquio D',
+  isquio_esquerdo: 'Ísquio E',
+  calcaneo_direito: 'Calcâneo D',
+  calcaneo_esquerdo: 'Calcâneo E',
+  maleolo_direito: 'Maléolo D',
+  maleolo_esquerdo: 'Maléolo E',
+  occipital: 'Occipital',
+  escapula_direita: 'Escápula D',
+  escapula_esquerda: 'Escápula E',
+  cotovelo_direito: 'Cotovelo D',
+  cotovelo_esquerdo: 'Cotovelo E',
+  orelha_direita: 'Orelha D',
+  orelha_esquerda: 'Orelha E',
+  nariz: 'Nariz',
+};
+
+/**
+ * Rótulo do sítio, ou `null` quando não há.
+ *
+ * Sítios sintéticos (`postura:<algo>`, criados quando o firmware envia um rótulo
+ * que o mapa do servidor não conhece) não são exibidos: dizem o nome da postura,
+ * não uma região do corpo, e mostrá-los como se fossem anatomia confundiria
+ * quem lê.
+ */
+export function rotuloDeSitio(site: string | null): string | null {
+  if (!site || site.startsWith('postura:')) return null;
+  return ROTULO_DE_SITIO[site] ?? site.replace(/_/g, ' ');
+}
+
 export interface Alert {
   id: string;
   /**
@@ -297,6 +332,14 @@ export interface Alert {
   closureOrigin: 'equipe' | 'sensor' | 'sistema' | null;
   /** Usuário que fechou, quando foi a equipe. */
   closedBy: string | null;
+  /**
+   * Sítio anatômico que estourou a janela.
+   *
+   * "Vire o paciente" é menos útil que "o trocanter direito está sob carga há
+   * 60 min": a segunda informação diz PARA QUAL LADO virar. `null` em alertas
+   * abertos antes do modelo de carga por sítio.
+   */
+  site: string | null;
 }
 
 export interface AlertsResponse {

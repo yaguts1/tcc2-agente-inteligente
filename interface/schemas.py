@@ -179,6 +179,9 @@ class FrontendAlert(BaseModel):
     status: Literal["pending", "acknowledged", "completed"]
     closureOrigin: Literal["equipe", "sensor", "sistema"] | None
     closedBy: str | None
+    # Sitio anatomico que estourou a janela. `None` em alertas anteriores ao
+    # modelo de carga por sitio — nao ha o que inferir para eles.
+    site: str | None
 
 
 class DeviceRegisterRequest(BaseModel):
