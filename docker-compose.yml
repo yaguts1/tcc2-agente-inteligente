@@ -1,5 +1,24 @@
 services:
   app:
+    # `UPP_IMAGE` aponta para uma imagem JA CONSTRUIDA E JA TESTADA, publicada
+    # pelo CI com tag imutavel por SHA de commit.
+    #
+    # O deploy era `git pull && docker compose up --build` na VM, entao a imagem
+    # que o CI testava nunca era a que rodava: a VM reconstruia a dela, com
+    # outra data, outro cache de camadas e outras versoes resolvidas de
+    # dependencia nao fixada. O CI verde nao dizia nada sobre o que estava no ar.
+    #
+    # Em producao:
+    #   UPP_IMAGE=ghcr.io/yaguts1/tcc2-agente-inteligente:sha-abc123def456
+    #   docker compose pull app && docker compose up -d app
+    #
+    # Sem a variavel, o comportamento local nao muda: `build: .` segue valendo e
+    # `docker compose up --build` constroi como sempre.
+    #
+    # Use a tag por SHA, nunca `:main`. `main` e um alvo movel — "qual main?"
+    # nao tem resposta depois do proximo push, e e justamente a ambiguidade que
+    # a publicacao com tag imutavel resolve.
+    image: ${UPP_IMAGE:-upp-app:local}
     build: .
     container_name: upp_app
     restart: unless-stopped

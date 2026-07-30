@@ -197,6 +197,11 @@ jobs:
   docker-build:
     runs-on: ubuntu-latest
     needs: [test, frontend]
+    # Necessário para publicar no GitHub Container Registry com o token do
+    # próprio workflow — sem PAT, sem segredo a rotacionar.
+    permissions:
+      contents: read
+      packages: write
     steps:
       - uses: actions/checkout@v4
 
@@ -258,3 +263,54 @@ jobs:
       - name: Encerrar container
         if: always()
         run: docker rm -f upp_ci || true
+
+      # ---------------------------------------------------------------------
+      # Publicação
+      # ---------------------------------------------------------------------
+      #
+      # O deploy era `git pull && docker compose up --build` NA VM. Isso
+      # significa que a imagem testada aqui nunca era a imagem que rodava: a VM
+      # reconstruía a sua, com outra data, outro cache de camadas e outras
+      # versões resolvidas de dependência não fixada. O CI verde não dizia nada
+      # sobre o que estava no ar, e um build que quebrasse só na VM quebrava
+      # DEPOIS de derrubar o serviço.
+      #
+      # Agora a imagem publicada é literalmente `upp-app:ci` — a MESMA que
+      # passou pelo smoke test acima, sem rebuild. É o ponto inteiro deste
+      # bloco: se ela fosse construída de novo aqui, o problema voltaria em
+      # forma mais sutil.
+      #
+      # Só em push para `main`: branch de feature não publica.
+      - name: Autenticar no GitHub Container Registry
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: >-
+          echo "${{ secrets.GITHUB_TOKEN }}"
+          | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+
+      - name: Publicar imagem com tag imutável
+        if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+        run: |
+          set -euo pipefail
+          # `ghcr.io` exige o dono em minúsculas.
+          REPO=$(echo "ghcr.io/${{ github.repository }}" | tr '[:upper:]' '[:lower:]')
+          SHA="sha-${GITHUB_SHA::12}"
+
+          # A tag por SHA é IMUTÁVEL e é a que o deploy deve usar. `main` é
+          # conveniência para inspeção; apontar o deploy para ela traria de
+          # volta a ambiguidade que este job resolve — "qual `main`?" não tem
+          # resposta depois do próximo push.
+          docker tag upp-app:ci "$REPO:$SHA"
+          docker tag upp-app:ci "$REPO:main"
+          docker push "$REPO:$SHA"
+          docker push "$REPO:main"
+
+          DIGEST=$(docker inspect --format='{{index .RepoDigests 0}}' "$REPO:$SHA")
+          echo "### Imagem publicada" >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Para implantar na VM:" >> "$GITHUB_STEP_SUMMARY"
+          echo '```bash' >> "$GITHUB_STEP_SUMMARY"
+          echo "echo 'UPP_IMAGE=$REPO:$SHA' >> .env" >> "$GITHUB_STEP_SUMMARY"
+          echo "docker compose pull app && docker compose up -d app" >> "$GITHUB_STEP_SUMMARY"
+          echo '```' >> "$GITHUB_STEP_SUMMARY"
+          echo "" >> "$GITHUB_STEP_SUMMARY"
+          echo "Digest: \`$DIGEST\`" >> "$GITHUB_STEP_SUMMARY"

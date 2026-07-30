@@ -202,3 +202,4 @@ def test_alertmanager_agrupa_para_nao_inundar():
     am = _carregar(RAIZ / "monitoring" / "alertmanager.yml")
     assert "alertname" in am["route"]["group_by"]
     assert am["route"]["repeat_interval"], "sem repeticao, um alerta ignorado some"
+

@@ -64,6 +64,10 @@ Todas as variáveis estão documentadas em `.env.example`.
 docker compose up -d --build
 ```
 
+> **Em produção, prefira a imagem publicada pelo CI.** Ver "Atualizar" abaixo:
+> `--build` reconstrói na VM, e a imagem resultante não é a que passou pelos
+> testes.
+
 Primeira subida demora alguns minutos (build do frontend + emissão do certificado). Acompanhe com:
 
 ```bash
