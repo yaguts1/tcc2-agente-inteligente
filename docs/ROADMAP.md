@@ -46,6 +46,8 @@ enquanto existissem.
 | 3.1 | Uma transação por amostra no lugar de quatro: ~26 → ~58 amostras/s com 1 thread, e concorrência passou a escalar (4 threads dão ~145/s, contra 36/s que 8 threads davam antes). Ganho de atomicidade junto | `9b59cfa` |
 | 3.2 | Query do watchdog: `GROUP BY`+`MAX` → subconsulta correlacionada. 130 ms → <1 ms com 260 mil linhas | `94954f5` |
 
+| 3.4 | Prometheus + Alertmanager raspando `/metrics`, 7 regras, `/metrics` fechado na borda | `2b3fab4` |
+| 3.5 | CI publica no GHCR a mesma imagem que testou, tag imutável por SHA; VM só puxa | `bd95aec` |
 | 3.6 | Property-based no decisor (14 propriedades, validadas por mutação), `--cov-fail-under=80`, ruff ampliado, ESLint do zero | `de3963b` `0bb99d2` `ee39193` |
 
 `scripts/medir_ingestao.py` fica no repositório para a próxima medição ser
@@ -94,11 +96,6 @@ estiveram dentro de uma imagem distribuível.
 
 - **3.3 Estado em processo bloqueia réplicas** — dedup/jitter, rate limit, cache
   e tarefas de fundo. Redis já disponível. **M**
-- **3.4 A melhor métrica não é observada** — `pacientes_sem_monitoramento` é
-  servido e ninguém raspa: sem Prometheus, sem Alertmanager, sem regra. **S**
-- **3.5 Deploy** — `git pull && docker compose up --build` na VM, então a imagem
-  que o CI testa nunca é a que roda. Falta registry com tag imutável.
-  *(A parte de segredos na imagem já foi feita em `51345fd`.)* **M**
 - **3.6b mypy gradual** — a única parte de 3.6 que ficou. Vale em `nucleo/`,
   `interface/schemas.py`, `services/`, `repositories/`; não vale em
   `main.py`/`scripts/`. **M**
