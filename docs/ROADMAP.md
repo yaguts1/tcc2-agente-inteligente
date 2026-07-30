@@ -46,8 +46,15 @@ enquanto existissem.
 | 3.1 | Uma transação por amostra no lugar de quatro: ~26 → ~58 amostras/s com 1 thread, e concorrência passou a escalar (4 threads dão ~145/s, contra 36/s que 8 threads davam antes). Ganho de atomicidade junto | `9b59cfa` |
 | 3.2 | Query do watchdog: `GROUP BY`+`MAX` → subconsulta correlacionada. 130 ms → <1 ms com 260 mil linhas | `94954f5` |
 
+| 3.6 | Property-based no decisor (14 propriedades, validadas por mutação), `--cov-fail-under=80`, ruff ampliado, ESLint do zero | `de3963b` `0bb99d2` `ee39193` |
+
 `scripts/medir_ingestao.py` fica no repositório para a próxima medição ser
 comparável.
+
+Três defeitos que só apareceram porque as ferramentas foram ligadas:
+`asyncio.create_task` sem referência forte (broadcast some sob pressão de
+memória), `datetime.now()` medindo duração (salta uma hora no horário de verão),
+e `console.log` despejando a lista de pacientes no console do navegador.
 
 ### Bloco 2 — contratos
 
@@ -92,10 +99,9 @@ estiveram dentro de uma imagem distribuível.
 - **3.5 Deploy** — `git pull && docker compose up --build` na VM, então a imagem
   que o CI testa nunca é a que roda. Falta registry com tag imutável.
   *(A parte de segredos na imagem já foi feita em `51345fd`.)* **M**
-- **3.6 Testes e lint** — property-based no decisor (maior retorno: é puro e o
-  invariante de serialização no meio da sequência não é testado);
-  `--cov-fail-under`; ruff ampliado (216 achados, ~50 `DTZ*` num domínio
-  inteiramente temporal); mypy gradual; ESLint ausente. **M**
+- **3.6b mypy gradual** — a única parte de 3.6 que ficou. Vale em `nucleo/`,
+  `interface/schemas.py`, `services/`, `repositories/`; não vale em
+  `main.py`/`scripts/`. **M**
 
 ### Bloco 4 — entrega e uso à beira do leito
 
@@ -140,9 +146,6 @@ estiveram dentro de uma imagem distribuível.
 
 ## Sequência recomendada
 
-1. **3.6** — property-based no decisor, agora que ele tem muito mais superfície
-   (carga por sítio, serialização de dicts) do que quando o plano foi escrito.
-2. **3.4 + 3.5** — observar a própria métrica e parar de fazer deploy de uma
+1. **3.4 + 3.5** — observar a própria métrica e parar de fazer deploy de uma
    imagem que ninguém testou.
-3. **Bloco 4** — a camada de entrega, agora que há algo confiável para entregar.
-4. **5.1** — o relatório que fecha a narrativa do TCC.
+3. **5.1** — o relatório que fecha a narrativa do TCC.
