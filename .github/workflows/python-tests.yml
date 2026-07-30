@@ -46,12 +46,18 @@ jobs:
           pip install -r requirements.txt
 
       - name: Run tests (com cobertura)
-        # Cobertura só para visibilidade — sem gate por ora (ver plano P2). O
-        # resumo term-missing aparece no log do job.
+        # Gate em 80%, com a cobertura atual medida em 84%.
+        #
+        # O piso fica ABAIXO do valor corrente de propósito. Um gate colado no
+        # número medido falha no primeiro PR que adicione código legítimo ainda
+        # sem teste, e o hábito que isso cria é subir o gate para o build passar
+        # — o que o torna decorativo. Quatro pontos de folga barram uma queda
+        # real sem transformar cada PR numa negociação com o número.
         run: >-
           pytest -q
           --cov=interface --cov=nucleo --cov=modulo_alerta --cov=servicos
           --cov-report=term-missing
+          --cov-fail-under=80
 
   firmware:
     # O firmware era a unica parte do sistema sem verificacao no fluxo: nao
