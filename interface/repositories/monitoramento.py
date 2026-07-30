@@ -58,17 +58,33 @@ def status_por_paciente(
     # `f.unidade_id` no filtro: o painel de monitoramento nomeia os leitos sem
     # leitura, entao sem escopo ele conta — e MOSTRA — leitos de outras alas.
     condicao, params = filtro_de_unidades(unidades, coluna="f.unidade_id")
+    # Subconsulta correlacionada, e NAO `LEFT JOIN` com `MAX(g.ts)` e `GROUP BY`.
+    #
+    # As duas devolvem exatamente o mesmo — conferido. A diferenca e o plano: com
+    # `GROUP BY`, o SQLite varre as linhas de grade de cada paciente para depois
+    # agregar; com a subconsulta, ele faz UMA busca no indice
+    # `idx_grade_paciente_ts_desc` e para no primeiro resultado, porque o indice
+    # ja esta na ordem pedida.
+    #
+    # Medido com 30 leitos e 30 dias de amostras a cada 5 min (260 mil linhas):
+    # 130 ms contra <1 ms. E esta consulta roda a cada `/api/stats`, que o
+    # dashboard dispara a cada mudanca de alerta.
+    #
+    # A alternativa obvia seria cachear. Seria pior: este e o watchdog que
+    # detecta sensor mudo, e servir resposta velha atrasa justamente a deteccao
+    # de que parou de chegar dado — o unico numero do sistema cuja utilidade E
+    # ser recente.
     with connect(db_path) as conn:
         linhas = conn.execute(
             "SELECT f.paciente_id  AS paciente_id,"
             "       f.nome         AS nome,"
             "       f.cama_id      AS cama_id,"
-            "       MAX(g.ts)      AS ultima_leitura"
+            "       (SELECT g.ts FROM grade g"
+            "         WHERE g.paciente_id = f.paciente_id"
+            "         ORDER BY g.ts DESC LIMIT 1) AS ultima_leitura"
             "  FROM paciente_fichas f"
-            "  LEFT JOIN grade g ON g.paciente_id = f.paciente_id"
             " WHERE f.cama_id IS NOT NULL AND f.cama_id != ''"
-            f"{condicao}"
-            " GROUP BY f.paciente_id, f.nome, f.cama_id",
+            f"{condicao}",
             params,
         ).fetchall()
 

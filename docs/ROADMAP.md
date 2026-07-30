@@ -39,6 +39,16 @@ enquanto existissem.
 | 1.5 | Orçamento de carga por sítio anatômico no lugar de corrida por postura; `pressao_pico` persistida | `ade17de` |
 | 1.6 | Lesão por pressão — a variável de desfecho; incidência por 1000 paciente-dia | `6d62006` |
 
+### Bloco 3 — parcial
+
+| # | Entrega | Commit |
+|---|---|---|
+| 3.1 | Uma transação por amostra no lugar de quatro: ~26 → ~58 amostras/s com 1 thread, e concorrência passou a escalar (4 threads dão ~145/s, contra 36/s que 8 threads davam antes). Ganho de atomicidade junto | `9b59cfa` |
+| 3.2 | Query do watchdog: `GROUP BY`+`MAX` → subconsulta correlacionada. 130 ms → <1 ms com 260 mil linhas | (este) |
+
+`scripts/medir_ingestao.py` fica no repositório para a próxima medição ser
+comparável.
+
 ### Bloco 2 — contratos
 
 | # | Entrega | Commit |
@@ -75,14 +85,6 @@ estiveram dentro de uma imagem distribuível.
 
 ### Bloco 3 — escala, operação e qualidade
 
-- **3.1 Caminho de escrita** — gargalo **medido** em ~50 amostras/s, que não
-  melhora com concorrência (8 threads → ~55/s): o lock de escritor do WAL é o
-  teto. A causa é arquitetural — 6 conexões SQLite e 4 transações por amostra.
-  Migrar para Postgres **não resolve**: as 6 conexões viram 6 round-trips.
-  Colapsar em uma transação + `synchronous=NORMAL` deve levar para a casa dos
-  milhares. **M**
-- **3.2 Query mais quente** — `repositories/monitoramento.py` faz `MAX(g.ts)`
-  sobre a `grade` inteira, sem cache, a cada `/api/stats`. **S**
 - **3.3 Estado em processo bloqueia réplicas** — dedup/jitter, rate limit, cache
   e tarefas de fundo. Redis já disponível. **M**
 - **3.4 A melhor métrica não é observada** — `pacientes_sem_monitoramento` é
@@ -138,11 +140,9 @@ estiveram dentro de uma imagem distribuível.
 
 ## Sequência recomendada
 
-1. **3.1 + 3.2** — o caminho de escrita e a query quente. É o único risco
-   técnico *medido*, e todo o resto assenta sobre ele.
-2. **3.6** — property-based no decisor, agora que ele tem muito mais superfície
+1. **3.6** — property-based no decisor, agora que ele tem muito mais superfície
    (carga por sítio, serialização de dicts) do que quando o plano foi escrito.
-3. **3.4 + 3.5** — observar a própria métrica e parar de fazer deploy de uma
+2. **3.4 + 3.5** — observar a própria métrica e parar de fazer deploy de uma
    imagem que ninguém testou.
-4. **Bloco 4** — a camada de entrega, agora que há algo confiável para entregar.
-5. **5.1** — o relatório que fecha a narrativa do TCC.
+3. **Bloco 4** — a camada de entrega, agora que há algo confiável para entregar.
+4. **5.1** — o relatório que fecha a narrativa do TCC.

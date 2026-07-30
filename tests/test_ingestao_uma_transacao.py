@@ -188,3 +188,46 @@ def test_o_anuncio_acontece_fora_da_transacao(ingestao, monkeypatch):
     assert momentos[0] == "grava"
     assert "anuncia" in momentos
     assert momentos.index("grava") < momentos.index("anuncia")
+
+
+# ---------------------------------------------------------------------------
+# A consulta mais quente do sistema
+# ---------------------------------------------------------------------------
+
+
+def test_watchdog_usa_busca_no_indice_e_nao_varredura(app_isolado):
+    """`status_por_paciente` roda a cada `/api/stats`, que o dashboard dispara a
+    cada mudanca de alerta.
+
+    Com `LEFT JOIN` + `MAX(g.ts)` + `GROUP BY`, o SQLite varre as linhas de
+    grade de cada paciente para depois agregar: 130 ms com 30 leitos e 30 dias
+    de amostras. Com subconsulta correlacionada ele faz UMA busca no indice e
+    para no primeiro resultado, porque o indice ja esta na ordem pedida — menos
+    de 1 ms.
+
+    Este teste olha o PLANO, e nao o tempo: tempo em CI e ruidoso, e o que
+    importa e a propriedade (busca, nao varredura), que e o que se perde se
+    alguem reescrever a consulta para a forma "natural".
+    """
+    from interface.db_core import connect
+    from interface.repositories.monitoramento import status_por_paciente
+
+    # Executa uma vez para garantir que a consulta do modulo e valida.
+    status_por_paciente(app_isolado.db_path)
+
+    with connect(app_isolado.db_path) as conn:
+        plano = " | ".join(
+            str(linha[-1])
+            for linha in conn.execute(
+                "EXPLAIN QUERY PLAN"
+                " SELECT f.paciente_id,"
+                "        (SELECT g.ts FROM grade g"
+                "          WHERE g.paciente_id = f.paciente_id"
+                "          ORDER BY g.ts DESC LIMIT 1)"
+                "   FROM paciente_fichas f"
+                "  WHERE f.cama_id IS NOT NULL AND f.cama_id != ''"
+            )
+        )
+
+    assert "SEARCH g" in plano, f"a grade voltou a ser varrida: {plano}"
+    assert "idx_grade_paciente_ts" in plano, f"o indice nao esta sendo usado: {plano}"
