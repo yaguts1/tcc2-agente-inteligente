@@ -6,8 +6,9 @@ import heapq
 import itertools
 from collections import defaultdict, deque
 from dataclasses import dataclass
-from datetime import datetime, timedelta, timezone
-from typing import Any, Dict, Iterable, List, Mapping
+from datetime import datetime, timedelta, UTC
+from typing import Any
+from collections.abc import Iterable, Mapping
 
 import structlog
 
@@ -18,14 +19,14 @@ logger = structlog.get_logger(__name__)
 CONF_LIMIAR = config.conf_limiar
 JITTER_SECONDS = config.event_jitter_seconds
 
-_DEDUP_CACHE: Dict[str, deque[str]] = defaultdict(lambda: deque(maxlen=2048))
-_BUFFER: Dict[str, list] = defaultdict(list)
+_DEDUP_CACHE: dict[str, deque[str]] = defaultdict(lambda: deque(maxlen=2048))
+_BUFFER: dict[str, list] = defaultdict(list)
 _COUNTER = itertools.count()
 
 
 @dataclass
 class FiltroResultado:
-    prontos: List[dict]
+    prontos: list[dict]
     descartado: bool = False
     motivo: str | None = None
     buffered: bool = False
@@ -44,7 +45,7 @@ def _normalizar_timestamp(valor: Any) -> tuple[datetime, str]:
             texto = texto[:-1] + "+00:00"
         dt = datetime.fromisoformat(texto)
     if dt.tzinfo is not None:
-        dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+        dt = dt.astimezone(UTC).replace(tzinfo=None)
     dt = dt.replace(microsecond=0)
     return dt, dt.strftime("%Y-%m-%dT%H:%M:%S")
 
@@ -93,7 +94,7 @@ def filtrar(evento: Mapping[str, Any]) -> FiltroResultado:
 
     liberar_ate = ts_dt if JITTER_SECONDS <= 0 else ts_dt - timedelta(seconds=JITTER_SECONDS)
 
-    prontos: List[dict] = []
+    prontos: list[dict] = []
     while heap and heap[0][0] <= liberar_ate:
         _, _, evt = heapq.heappop(heap)
         prontos.append(evt)
@@ -111,14 +112,11 @@ def filtrar(evento: Mapping[str, Any]) -> FiltroResultado:
     return FiltroResultado(prontos=prontos, buffered=bool(heap))
 
 
-def flush_filtro(device_id: str | None = None) -> List[dict]:
+def flush_filtro(device_id: str | None = None) -> list[dict]:
     dispositivos: Iterable[str]
-    if device_id is None:
-        dispositivos = list(_BUFFER.keys())
-    else:
-        dispositivos = [device_id]
+    dispositivos = list(_BUFFER.keys()) if device_id is None else [device_id]
 
-    prontos: List[dict] = []
+    prontos: list[dict] = []
     for dev in dispositivos:
         heap = _BUFFER.get(dev)
         if not heap:

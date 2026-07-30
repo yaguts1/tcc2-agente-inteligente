@@ -1,9 +1,8 @@
 """WebSocket connection manager com suporte a filtros."""
 
-from typing import Dict, List, Optional
 from fastapi import WebSocket
 import structlog
-from datetime import datetime
+import time
 from enum import Enum
 from servicos import metricas
 
@@ -21,11 +20,11 @@ class WebSocketFilter:
     
     def __init__(
         self,
-        severities: Optional[List[str]] = None,
-        patient_id: Optional[str] = None,
-        alert_types: Optional[List[str]] = None,
+        severities: list[str] | None = None,
+        patient_id: str | None = None,
+        alert_types: list[str] | None = None,
         limit: int = 1000,
-        unidades: Optional[set] = None,
+        unidades: set | None = None,
     ):
         """
         Inicializa filtro.
@@ -107,13 +106,13 @@ class ConnectionManagerOptimized:
     
     def __init__(self):
         """Inicializa gerenciador."""
-        self.active_connections: Dict[WebSocket, Dict] = {}
+        self.active_connections: dict[WebSocket, dict] = {}
         self.logger = structlog.get_logger(__name__)
     
     async def connect(
         self,
         websocket: WebSocket,
-        filters: Optional[WebSocketFilter] = None,
+        filters: WebSocketFilter | None = None,
     ):
         """Aceita e registra nova conexão."""
         await websocket.accept()
@@ -121,7 +120,11 @@ class ConnectionManagerOptimized:
         client_id = id(websocket)
         self.active_connections[websocket] = {
             "filters": filters or WebSocketFilter(),
-            "connected_at": datetime.now(),
+            # `time.monotonic`, e nao `datetime.now()`: este valor so serve para
+            # medir DURACAO de conexao. Um relogio de parede salta uma hora no
+            # horario de verao e pode andar para tras num ajuste de NTP, e a
+            # duracao registrada saltaria junto. O monotonico nao volta.
+            "connected_at": time.monotonic(),
             "messages_sent": 0,
             "messages_filtered": 0,
             "client_id": client_id,
@@ -142,7 +145,7 @@ class ConnectionManagerOptimized:
         if websocket in self.active_connections:
             stats = self.active_connections.pop(websocket)
             client_id = stats["client_id"]
-            connected_time = (datetime.now() - stats["connected_at"]).total_seconds()
+            connected_time = time.monotonic() - stats["connected_at"]
             
             self.logger.info(
                 "ws_client_disconnected",

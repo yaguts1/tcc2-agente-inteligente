@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from datetime import datetime, timezone
-from typing import Any, List, Literal
+from datetime import datetime, UTC
+from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from interface.alert_id import PADRAO_PACIENTE_ID
@@ -31,7 +31,7 @@ class EventPayload(BaseModel):
     @classmethod
     def _normalizar_ts(cls, value: datetime) -> datetime:
         if value.tzinfo is not None:
-            value = value.astimezone(timezone.utc).replace(tzinfo=None)
+            value = value.astimezone(UTC).replace(tzinfo=None)
         return value.replace(microsecond=0)
 
 
@@ -51,7 +51,7 @@ class PacienteConfigResponse(BaseModel):
     perfil: str
     observacoes: str | None = None
     updated_at: str | None = None
-    rotinas: List[RotinaConfig]
+    rotinas: list[RotinaConfig]
 
 
 class ApiResponse(BaseModel):
@@ -191,7 +191,7 @@ class DeviceRegisterRequest(BaseModel):
 
 class BatchAlertRequest(BaseModel):
     """Request body for batch alert operations."""
-    alert_ids: List[str]
+    alert_ids: list[str]
     # Por que o alerta foi fechado. Ignorado em `acknowledge`, que so registra
     # que alguem VIU. Ausente vale como `reposicionado`, o caso comum — ver
     # `MotivoFechamento`.
@@ -281,8 +281,8 @@ class MonitoramentoResponse(BaseModel):
     total_com_leito: int
     monitorados: int
     sem_monitoramento: int
-    pacientes_sem_monitoramento: List[StatusMonitoramentoItem]
-    pacientes: List[StatusMonitoramentoItem]
+    pacientes_sem_monitoramento: list[StatusMonitoramentoItem]
+    pacientes: list[StatusMonitoramentoItem]
 
 
 class BatchResultResponse(BaseModel):
@@ -296,7 +296,7 @@ class BatchResultResponse(BaseModel):
     ok: bool
     processed: int
     failed: int
-    errors: List["BatchErrorItem"]
+    errors: list[BatchErrorItem]
 
 
 class BatchErrorItem(BaseModel):

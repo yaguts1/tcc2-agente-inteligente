@@ -14,7 +14,6 @@ from __future__ import annotations
 import os
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Dict
 
 import structlog
 from fastapi import APIRouter, FastAPI, Response
@@ -184,10 +183,7 @@ _extra_origins = [
 # Em produção as portas de dev não entram: com allow_credentials=True, deixar
 # http://localhost:5173 na lista permite que uma página rodando na máquina de
 # quem estiver logado leia a API com o cookie de sessão junto.
-if em_producao():
-    _allowed_origins = _extra_origins
-else:
-    _allowed_origins = _DEV_ORIGINS + _extra_origins
+_allowed_origins = _extra_origins if em_producao() else _DEV_ORIGINS + _extra_origins
 
 # Sem try/except: um CORS que falha ao ser instalado precisa derrubar o
 # startup. Engolir a exceção fazia o app subir SEM política de CORS nenhuma —
@@ -263,7 +259,7 @@ def metrics_endpoint() -> Response:
 
 
 @web_router.get("/healthz")
-def health_check() -> Dict[str, str]:
+def health_check() -> dict[str, str]:
     return {"status": "ok"}
 
 
@@ -274,7 +270,7 @@ app.include_router(api_router, prefix=APP_PREFIX)
 
 # Healthcheck global (fora do prefixo) — usado pelo healthcheck do Docker.
 @app.get("/healthz")
-def global_health_check() -> Dict[str, str]:
+def global_health_check() -> dict[str, str]:
     return {"status": "ok"}
 
 

@@ -104,6 +104,6 @@ async def api_admin_import_alerts(
         inserted = import_alerts_list(alerts, db_path=DB_PATH)
         return {"ok": True, "inserted": inserted, "received": len(alerts)}
     except ValueError as e:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={"code": "invalid_data", "message": str(e)})
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={"code": "invalid_data", "message": str(e)}) from e
     except Exception as e:
         raise erro_interno("import_failed", e) from e

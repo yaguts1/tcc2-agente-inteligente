@@ -35,7 +35,7 @@ BASE = datetime(2026, 5, 1, 7, 0, 0)
 # Posturas do mapa real, mais uma desconhecida: `sitios_sob_carga` degrada para
 # um sitio sintetico nesse caso, e o degrade tambem precisa valer as
 # propriedades — e exatamente o caminho que um firmware com rotulo novo toma.
-POSTURAS = sorted(SITIOS_POR_POSTURA) + ["postura_nao_mapeada"]
+POSTURAS = [*sorted(SITIOS_POR_POSTURA), "postura_nao_mapeada"]
 
 # O gerador produz CORRIDAS — (postura, quantas amostras seguidas, intervalo) —
 # e nao uma postura sorteada por amostra.

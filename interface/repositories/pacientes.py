@@ -5,7 +5,7 @@ import re
 import sqlite3
 import pandas as pd
 import structlog
-from typing import List, Sequence, Optional
+from collections.abc import Sequence
 
 from interface.db_core import connect, utc_now_iso
 from interface.repositories.unidades import (
@@ -175,10 +175,10 @@ class PatientRepository:
             raise ValueError(f"Horario '{texto}' fora do intervalo 00:00-23:59.")
         return f"{hora:02d}:{minuto:02d}"
 
-    def _prepare_rotinas(self, rotinas: Sequence[dict] | None) -> List[dict]:
+    def _prepare_rotinas(self, rotinas: Sequence[dict] | None) -> list[dict]:
         if not rotinas:
             return []
-        preparados: List[dict] = []
+        preparados: list[dict] = []
         for ordem, raw in enumerate(rotinas):
             if raw is None:
                 continue
@@ -237,7 +237,7 @@ class PatientRepository:
             ],
         )
 
-    def _fetch_rotinas(self, conn: sqlite3.Connection, paciente_id: str) -> List[dict]:
+    def _fetch_rotinas(self, conn: sqlite3.Connection, paciente_id: str) -> list[dict]:
         cursor = conn.execute(
             """
             SELECT id, label, inicio, duracao_min, descricao, ativo, sort_order
@@ -266,7 +266,7 @@ class PatientRepository:
         include_routines: bool = False,
         unidades: set[int] | None = None,
         incluir_alta: bool = False,
-    ) -> List[dict]:
+    ) -> list[dict]:
         """Fichas visiveis para quem pergunta.
 
         `unidades=None` significa SEM RESTRICAO (admin), e `set()` significa
@@ -302,7 +302,7 @@ class PatientRepository:
                 fichas.append(ficha)
             return fichas
 
-    def get_by_id(self, paciente_id: str, include_routines: bool = False) -> Optional[dict]:
+    def get_by_id(self, paciente_id: str, include_routines: bool = False) -> dict | None:
         with connect(self.db_path) as conn:
             cursor = conn.execute(
                 """
@@ -320,7 +320,7 @@ class PatientRepository:
                 ficha["rotinas"] = self._fetch_rotinas(conn, paciente_id)
             return ficha
 
-    def get_by_cama(self, cama_id: str, include_routines: bool = False) -> Optional[dict]:
+    def get_by_cama(self, cama_id: str, include_routines: bool = False) -> dict | None:
         cama_norm = self._normalize_cama_id(cama_id)
         if cama_norm is None:
             return None

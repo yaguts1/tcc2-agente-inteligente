@@ -67,7 +67,7 @@ def gerar_eventos_esp32(
         # Chance de mudar de postura após 1-2 horas
         if tempo_na_postura >= 60 and random.random() < 0.2:
             # Mudar para outra postura
-            opcoes = [p for p in POSTURAS.keys() if p != postura_atual]
+            opcoes = [p for p in POSTURAS if p != postura_atual]
             postura_atual = random.choice(opcoes)
             tempo_na_postura = 0
         

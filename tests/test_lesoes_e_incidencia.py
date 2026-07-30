@@ -102,7 +102,7 @@ def test_lesao_e_amarrada_a_internacao_aberta(db, ana):
     [("sitio", "joelho"), ("origem", "talvez"), ("estagio", "estagio_9")],
 )
 def test_vocabulario_fora_da_lista_e_recusado(db, ana, campo, valor):
-    kwargs = dict(sitio="sacro", origem="adquirida", estagio="estagio_2")
+    kwargs = {"sitio": "sacro", "origem": "adquirida", "estagio": "estagio_2"}
     kwargs[campo] = valor
 
     with pytest.raises(ValueError):

@@ -11,7 +11,7 @@ Por isso os testes cobrem leitura (e nao so escrita) e tentativas NEGADAS, que
 sao o sinal de uso indevido.
 """
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 
 import pytest
 from fastapi.testclient import TestClient
@@ -107,7 +107,7 @@ def test_timestamp_em_utc(cenario):
 
     registro = consultar(cenario["db"], usuario="enfermeira")[0]
     gravado = datetime.fromisoformat(registro["ts"])
-    agora_utc = datetime.now(timezone.utc).replace(tzinfo=None)
+    agora_utc = datetime.now(UTC).replace(tzinfo=None)
     assert abs((gravado - agora_utc).total_seconds()) < 30, (
         f"ts={gravado} distante do UTC atual ({agora_utc}) — provavelmente hora local"
     )
@@ -140,7 +140,7 @@ def test_expurgo_respeita_o_corte(cenario):
     c.get("/api/stats", headers=cenario["staff"])
     assert consultar(cenario["db"], limit=1000)
 
-    futuro_ms = int(datetime(2999, 1, 1, tzinfo=timezone.utc).timestamp() * 1000)
+    futuro_ms = int(datetime(2999, 1, 1, tzinfo=UTC).timestamp() * 1000)
     removidos = expurgar_anteriores_a(cenario["db"], futuro_ms)
     assert removidos > 0
 

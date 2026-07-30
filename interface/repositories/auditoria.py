@@ -10,7 +10,7 @@ leitura estiverem gravados.
 from __future__ import annotations
 
 import json
-from datetime import timezone
+from datetime import UTC
 from typing import Any
 
 import structlog
@@ -45,7 +45,7 @@ def registrar(
     # `agora` e naive-UTC; .timestamp() em datetime naive interpreta como hora
     # LOCAL, o que deslocaria o ts_ms pelo offset do fuso (o mesmo defeito que
     # ja corrompeu a correlacao sensor-paciente). Marcar como UTC antes.
-    ts_ms = int(agora.replace(tzinfo=timezone.utc).timestamp() * 1000)
+    ts_ms = int(agora.replace(tzinfo=UTC).timestamp() * 1000)
     registro = {
         "ts": agora.strftime("%Y-%m-%dT%H:%M:%S"),
         "ts_ms": ts_ms,

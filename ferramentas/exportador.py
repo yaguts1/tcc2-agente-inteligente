@@ -3,7 +3,7 @@
 import io
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional, List, Dict, Any
+from typing import Any
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -51,7 +51,7 @@ class ResultadoExport:
     "Periodo: Sem limite a Sem limite" sobre dados de 24h.
     """
 
-    alertas: List[Dict[str, Any]]
+    alertas: list[dict[str, Any]]
     total_encontrado: int = 0
     truncado: bool = False
     ilegiveis: int = 0
@@ -80,10 +80,10 @@ class ExportFilters:
 
     def __init__(
         self,
-        start_date: Optional[datetime] = None,
-        end_date: Optional[datetime] = None,
-        status: Optional[str] = None,
-        patient_id: Optional[str] = None,
+        start_date: datetime | None = None,
+        end_date: datetime | None = None,
+        status: str | None = None,
+        patient_id: str | None = None,
         limit: int = 10000,
     ):
         self.start_date = start_date
@@ -92,7 +92,7 @@ class ExportFilters:
         self.patient_id = patient_id
         self.limit = limit
     
-    def validate(self) -> tuple[bool, Optional[str]]:
+    def validate(self) -> tuple[bool, str | None]:
         """Valida os filtros."""
         # Validar range de datas
         if self.start_date and self.end_date:
@@ -158,10 +158,7 @@ class ExportService:
             )
             
             # Converter para DataFrame
-            if not alerts:
-                df = pd.DataFrame()
-            else:
-                df = pd.DataFrame(alerts)
+            df = pd.DataFrame() if not alerts else pd.DataFrame(alerts)
             
             # Retornar CSV
             csv_buffer = io.StringIO()
@@ -326,7 +323,7 @@ class ExportService:
     def _generate_pdf(
         self,
         buffer: io.BytesIO,
-        alerts: List[Dict[str, Any]],
+        alerts: list[dict[str, Any]],
         filters: ExportFilters,
         resultado: "ResultadoExport | None" = None,
     ) -> None:
@@ -439,7 +436,7 @@ class ExportService:
 
         return f"{periodo}{patient_str}{status_str}"
     
-    def _prepare_table_data(self, alerts: List[Dict[str, Any]]) -> List[List[str]]:
+    def _prepare_table_data(self, alerts: list[dict[str, Any]]) -> list[list[str]]:
         """Prepara dados para a tabela PDF."""
         # Buscar mapa de pacientes para substituir ID por Nome
         from interface.dao import listar_fichas_pacientes
@@ -523,7 +520,7 @@ class ExportService:
         
         return data
     
-    def _tempo_ate_ver(self, alert: Dict[str, Any]) -> str:
+    def _tempo_ate_ver(self, alert: dict[str, Any]) -> str:
         """Deteccao -> reconhecimento, em texto.
 
         Nao e `duracao_min`, que e deteccao -> resolucao. Sao perguntas
@@ -545,7 +542,7 @@ class ExportService:
             return f"{minutos // 60}h {minutos % 60}min"
         return f"{minutos} min"
 
-    def _descrever_resolucao(self, alert: Dict[str, Any]) -> str:
+    def _descrever_resolucao(self, alert: dict[str, Any]) -> str:
         """Quem fechou o alerta, em texto para o relatorio.
 
         Tres respostas possiveis, e a terceira importa tanto quanto as outras:
@@ -571,7 +568,7 @@ class ExportService:
             return 'Sistema'
         return 'Não registrado'
 
-    def _create_table(self, data: List[List[str]]) -> Table:
+    def _create_table(self, data: list[list[str]]) -> Table:
         """Cria tabela formatada para PDF."""
         # Paciente, Início, Fim, Tipo, Perfil, Status, Duração, Resolvido por,
         # Reconhecido por, Tempo até ver, Motivo

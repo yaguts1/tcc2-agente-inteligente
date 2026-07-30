@@ -8,7 +8,8 @@ from __future__ import annotations
 import asyncio
 import os
 from datetime import timedelta
-from typing import Any, Dict, Iterable, Mapping
+from typing import Any
+from collections.abc import Iterable, Mapping
 
 import pandas as pd
 import structlog
@@ -147,7 +148,7 @@ def _anunciar(alertas: list[dict]) -> None:
 
 def processar_eventos_filtrados(
     eventos_filtrados: Iterable[Mapping[str, Any]],
-    contagem_por_paciente: Dict[str, int],
+    contagem_por_paciente: dict[str, int],
 ) -> int:
     total_alertas = 0
     for dados in eventos_filtrados:

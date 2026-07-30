@@ -88,13 +88,12 @@ def test_um_paciente_nao_pode_ter_duas_internacoes_abertas(repo, app_isolado):
     consulta saberia qual e o corrente."""
     paciente = _criar(repo)
 
-    with pytest.raises(sqlite3.IntegrityError):
-        with connect(app_isolado.db_path) as conn:
-            conn.execute(
-                "INSERT INTO internacoes (paciente_id, admissao_ts, admissao_ms)"
-                " VALUES (?, '2026-01-01T00:00:00', 0)",
-                (paciente["paciente_id"],),
-            )
+    with pytest.raises(sqlite3.IntegrityError), connect(app_isolado.db_path) as conn:
+        conn.execute(
+            "INSERT INTO internacoes (paciente_id, admissao_ts, admissao_ms)"
+            " VALUES (?, '2026-01-01T00:00:00', 0)",
+            (paciente["paciente_id"],),
+        )
 
 
 def test_ficha_minima_tambem_abre_internacao(repo):

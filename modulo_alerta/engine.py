@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Any, Dict, List, Tuple
+from typing import Any
 
 import pandas as pd
 import structlog
@@ -22,7 +22,7 @@ def processar_alertas(
     perfil: str,
     paciente_id: str,
     min_conf: float = 0.0,
-) -> Tuple[pd.DataFrame, List[Dict[str, Any]]]:
+) -> tuple[pd.DataFrame, list[dict[str, Any]]]:
     """Processa a serie de posturas e calcula alertas de imobilidade."""
     _ = min_conf  # reservado para evolucoes futuras
 
@@ -68,7 +68,7 @@ def processar_alertas(
             if modo == "suprimir":
                 # Skip this alert completely
                 continue
-            elif modo == "reduzir":
+            if modo == "reduzir":
                 # Reduce the alert's janela window
                 reducao = get_reducao_janela(config.db_path, paciente_id, timestamp_local)
                 if reducao > 0:

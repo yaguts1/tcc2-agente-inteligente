@@ -26,7 +26,7 @@ def _limpar_env(monkeypatch):
 
 def test_configuracao_defaults(monkeypatch):
   _limpar_env(monkeypatch)
-  monkeypatch.setattr(configuracao, "_load_env_file", lambda: {}, raising=False)
+  monkeypatch.setattr(configuracao, "_load_env_file", dict, raising=False)
   cfg = configuracao.carregar_configuracao()
   assert cfg.modo_operacao == "batch"
   assert cfg.redis_url is None

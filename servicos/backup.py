@@ -14,11 +14,12 @@ dele, porque desloca a atencao para longe do risco.
 
 import json
 import os
+import time
 import shutil
 import sqlite3
 from contextlib import closing
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 
 import structlog
@@ -109,8 +110,8 @@ def estado_replicacao(backup_dir: str | Path) -> dict:
     try:
         quando = datetime.fromisoformat(terminado.replace("Z", "+00:00"))
         if quando.tzinfo is None:
-            quando = quando.replace(tzinfo=timezone.utc)
-        idade = (datetime.now(timezone.utc) - quando).total_seconds() / 3600
+            quando = quando.replace(tzinfo=UTC)
+        idade = (datetime.now(UTC) - quando).total_seconds() / 3600
         base["idade_horas"] = round(idade, 1)
     except (ValueError, TypeError):
         base["erro"] = base["erro"] or "recibo sem data valida"
@@ -230,7 +231,7 @@ class BackupService:
         # UTC, como todo timestamp deste sistema (ver interface/tempo.py). Com
         # hora local, a ordenacao dos nomes se embaralha na virada do horario
         # de verao e dois backups podem colidir no mesmo nome.
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+        timestamp = datetime.now(UTC).strftime("%Y%m%d_%H%M%S")
         backup_path = self.backup_dir / f"backup_{timestamp}.db"
         # O nome tem resolucao de SEGUNDO: dois backups no mesmo segundo caiam
         # no mesmo arquivo e o segundo sobrescrevia o primeiro em silencio —
@@ -300,7 +301,10 @@ class BackupService:
         unico arquivo bom que existia. O piso por contagem garante que sempre
         sobra de onde restaurar.
         """
-        cutoff_time = datetime.now().timestamp() - (keep_days * 86400)
+        # `time.time()` e o mesmo valor de `datetime.now().timestamp()` sem o
+        # rodeio, e sem depender de como o naive e interpretado — o outro lado
+        # da comparacao e `st_mtime`, que ja e epoch.
+        cutoff_time = time.time() - (keep_days * 86400)
         removed_count = 0
 
         try:
@@ -354,7 +358,7 @@ class BackupService:
                     "path": str(backup_file),
                     "size_mb": round(stat.st_size / (1024 * 1024), 2),
                     "created_at": datetime.fromtimestamp(stat.st_mtime).isoformat(),
-                    "age_hours": round((datetime.now().timestamp() - stat.st_mtime) / 3600, 1)
+                    "age_hours": round((time.time() - stat.st_mtime) / 3600, 1)
                 })
 
         except Exception as e:

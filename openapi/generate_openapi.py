@@ -17,14 +17,14 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Any, Dict
+from typing import Any
 
 # Caminho do artefato versionado, para o gerador e o teste falarem do mesmo
 # arquivo em vez de repetirem a string.
 CAMINHO_PADRAO = Path(__file__).resolve().parent / "openapi.json"
 
 
-def generate_openapi(output: Path | None = None) -> Dict[str, Any]:
+def generate_openapi(output: Path | None = None) -> dict[str, Any]:
     # `APP_PREFIX` e detalhe de IMPLANTACAO, nao do contrato: em producao a app
     # sobe sob `/TCC` (ver docker-compose.yml) e toda rota do spec sairia
     # `/TCC/api/...`. Sem fixar aqui, o arquivo gerado dependeria do ambiente de
@@ -56,7 +56,7 @@ def generate_openapi(output: Path | None = None) -> Dict[str, Any]:
     return spec
 
 
-def serializar(spec: Dict[str, Any]) -> str:
+def serializar(spec: dict[str, Any]) -> str:
     """Forma canonica do spec em texto.
 
     Uma unica funcao para gravar e para conferir: se cada lado formatasse do seu

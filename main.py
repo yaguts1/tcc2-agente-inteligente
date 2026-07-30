@@ -9,7 +9,8 @@ import json
 import sys
 import time
 from pathlib import Path
-from typing import Any, Iterable, List, Mapping, Optional
+from typing import Any
+from collections.abc import Iterable, Mapping
 
 import httpx
 import pandas as pd
@@ -41,9 +42,9 @@ def _norm_iso(series: pd.Series) -> pd.Series:
     return valores.dt.floor("s").dt.strftime(ISO_FORMAT)
 
 
-def processar_alertas_multi(df_grade: pd.DataFrame, perfil: str) -> List[dict]:
+def processar_alertas_multi(df_grade: pd.DataFrame, perfil: str) -> list[dict]:
     """Executa o motor de alertas por paciente e agrega os resultados."""
-    alertas: List[dict] = []
+    alertas: list[dict] = []
     for paciente_id, grupo in df_grade.groupby("paciente_id", sort=True):
         _, alerta_paciente = processar_alertas(grupo[["timestamp", "postura"]], perfil, paciente_id)
         alertas.extend(alerta_paciente)
@@ -115,7 +116,7 @@ def _salvar_csv(df: pd.DataFrame, destino: Path, descricao: str) -> None:
     print(f"{descricao} salvo em: {destino} ({len(df)} linhas)")
 
 
-def _parse_pacientes_ids(valor: str) -> List[str]:
+def _parse_pacientes_ids(valor: str) -> list[str]:
     ids = [pid.strip() for pid in valor.split(",") if pid.strip()]
     if valor and not ids:
         raise ValueError("Nenhum identificador valido em --pacientes-ids.")
@@ -149,7 +150,7 @@ def run_batch(args: argparse.Namespace) -> None:
     )
 
     use_multi_generator = total_pacientes > 1 or bool(pacientes_ids_arg)
-    df_eventos_raw: Optional[pd.DataFrame] = None
+    df_eventos_raw: pd.DataFrame | None = None
 
     if use_multi_generator:
         df_grade_raw, df_eventos_raw = gerar_sessao_multi(
@@ -188,7 +189,7 @@ def run_batch(args: argparse.Namespace) -> None:
     _salvar_csv(df_grade_norm, Path(args.saida), "Grade")
     print(f"Pacientes: {df_grade_norm['paciente_id'].nunique()}")
 
-    df_eventos_norm: Optional[pd.DataFrame] = None
+    df_eventos_norm: pd.DataFrame | None = None
     if args.eventos:
         if df_eventos_raw is None:
             eventos_base = gerar_eventos_sessao(
@@ -301,7 +302,7 @@ def _iter_events(args: argparse.Namespace) -> Iterable[dict]:
 
 def _normalizar_evento(dados: Mapping[str, Any]) -> dict:
     def _obter(nome: str, *alternativos: str) -> str:
-        for chave in (nome,) + alternativos:
+        for chave in (nome, *alternativos):
             valor = dados.get(chave)
             if valor is not None and str(valor).strip():
                 return str(valor).strip()

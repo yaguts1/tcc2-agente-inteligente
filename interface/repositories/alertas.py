@@ -3,7 +3,6 @@ from __future__ import annotations
 
 import sqlite3
 from datetime import datetime, timedelta
-from typing import Dict, List
 
 import pandas as pd
 import structlog
@@ -43,7 +42,7 @@ def _registrar_timeline(conn, paciente_id: str, ts: str, ts_ms: int, tipo: str) 
 
 
 def inserir_alertas(
-    db_path: str, alertas: List[dict], conn: "sqlite3.Connection | None" = None
+    db_path: str, alertas: list[dict], conn: sqlite3.Connection | None = None
 ) -> int:
     """Insere ou atualiza alertas calculados pelo motor."""
     if not alertas:
@@ -176,7 +175,7 @@ def inserir_alertas(
         return int(delta_alerts)
 
 
-def contar_por_paciente(db_path: str, tabela: str) -> Dict[str, int]:
+def contar_por_paciente(db_path: str, tabela: str) -> dict[str, int]:
     """Retorna a contagem de registros agrupada por paciente."""
     if tabela not in _VALID_TABLES:
         raise ValueError(f"Tabela desconhecida: {tabela}")
@@ -189,7 +188,7 @@ def contar_por_paciente(db_path: str, tabela: str) -> Dict[str, int]:
     return {str(row["paciente_id"]): int(row["total"]) for row in rows}
 
 
-def listar_alertas_abertos(db_path: str) -> List[dict]:
+def listar_alertas_abertos(db_path: str) -> list[dict]:
     """Retorna alertas em aberto."""
     with connect(db_path) as conn:
         cursor = conn.execute(

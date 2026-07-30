@@ -108,7 +108,7 @@ def alterar_papel(username: str, payload: AlterarPapel, admin: str = Depends(get
             detail={"code": "ultimo_admin", "message": str(exc)},
         ) from exc
     except LookupError:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"code": "usuario_nao_encontrado"})
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"code": "usuario_nao_encontrado"}) from None
     except ValueError as exc:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
@@ -143,7 +143,7 @@ def alterar_ativo(username: str, payload: AlterarAtivo, admin: str = Depends(get
             detail={"code": "ultimo_admin", "message": str(exc)},
         ) from exc
     except LookupError:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"code": "usuario_nao_encontrado"})
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"code": "usuario_nao_encontrado"}) from None
 
     if not payload.ativo:
         revogar_sessoes_do_usuario(_db(), username)
@@ -161,7 +161,7 @@ async def definir_senha_de_usuario(
         senha_hash = await asyncio.to_thread(bcrypt.hash, payload.nova_senha)
         await asyncio.to_thread(_repo().definir_senha, username, senha_hash)
     except LookupError:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"code": "usuario_nao_encontrado"})
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"code": "usuario_nao_encontrado"}) from None
     except Exception as exc:
         raise erro_interno("senha_reset_falhou", exc, alvo=username) from exc
 

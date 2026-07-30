@@ -6,7 +6,7 @@ dele. O `perfil` da ficha continua sendo o que o motor le — nada abaixo muda.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 
 import structlog
 
@@ -54,12 +54,9 @@ def registrar(
     """
     resultado = escala.avaliar(subescores)
 
-    if quando:
-        dt = datetime.fromisoformat(str(quando)[:19])
-    else:
-        dt = agora_utc_naive().replace(microsecond=0)
+    dt = datetime.fromisoformat(str(quando)[:19]) if quando else agora_utc_naive().replace(microsecond=0)
     ts = dt.strftime("%Y-%m-%dT%H:%M:%S")
-    ms = int(dt.replace(tzinfo=timezone.utc).timestamp() * 1000)
+    ms = int(dt.replace(tzinfo=UTC).timestamp() * 1000)
 
     with connect(db_path) as conn:
         if conn.execute(

@@ -19,7 +19,7 @@ bug em teste.
 """
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 
 import pandas as pd
 import pytest
@@ -149,5 +149,5 @@ def test_migracao_preserva_grade_de_banco_legado(tmp_path):
         "2026-01-05T08:00:00",
         "2026-01-05T09:00:00",
     ]
-    esperado = int(datetime(2026, 1, 5, 8, tzinfo=timezone.utc).timestamp() * 1000)
+    esperado = int(datetime(2026, 1, 5, 8, tzinfo=UTC).timestamp() * 1000)
     assert linhas[0][1] == esperado, "o backfill de ts_ms saiu deslocado do fuso"

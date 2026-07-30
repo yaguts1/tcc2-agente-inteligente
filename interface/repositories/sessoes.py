@@ -15,8 +15,7 @@ Tres mecanismos, cada um para um caso (ver migrations/0002_sessoes_e_contas.sql)
 
 from __future__ import annotations
 
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import datetime, timedelta, UTC
 
 import structlog
 
@@ -33,7 +32,7 @@ def revogar_token(db_path: str, jti: str, expira_em: datetime, username: str | N
     with connect(db_path) as conn:
         conn.execute(
             "INSERT OR IGNORE INTO tokens_revogados (jti, username, expira_em) VALUES (?, ?, ?)",
-            (jti, username, expira_em.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")),
+            (jti, username, expira_em.astimezone(UTC).strftime("%Y-%m-%dT%H:%M:%S")),
         )
 
 
@@ -82,7 +81,7 @@ def limpar_tokens_expirados(db_path: str) -> int:
         return int(cur.rowcount or 0)
 
 
-def estado_da_conta(db_path: str, username: str) -> Optional[dict]:
+def estado_da_conta(db_path: str, username: str) -> dict | None:
     """Devolve {ativo, tokens_validos_apos} ou None se o usuario nao existe."""
     with connect(db_path) as conn:
         linha = conn.execute(

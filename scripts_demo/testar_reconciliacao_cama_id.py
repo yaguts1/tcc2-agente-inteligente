@@ -8,7 +8,7 @@ usando o cama_id do payload para encontrar o paciente atual no leito.
 import requests
 import sqlite3
 import json
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 
 BASE_URL = "http://localhost:8000"
 DB_PATH = "dados.db"
@@ -51,7 +51,7 @@ def test_reconcile_with_cama_id():
         # Criar 3 eventos órfãos
         orphan_ids = []
         for i in range(3):
-            event_time = datetime.now(timezone.utc)
+            event_time = datetime.now(UTC)
             payload = {
                 "cama_id": test_cama,  # ← Campo crítico!
                 "ts": int(event_time.timestamp()),

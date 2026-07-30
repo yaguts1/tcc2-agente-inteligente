@@ -6,7 +6,7 @@ falhariam com o código antigo, que usava datetime.now() local para a janela de
 alertas e comparava timestamps UTC diretamente com as horas locais da agenda.
 """
 import types
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 
 import pandas as pd
 
@@ -31,7 +31,7 @@ def test_utc_now_iso_retorna_utc_e_nao_hora_local():
     Nota: sob TZ=UTC este teste passa com ou sem o bug (não há como distinguir).
     Ele protege o CI e o container, que rodam com TZ=America/Sao_Paulo.
     """
-    esperado = datetime.now(timezone.utc).replace(tzinfo=None)
+    esperado = datetime.now(UTC).replace(tzinfo=None)
     obtido = datetime.fromisoformat(utc_now_iso())
 
     assert abs((obtido - esperado).total_seconds()) < 5, (
@@ -66,7 +66,7 @@ def test_atribuicao_de_device_nao_comeca_no_passado(tmp_path):
     repo = PatientRepository(db)
     repo.create(nome="Novo", perfil="medio", cama_id="101/A")
 
-    agora_ms = int(datetime.now(timezone.utc).timestamp() * 1000)
+    agora_ms = int(datetime.now(UTC).timestamp() * 1000)
     # 30 min antes de vincular: o paciente novo ainda NÃO estava nesta cama.
     antes_ms = agora_ms - 30 * 60 * 1000
 

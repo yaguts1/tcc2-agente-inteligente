@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-from typing import List, Optional
 from fastapi import APIRouter, Depends, HTTPException, status
 from pydantic import BaseModel, Field
 from datetime import timedelta
@@ -63,14 +62,14 @@ def criar_paciente_endpoint(payload: FrontendCreatePatient) -> dict:
     try:
         return service.create_patient(payload)
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
 
 
-@router.get("/pacientes", response_model=List[FrontendPatient], status_code=status.HTTP_200_OK)
+@router.get("/pacientes", response_model=list[FrontendPatient], status_code=status.HTTP_200_OK)
 def listar_pacientes_endpoint(
     incluir_alta: bool = False,
     unidades: set[int] | None = Depends(escopo_de_unidades),
-) -> List[dict]:
+) -> list[dict]:
     """Pacientes internados nas unidades que o chamador enxerga.
 
     `incluir_alta` traz tambem os que ja sairam. Fora dele a lista e a ala de
@@ -113,7 +112,7 @@ async def obter_paciente_por_cama_endpoint(cama_id: str) -> PacienteConfigRespon
                 "message": "Nenhum paciente vinculado a esta cama.",
             },
         )
-    rotinas_payload: List[RotinaConfig] = []
+    rotinas_payload: list[RotinaConfig] = []
     for idx, rotina in enumerate(ficha.get("rotinas") or []):
         try:
             duracao_val = int(rotina.get("duracao_min", 0) or 0)
@@ -158,22 +157,22 @@ def atualizar_paciente_endpoint(paciente_id: str, payload: FrontendCreatePatient
     try:
         return service.update_patient(paciente_id, payload)
     except LookupError:
-        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paciente nao encontrado")
+        raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Paciente nao encontrado") from None
     except ValueError as e:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e)) from e
 
 
 class AltaRequest(BaseModel):
-    motivo: Optional[str] = Field(None, max_length=255)
+    motivo: str | None = Field(None, max_length=255)
 
 
 class TransferenciaRequest(BaseModel):
-    room: Optional[str] = Field(None, max_length=64)
-    bed: Optional[str] = Field(None, max_length=64)
+    room: str | None = Field(None, max_length=64)
+    bed: str | None = Field(None, max_length=64)
     # Ala de destino. Ausente = mesma ala, que e o caso comum e o unico que
     # existia antes — quando digitar um leito de outra ala mantinha o paciente
     # na ala de origem, em silencio.
-    unitId: Optional[int] = None
+    unitId: int | None = None
 
 
 class TrocaDeLeitosRequest(BaseModel):

@@ -5,9 +5,9 @@ from __future__ import annotations
 import argparse
 import csv
 import json
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
-from typing import Iterable, Mapping, MutableMapping, Sequence
+from collections.abc import Iterable, Mapping, MutableMapping, Sequence
 
 ISO_FMT = "%Y-%m-%dT%H:%M:%S"
 
@@ -40,7 +40,7 @@ def _resolver_ts(valor: object) -> str:
             raise ExportacaoInvalidaError(f"Timestamp invalido: {valor!r}") from exc
 
     if dt.tzinfo is not None:
-        dt = dt.astimezone(timezone.utc)
+        dt = dt.astimezone(UTC)
     dt = dt.replace(tzinfo=None, microsecond=0)
     return dt.strftime(ISO_FMT)
 
@@ -143,8 +143,7 @@ def _iterar_csv(caminho: Path) -> Iterable[Mapping[str, object]]:
         leitor = csv.DictReader(origem)
         if leitor.fieldnames is None:
             raise ExportacaoInvalidaError("Arquivo CSV sem cabecalho.")
-        for linha in leitor:
-            yield linha
+        yield from leitor
 
 
 def _montar_defaults(args: argparse.Namespace) -> dict[str, object]:

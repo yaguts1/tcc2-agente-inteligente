@@ -15,7 +15,7 @@ travava o defeito como se fosse o contrato correto.
 """
 from __future__ import annotations
 
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 
 import pytest
 
@@ -75,7 +75,7 @@ async def test_frontend_alerts_datetimes_tem_offset(tmp_path, monkeypatch):
 
 def test_eventpayload_normalizes_tz_to_naive_utc():
     # supply a tz-aware timestamp (UTC) and ensure model normalizes to naive UTC
-    aware = datetime.now(timezone.utc).isoformat()
+    aware = datetime.now(UTC).isoformat()
     payload = {
         "device_id": "ESP-TZ",
         "postura": "supino",

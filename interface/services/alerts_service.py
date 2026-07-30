@@ -6,9 +6,9 @@ request/response HTTP (mesmo padrao ja aplicado em routers/ingestao.py).
 from __future__ import annotations
 
 import asyncio
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 from functools import partial
-from typing import List, Literal, NamedTuple
+from typing import Literal, NamedTuple
 
 import structlog
 
@@ -32,6 +32,10 @@ from interface.ws_manager_optimized import ws_manager_optimized
 from servicos import metricas
 
 logger = structlog.get_logger(__name__)
+
+# Tasks disparadas e nao aguardadas. Ver o comentario em `_executar_em_lote`:
+# sem uma referencia forte, o coletor de lixo pode recolher a task em voo.
+_TAREFAS_EM_VOO: set[asyncio.Task] = set()
 
 _RISK_MAP = {"alto": "high", "medio": "medium", "baixo": "low"}
 _STATUS_MAP = {"aberto": "pending", "reconhecido": "acknowledged", "fechado": "completed"}
@@ -292,7 +296,7 @@ def _montar_payload_broadcast(alert_id: str, paciente_id: str, ws_status: str) -
         # seguranca, nao entrega nada a conexao escopada — o alerta simplesmente
         # nao chegaria na tela da propria ala.
         "unidade_id": _unidade_do_paciente(paciente_id),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 
@@ -324,7 +328,7 @@ def montar_payload_alerta_novo(paciente_id: str, alerta: dict) -> dict:
         "severity": _RISK_MAP.get(str(alerta.get("perfil") or "").lower()),
         "alert_type": alerta.get("tipo"),
         "unidade_id": _unidade_do_paciente(paciente_id),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
     }
 
 
@@ -480,7 +484,7 @@ async def _aplicar_operacao(
         # Idem: UTC naive, o formato do resto do banco.
         agora = agora_utc_naive().replace(microsecond=0)
         ts_iso = agora.strftime("%Y-%m-%dT%H:%M:%S")
-        ts_ms = int(agora.replace(tzinfo=timezone.utc).timestamp() * 1000)
+        ts_ms = int(agora.replace(tzinfo=UTC).timestamp() * 1000)
         inserir_timeline_event(
             db_path=DB_PATH,
             paciente_id=paciente_id,
@@ -521,7 +525,7 @@ async def completar_alerta(alert_id: str, user: str, motivo: str | None = None) 
 
 
 async def processar_lote(
-    alert_ids: List[str],
+    alert_ids: list[str],
     user: str,
     operacao: Literal["acknowledge", "complete"],
     motivo: str | None = None,
@@ -532,8 +536,8 @@ async def processar_lote(
     motivo = _motivo_efetivo(config["definir_fim"], motivo)
     processed = 0
     failed = 0
-    errors: List[dict] = []
-    broadcast_tasks: List = []
+    errors: list[dict] = []
+    broadcast_tasks: list = []
 
     async def _process_alert(alert_id: str) -> tuple[bool, dict | None]:
         try:
@@ -569,7 +573,7 @@ async def processar_lote(
                 # armadilha para o proximo consumidor de `ts`.
                 agora = agora_utc_naive().replace(microsecond=0)
                 ts_iso = agora.strftime("%Y-%m-%dT%H:%M:%S")
-                ts_ms = int(agora.replace(tzinfo=timezone.utc).timestamp() * 1000)
+                ts_ms = int(agora.replace(tzinfo=UTC).timestamp() * 1000)
                 await asyncio.to_thread(
                     inserir_timeline_event,
                     DB_PATH,
@@ -617,7 +621,17 @@ async def processar_lote(
             pass
 
     try:
-        asyncio.create_task(_log_broadcast_results())
+        # A referencia PRECISA ser guardada. `asyncio` so mantem uma referencia
+        # fraca a task em voo: sem alguem segurando forte, o coletor de lixo
+        # pode recolhe-la no meio da execucao, e o broadcast desaparece sem
+        # erro nenhum — a operacao em lote responde `ok`, e os clientes
+        # conectados simplesmente nao recebem a atualizacao. Falha silenciosa e
+        # nao determinista, que so aparece sob pressao de memoria.
+        #
+        # `discard` no callback para o conjunto nao virar vazamento.
+        tarefa = asyncio.create_task(_log_broadcast_results())
+        _TAREFAS_EM_VOO.add(tarefa)
+        tarefa.add_done_callback(_TAREFAS_EM_VOO.discard)
     except Exception:
         pass
 
@@ -638,4 +652,4 @@ def parsear_data_export(valor: str | None, nome_campo: str) -> datetime | None:
     try:
         return datetime.fromisoformat(valor)
     except ValueError:
-        raise ValueError(f"{nome_campo} inválido. Use YYYY-MM-DD")
+        raise ValueError(f"{nome_campo} inválido. Use YYYY-MM-DD") from None

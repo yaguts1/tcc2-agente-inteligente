@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from collections import defaultdict
-from typing import Dict
 
 from prometheus_client import Counter, Histogram, Gauge
 
@@ -79,8 +78,8 @@ RATE_LIMIT_EXCEEDED = Counter(
   ["category"]  # 'auth', 'api', 'batch'
 )
 
-_eventos_por_paciente: Dict[str, int] = defaultdict(int)
-_alertas_por_paciente: Dict[str, int] = defaultdict(int)
+_eventos_por_paciente: dict[str, int] = defaultdict(int)
+_alertas_por_paciente: dict[str, int] = defaultdict(int)
 
 
 def registrar_recebido() -> None:

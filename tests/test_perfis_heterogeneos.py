@@ -1,4 +1,3 @@
-# -*- coding: utf-8 -*-
 """
 Tests para Problema 3: Perfis Heterogêneos
 

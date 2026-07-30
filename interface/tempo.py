@@ -12,7 +12,7 @@ que estaria deslocado do fuso do servidor.
 from __future__ import annotations
 
 import re
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from zoneinfo import ZoneInfo
 
 # Detecta "+HH:MM" / "-HH:MM" no fim da string.
@@ -27,7 +27,7 @@ TZ_LOCAL = ZoneInfo("America/Sao_Paulo")
 def agora_utc_naive() -> datetime:
     """`agora` em UTC, naive e sem microssegundos — o mesmo referencial dos
     timestamps armazenados no banco."""
-    return datetime.now(timezone.utc).replace(tzinfo=None, microsecond=0)
+    return datetime.now(UTC).replace(tzinfo=None, microsecond=0)
 
 
 def para_iso_utc(valor: str | datetime | None) -> str | None:
@@ -62,7 +62,7 @@ def para_iso_utc(valor: str | datetime | None) -> str | None:
         except ValueError:
             return texto
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return dt.isoformat()
 
 
@@ -71,5 +71,5 @@ def utc_naive_para_local(dt: datetime) -> datetime:
     local do hospital, retornando um datetime naive nesse fuso. Se `dt` já
     tiver tzinfo, respeita e converte."""
     if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
+        dt = dt.replace(tzinfo=UTC)
     return dt.astimezone(TZ_LOCAL).replace(tzinfo=None)

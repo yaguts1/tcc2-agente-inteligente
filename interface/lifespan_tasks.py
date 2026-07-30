@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import os
-from datetime import timedelta, timezone
+from datetime import timedelta, UTC
 
 import structlog
 from fastapi import FastAPI
@@ -238,7 +238,7 @@ async def ciclo_housekeeping(db_path: str) -> dict[str, int]:
 
     try:
         corte = agora_utc_naive() - timedelta(days=dias)
-        corte_ms = int(corte.replace(tzinfo=timezone.utc).timestamp() * 1000)
+        corte_ms = int(corte.replace(tzinfo=UTC).timestamp() * 1000)
         resultado["auditoria"] = await asyncio.to_thread(
             expurgar_anteriores_a, db_path, corte_ms
         )

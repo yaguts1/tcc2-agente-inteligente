@@ -12,7 +12,7 @@ provado.
 
 import sqlite3
 from contextlib import closing
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 
 import pytest
 
@@ -42,7 +42,7 @@ def banco(tmp_path):
                 (
                     "PAC-BKP",
                     f"2026-01-05T{h:02d}:00:00",
-                    int(datetime(2026, 1, 5, h, tzinfo=timezone.utc).timestamp() * 1000),
+                    int(datetime(2026, 1, 5, h, tzinfo=UTC).timestamp() * 1000),
                     "supino",
                     0.9,
                 )
@@ -332,7 +332,7 @@ class TestReplicacaoExterna:
         from servicos.backup import RECIBO_REPLICACAO
 
         base = {
-            "terminado_em": datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ"),
+            "terminado_em": datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ"),
             "ok": True,
             "arquivos": 3,
             "duracao_s": 4,
@@ -401,7 +401,7 @@ class TestReplicacaoExterna:
         from servicos.backup import estado_replicacao
 
         monkeypatch.setenv("BACKUP_REPLICACAO_INTERVALO_HORAS", "24")
-        antigo = datetime.now(timezone.utc) - timedelta(days=14)
+        antigo = datetime.now(UTC) - timedelta(days=14)
         self._recibo(tmp_path, terminado_em=antigo.strftime("%Y-%m-%dT%H:%M:%SZ"))
 
         estado = estado_replicacao(tmp_path)
@@ -415,7 +415,7 @@ class TestReplicacaoExterna:
         from servicos.backup import estado_replicacao
 
         monkeypatch.setenv("BACKUP_REPLICACAO_INTERVALO_HORAS", "24")
-        atrasado = datetime.now(timezone.utc) - timedelta(hours=30)
+        atrasado = datetime.now(UTC) - timedelta(hours=30)
         self._recibo(tmp_path, terminado_em=atrasado.strftime("%Y-%m-%dT%H:%M:%SZ"))
 
         assert estado_replicacao(tmp_path)["saudavel"] is True
@@ -474,7 +474,7 @@ class TestReplicacaoExterna:
         from servicos.backup import RECIBO_REPLICACAO, estado_replicacao
 
         monkeypatch.setenv("BACKUP_REPLICACAO_INTERVALO_HORAS", "24")
-        agora = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        agora = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         bruto = (
             '{"terminado_em":"' + agora + '","ok":true,"arquivos":2,"duracao_s":0,\n'
             ' "destino":"vm-secundaria","erro":""}'
@@ -495,7 +495,7 @@ class TestReplicacaoExterna:
         from servicos.backup import RECIBO_REPLICACAO, estado_replicacao
 
         monkeypatch.setenv("BACKUP_REPLICACAO_INTERVALO_HORAS", "24")
-        agora = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+        agora = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%SZ")
         bruto = (
             '{"terminado_em":"' + agora + '","ok":false,"arquivos":0,"duracao_s":1,\n'
             ' "destino":"vm-secundaria","erro":"rsync nao encontrado no host"}'
@@ -519,7 +519,7 @@ class TestReplicacaoExterna:
         from servicos.backup import estado_replicacao
 
         monkeypatch.setenv("BACKUP_REPLICACAO_INTERVALO_HORAS", "24")
-        futuro = datetime.now(timezone.utc) + timedelta(days=365)
+        futuro = datetime.now(UTC) + timedelta(days=365)
         self._recibo(tmp_path, terminado_em=futuro.strftime("%Y-%m-%dT%H:%M:%SZ"))
 
         estado = estado_replicacao(tmp_path)
@@ -532,7 +532,7 @@ class TestReplicacaoExterna:
         from servicos.backup import estado_replicacao
 
         monkeypatch.setenv("BACKUP_REPLICACAO_INTERVALO_HORAS", "24")
-        quase_agora = datetime.now(timezone.utc) + timedelta(seconds=20)
+        quase_agora = datetime.now(UTC) + timedelta(seconds=20)
         self._recibo(tmp_path, terminado_em=quase_agora.strftime("%Y-%m-%dT%H:%M:%SZ"))
 
         assert estado_replicacao(tmp_path)["saudavel"] is True

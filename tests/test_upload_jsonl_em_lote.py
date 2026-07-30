@@ -76,13 +76,13 @@ def _corpo_com_acento_na_fronteira() -> bytes:
     segunda = (
         prefixo
         + b"C" * enchimento
-        + "ç".encode("utf-8")
+        + "ç".encode()
         + b'","postura":"lateral_direito","confianca":0.9,"amostra_ms":300000,'
         b'"ts_utc":"2025-01-01T01:00:00Z"}'
     )
 
     corpo = primeira + segunda + b"\n"
-    assert corpo[alvo : alvo + 2] == "ç".encode("utf-8")
+    assert corpo[alvo : alvo + 2] == "ç".encode()
     return corpo
 
 
@@ -123,7 +123,7 @@ async def test_leitor_jsonl_recusa_bytes_truncados_no_fim():
     """Arquivo cortado no meio de um caractere e erro, nao silencio."""
     from fastapi import HTTPException
 
-    corpo = '{"cama":"ç'.encode("utf-8")[:-1]  # ultimo byte do acento faltando
+    corpo = '{"cama":"ç'.encode()[:-1]  # ultimo byte do acento faltando
     with pytest.raises(HTTPException) as exc:
         async for _ in iterar_linhas_jsonl(_ArquivoFalso(corpo)):
             pass

@@ -1,4 +1,3 @@
-# -- coding: utf-8 --
 # dados_simulados/contextos.py
 """
 Framework de eventos contextuais hospitalares.

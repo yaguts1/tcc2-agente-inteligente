@@ -5,7 +5,6 @@ Gerencia agendas de supressão de alertas.
 """
 
 from datetime import datetime
-from typing import Optional
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from fastapi import APIRouter, Depends, HTTPException, status, Query
@@ -44,7 +43,7 @@ _TIPOS = ("refeicao", "cirurgia", "procedimento", "atendimento", "outro")
 _MODOS = ("suprimir", "reduzir", "monitorar")
 
 
-def _validar_hora(v: Optional[str]) -> Optional[str]:
+def _validar_hora(v: str | None) -> str | None:
     """Exige HH:MM.
 
     O casamento da agenda faz `strptime(hora, "%H:%M")`. Um valor fora desse
@@ -58,11 +57,11 @@ def _validar_hora(v: Optional[str]) -> Optional[str]:
     try:
         datetime.strptime(v.strip(), "%H:%M")
     except (ValueError, AttributeError):
-        raise ValueError(f"hora deve estar no formato HH:MM (recebido: {v!r})")
+        raise ValueError(f"hora deve estar no formato HH:MM (recebido: {v!r})") from None
     return v.strip()
 
 
-def _validar_dias(v: Optional[list[int]]) -> Optional[list[int]]:
+def _validar_dias(v: list[int] | None) -> list[int] | None:
     """0=segunda .. 6=domingo, como `date.weekday()`."""
     if v is None:
         return v
@@ -75,14 +74,14 @@ def _validar_dias(v: Optional[list[int]]) -> Optional[list[int]]:
 class AgendaCreate(BaseModel):
     """Criação de agenda."""
     tipo: str = Field(..., min_length=1, max_length=50)
-    descricao: Optional[str] = Field(None, max_length=255)
-    dias_semana: Optional[list[int]] = Field(None, description="[0-6] para Seg-Dom")
+    descricao: str | None = Field(None, max_length=255)
+    dias_semana: list[int] | None = Field(None, description="[0-6] para Seg-Dom")
     hora_inicio: str = Field("00:00")
     hora_fim: str = Field("23:59")
-    data_inicio: Optional[str] = Field(None, description="YYYY-MM-DD")
-    data_fim: Optional[str] = Field(None, description="YYYY-MM-DD")
+    data_inicio: str | None = Field(None, description="YYYY-MM-DD")
+    data_fim: str | None = Field(None, description="YYYY-MM-DD")
     modo: str = Field("suprimir", description="suprimir|reduzir|monitorar")
-    reducao_janela_min: Optional[int] = Field(None, ge=5, le=60)
+    reducao_janela_min: int | None = Field(None, ge=5, le=60)
     
     @field_validator("tipo")
     @classmethod
@@ -131,16 +130,16 @@ class AgendaUpdate(BaseModel):
     erro de digitacao) e aceito, nao casa com nenhum modo conhecido e a
     supressao simplesmente para de acontecer, sem erro em lugar nenhum.
     """
-    tipo: Optional[str] = None
-    descricao: Optional[str] = None
-    dias_semana: Optional[list[int]] = None
-    hora_inicio: Optional[str] = None
-    hora_fim: Optional[str] = None
-    data_inicio: Optional[str] = None
-    data_fim: Optional[str] = None
-    modo: Optional[str] = None
-    reducao_janela_min: Optional[int] = None
-    ativo: Optional[bool] = None
+    tipo: str | None = None
+    descricao: str | None = None
+    dias_semana: list[int] | None = None
+    hora_inicio: str | None = None
+    hora_fim: str | None = None
+    data_inicio: str | None = None
+    data_fim: str | None = None
+    modo: str | None = None
+    reducao_janela_min: int | None = None
+    ativo: bool | None = None
 
     @field_validator("tipo")
     @classmethod
@@ -165,14 +164,14 @@ class AgendaResponse(BaseModel):
     id: int
     paciente_id: str
     tipo: str
-    descricao: Optional[str]
-    dias_semana: Optional[list[int]]
+    descricao: str | None
+    dias_semana: list[int] | None
     hora_inicio: str
     hora_fim: str
-    data_inicio: Optional[str]
-    data_fim: Optional[str]
+    data_inicio: str | None
+    data_fim: str | None
     modo: str
-    reducao_janela_min: Optional[int]
+    reducao_janela_min: int | None
     ativo: bool
     created_at: str
     updated_at: str
@@ -181,7 +180,7 @@ class AgendaResponse(BaseModel):
 class SuppressionCheckResponse(BaseModel):
     """Resposta da verificação de supressão."""
     em_periodo_suprimido: bool
-    modo_resultado: Optional[str]
+    modo_resultado: str | None
     agendas_ativas: list[dict]
 
 
@@ -296,7 +295,7 @@ def verificar_supressao(
     except ValueError as e:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
-            detail={"code": "invalid_timestamp", "message": f"Timestamp inválido: {str(e)}"}
+            detail={"code": "invalid_timestamp", "message": f"Timestamp inválido: {e!s}"}
         ) from e
     except Exception as e:
         logger.error("agenda_verificar_erro", error=str(e), paciente_id=paciente_id)
@@ -318,8 +317,8 @@ def obter_agenda(paciente_id: str, agenda_id: int) -> AgendaResponse:
     except LookupError:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND,
-            detail={"code": "agenda_nao_encontrada", "message": f"Agenda {agenda_id} não encontrada"}
-        )
+            detail={"code": "agenda_nao_encontrada", "message": f"Agenda {agenda_id} não encontrada"},
+        ) from None
     except HTTPException:
         raise
     except Exception as e:
@@ -353,8 +352,8 @@ def atualizar_agenda(
     except LookupError:
         raise HTTPException(
             status.HTTP_404_NOT_FOUND,
-            detail={"code": "agenda_nao_encontrada", "message": f"Agenda {agenda_id} não encontrada"}
-        )
+            detail={"code": "agenda_nao_encontrada", "message": f"Agenda {agenda_id} não encontrada"},
+        ) from None
     except ValueError as e:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,

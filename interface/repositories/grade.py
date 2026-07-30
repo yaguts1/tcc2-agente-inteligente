@@ -40,7 +40,7 @@ def inserir_grade(
     db_path: str,
     df_grade: pd.DataFrame,
     paciente_id: str = "P1",
-    conn: "sqlite3.Connection | None" = None,
+    conn: sqlite3.Connection | None = None,
 ) -> int:
     """Insere amostras da grade simulada."""
     required = {"timestamp", "postura"}
@@ -116,7 +116,7 @@ def inserir_eventos(
     db_path: str,
     df_eventos: pd.DataFrame,
     paciente_id: str = "P1",
-    conn: "sqlite3.Connection | None" = None,
+    conn: sqlite3.Connection | None = None,
 ) -> int:
     """Insere eventos simulados em lote."""
     required = {"inicio", "fim"}

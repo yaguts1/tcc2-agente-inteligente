@@ -197,12 +197,11 @@ class TestContratoQueOFirmwareAssume:
     def test_websocket_confirma_com_o_seq(self, app_isolado):
         """O ACK precisa devolver `seq` — é assim que o firmware sabe QUAL
         amostra foi confirmada antes de mover o checkpoint."""
-        with TestClient(app_isolado.app) as client:
-            with client.websocket_connect("/api/ws/eventos") as ws:
-                ws.send_json({"device_id": "ESP-PROTO", "cama_id": "C-WS"})
-                assert ws.receive_json()["status"] == "connected"
-                ws.send_json({**json.loads(_amostra(1, "PAC-WS", "C-WS", 0)), "seq": 12})
-                assert ws.receive_json() == {"status": "ok", "seq": 12}
+        with TestClient(app_isolado.app) as client, client.websocket_connect("/api/ws/eventos") as ws:
+            ws.send_json({"device_id": "ESP-PROTO", "cama_id": "C-WS"})
+            assert ws.receive_json()["status"] == "connected"
+            ws.send_json({**json.loads(_amostra(1, "PAC-WS", "C-WS", 0)), "seq": 12})
+            assert ws.receive_json() == {"status": "ok", "seq": 12}
 
     def test_websocket_erro_traz_codigo_estavel(self, app_isolado):
         """O firmware decide insistir ou desistir a partir do CÓDIGO.
@@ -210,12 +209,11 @@ class TestContratoQueOFirmwareAssume:
         Se virasse texto livre (`str(e)`), qualquer refactor do servidor mudaria
         a decisão do dispositivo sem ninguém perceber.
         """
-        with TestClient(app_isolado.app) as client:
-            with client.websocket_connect("/api/ws/eventos") as ws:
-                ws.send_json({"device_id": "ESP-PROTO", "cama_id": "C-WS"})
-                ws.receive_json()
-                ws.send_text("isto nao e json")
-                resposta = ws.receive_json()
+        with TestClient(app_isolado.app) as client, client.websocket_connect("/api/ws/eventos") as ws:
+            ws.send_json({"device_id": "ESP-PROTO", "cama_id": "C-WS"})
+            ws.receive_json()
+            ws.send_text("isto nao e json")
+            resposta = ws.receive_json()
 
         assert resposta["status"] == "error"
         assert isinstance(resposta.get("error"), str) and resposta["error"]

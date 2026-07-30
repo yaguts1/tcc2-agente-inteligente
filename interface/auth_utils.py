@@ -1,6 +1,5 @@
 """JWT Authentication Utilities."""
-from datetime import datetime, timedelta, timezone
-from typing import Optional
+from datetime import datetime, timedelta, UTC
 from jose import jwt, JWTError
 import os
 import secrets
@@ -46,14 +45,11 @@ def ambiente_atual() -> str:
 def em_producao() -> bool:
     return ambiente_atual() == "production"
 
-def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -> str:
+def create_access_token(data: dict, expires_delta: timedelta | None = None) -> str:
     to_encode = data.copy()
     # datetime.utcnow() é deprecado no Python 3.12+; usar aware UTC.
-    agora = datetime.now(timezone.utc)
-    if expires_delta:
-        expire = agora + expires_delta
-    else:
-        expire = agora + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    agora = datetime.now(UTC)
+    expire = agora + expires_delta if expires_delta else agora + timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
 
     # `jti` e `iat` existem para permitir revogação:
     #  - jti identifica ESTE token, para o logout encerrar só aquela sessão;
@@ -66,12 +62,10 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
         "iat": agora,
         "jti": secrets.token_urlsafe(16),
     })
-    encoded_jwt = jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
-    return encoded_jwt
+    return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
-def verify_token(token: str) -> Optional[dict]:
+def verify_token(token: str) -> dict | None:
     try:
-        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        return payload
+        return jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
     except JWTError:
         return None

@@ -75,7 +75,7 @@ def test_processar_alertas_incremental_equivalente_lote() -> None:
 
 def test_configuracao_respeita_variavel_de_ambiente(monkeypatch: pytest.MonkeyPatch) -> None:
     # Mock _load_env_file to ignore .env file content
-    monkeypatch.setattr(configuracao, "_load_env_file", lambda: {})
+    monkeypatch.setattr(configuracao, "_load_env_file", dict)
 
     monkeypatch.setattr(configuracao, "_ENV_CACHE", None, raising=False)
     monkeypatch.setenv("MODE", "stream")

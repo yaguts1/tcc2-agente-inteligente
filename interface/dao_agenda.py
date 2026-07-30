@@ -6,7 +6,6 @@ Gerencia agendas de supressão de alertas para pacientes.
 
 from __future__ import annotations
 from datetime import datetime, timedelta
-from typing import Optional, Union
 import json
 
 from interface.dao import _connect, _ensure_paciente
@@ -74,14 +73,14 @@ def criar_agenda(
     db_path: str,
     paciente_id: str,
     tipo: str,
-    descricao: Optional[str] = None,
-    dias_semana: Optional[list[int]] = None,
+    descricao: str | None = None,
+    dias_semana: list[int] | None = None,
     hora_inicio: str = "00:00",
     hora_fim: str = "23:59",
-    data_inicio: Optional[str] = None,
-    data_fim: Optional[str] = None,
+    data_inicio: str | None = None,
+    data_fim: str | None = None,
     modo: str = "suprimir",
-    reducao_janela_min: Optional[int] = None,
+    reducao_janela_min: int | None = None,
 ) -> dict:
     """
     Cria uma nova agenda de supressão.
@@ -222,9 +221,9 @@ def atualizar_agenda(
     if "dias_semana" in updates:
         updates["dias_semana"] = json.dumps(updates["dias_semana"]) if updates["dias_semana"] else None
     
-    set_clause = ", ".join(f"{k} = ?" for k in updates.keys())
+    set_clause = ", ".join(f"{k} = ?" for k in updates)
     # updated_at segue o mesmo referencial do resto do banco: UTC naive.
-    values = list(updates.values()) + [agora_utc_naive().isoformat(), agenda_id, paciente_id]
+    values = [*list(updates.values()), agora_utc_naive().isoformat(), agenda_id, paciente_id]
     
     with _connect(db_path) as conn:
         conn.execute(f"""
@@ -293,7 +292,7 @@ def is_timestamp_in_suppressed_period(
     return True, "monitorar"
 
 
-def get_reducao_janela(db_path: str, paciente_id: str, timestamp: Union[datetime, str]) -> int:
+def get_reducao_janela(db_path: str, paciente_id: str, timestamp: datetime | str) -> int:
     """Retorna a maior `reducao_janela_min` entre as agendas 'reduzir' ATIVAS
     do paciente que casam com o `timestamp`. Retorna 0 se nenhuma casar.
 
@@ -312,7 +311,7 @@ def get_reducao_janela(db_path: str, paciente_id: str, timestamp: Union[datetime
     return max(reducoes) if reducoes else 0
 
 
-def _timestamp_matches_agenda(timestamp: Union[datetime, str], agenda: dict) -> bool:
+def _timestamp_matches_agenda(timestamp: datetime | str, agenda: dict) -> bool:
     """Verifica se timestamp corresponde ao horário/data da agenda."""
     
     # Convert string timestamp to datetime if needed
@@ -373,10 +372,7 @@ def _timestamp_matches_agenda(timestamp: Union[datetime, str], agenda: dict) -> 
             return False
         data_inicio = datetime.fromisoformat(agenda["data_inicio"]).date()
         
-        if agenda["data_fim"]:
-            data_fim = datetime.fromisoformat(agenda["data_fim"]).date()
-        else:
-            data_fim = data_inicio
+        data_fim = datetime.fromisoformat(agenda["data_fim"]).date() if agenda["data_fim"] else data_inicio
         
         if not (data_inicio <= ts_date <= data_fim):
             return False

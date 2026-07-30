@@ -4,14 +4,15 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
-from typing import Any, Dict, Iterable, List, Mapping, Sequence, Tuple
+from typing import Any
+from collections.abc import Iterable, Mapping, Sequence
 
 import pandas as pd
 
 from configuracao import config as app_config
 
 
-def _perfil_config(perfil: str) -> Dict[str, int]:
+def _perfil_config(perfil: str) -> dict[str, int]:
     janelas = app_config.janela_por_perfil
     if perfil not in janelas:
         raise ValueError(f"Perfil desconhecido: {perfil}")
@@ -22,7 +23,7 @@ def _perfil_config(perfil: str) -> Dict[str, int]:
         "histerese_minutos": app_config.histerese_min,
     }
 
-NOVO_ALERTA_STATUS: Tuple[str, str] = ("aberto", "fechado")
+NOVO_ALERTA_STATUS: tuple[str, str] = ("aberto", "fechado")
 
 
 @dataclass
@@ -34,7 +35,7 @@ class EstadoDecisor:
     janela_min: int
     cooldown_min: int
     histerese_min: float
-    alerta_atual: Dict[str, Any] | None = None
+    alerta_atual: dict[str, Any] | None = None
     alerta_inicio: datetime | None = None
     baseline_postura: str | None = None
     movimento_inicio: datetime | None = None
@@ -52,14 +53,14 @@ class EstadoDecisor:
     # supino nao descarrega um trocanter que ficou 50 minutos sob pressao.
     #
     # Ver `nucleo/posturas.py` para o mapa postura -> sitios.
-    carga_por_sitio: Dict[str, float] = field(default_factory=dict)
-    alivio_por_sitio: Dict[str, float] = field(default_factory=dict)
+    carga_por_sitio: dict[str, float] = field(default_factory=dict)
+    alivio_por_sitio: dict[str, float] = field(default_factory=dict)
     # Sitio que disparou o alerta aberto. E o que permite exigir que o alivio
     # descarregue o sitio CERTO, e nao qualquer um.
     sitio_do_alerta: str | None = None
 
     @classmethod
-    def criar(cls, perfil: str, paciente_id: str) -> "EstadoDecisor":
+    def criar(cls, perfil: str, paciente_id: str) -> EstadoDecisor:
         config = _perfil_config(perfil)
         return cls(
             perfil=perfil,
@@ -69,7 +70,7 @@ class EstadoDecisor:
             histerese_min=float(config["histerese_minutos"]),
         )
 
-    def clone(self) -> "EstadoDecisor":
+    def clone(self) -> EstadoDecisor:
         alerta = None if self.alerta_atual is None else dict(self.alerta_atual)
         return EstadoDecisor(
             perfil=self.perfil,
@@ -120,7 +121,7 @@ def _to_datetime(valor: Any) -> datetime:
 
 def _abrir_alerta(
     inicio: datetime, estado: EstadoDecisor, sitio: str | None = None
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     return {
         "paciente_id": estado.paciente_id,
         "inicio": inicio.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -135,7 +136,7 @@ def _abrir_alerta(
     }
 
 
-def _fechar_alerta_inplace(alerta: Dict[str, Any], fim: datetime, inicio: datetime) -> Dict[str, Any]:
+def _fechar_alerta_inplace(alerta: dict[str, Any], fim: datetime, inicio: datetime) -> dict[str, Any]:
     alerta["fim"] = fim.strftime("%Y-%m-%dT%H:%M:%S")
     alerta["status"] = NOVO_ALERTA_STATUS[1]
     alerta["duracao_min"] = round((fim - inicio).total_seconds() / 60.0, 2)
@@ -170,7 +171,7 @@ def reiniciar_corrida(estado: EstadoDecisor) -> EstadoDecisor:
     return novo_estado
 
 
-def _acumular_carga(estado: "EstadoDecisor", postura: str, minutos: float) -> None:
+def _acumular_carga(estado: EstadoDecisor, postura: str, minutos: float) -> None:
     """Soma `minutos` de carga nos sitios que esta postura apoia.
 
     Muta `estado` — que e sempre o CLONE, nunca o recebido.
@@ -207,7 +208,7 @@ def _acumular_carga(estado: "EstadoDecisor", postura: str, minutos: float) -> No
             estado.alivio_por_sitio[sitio] = aliviado
 
 
-def _sitio_mais_carregado(estado: "EstadoDecisor"):
+def _sitio_mais_carregado(estado: EstadoDecisor):
     """O sitio com mais carga acumulada, e quanto.
 
     O alerta e sobre o sitio em pior situacao: e ele que define quando avisar e o
@@ -234,7 +235,7 @@ def _sitio_mais_carregado(estado: "EstadoDecisor"):
 def processar_alertas_incremental(
     estado: EstadoDecisor,
     amostra: Mapping[str, Any],
-) -> Tuple[EstadoDecisor, List[Dict[str, Any]]]:
+) -> tuple[EstadoDecisor, list[dict[str, Any]]]:
     """Atualiza o estado do motor com uma nova amostra de postura."""
     if not isinstance(estado, EstadoDecisor):
         raise TypeError("Estado deve ser uma instancia de EstadoDecisor.")
@@ -248,7 +249,7 @@ def processar_alertas_incremental(
     if novo_estado.ultimo_timestamp and timestamp <= novo_estado.ultimo_timestamp:
         raise ValueError("Timestamps devem estar em ordem crescente.")
 
-    alertas_emitidos: List[Dict[str, Any]] = []
+    alertas_emitidos: list[dict[str, Any]] = []
 
     if novo_estado.run_postura is None:
         novo_estado.run_postura = postura
@@ -349,11 +350,11 @@ def processar_alertas_lote(
     grade: Sequence[Mapping[str, Any]] | pd.DataFrame,
     perfil: str,
     paciente_id: str,
-) -> List[Dict[str, Any]]:
+) -> list[dict[str, Any]]:
     """Processa uma grade completa de posturas e retorna alertas gerados."""
     estado = EstadoDecisor.criar(perfil, paciente_id)
-    alertas_por_chave: Dict[Tuple[str, str], Dict[str, Any]] = {}
-    ordem: List[Tuple[str, str]] = []
+    alertas_por_chave: dict[tuple[str, str], dict[str, Any]] = {}
+    ordem: list[tuple[str, str]] = []
     estado_atual = estado
 
     for amostra in _iterar_grade(grade):

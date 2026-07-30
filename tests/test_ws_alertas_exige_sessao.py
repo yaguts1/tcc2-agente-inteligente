@@ -30,26 +30,23 @@ def _token(cabecalho_auth) -> str:
 
 
 def test_anonimo_e_recusado(client):
-    with pytest.raises(WebSocketDisconnect) as excecao:
-        with client.websocket_connect(CAMINHO):
-            pass
+    with pytest.raises(WebSocketDisconnect) as excecao, client.websocket_connect(CAMINHO):
+        pass
 
     assert excecao.value.code == 1008, "recusa deve ser policy violation (1008)"
 
 
 def test_anonimo_e_recusado_mesmo_filtrando_um_paciente(client):
     """O caso pior: escolher o paciente a espiar sem apresentar credencial."""
-    with pytest.raises(WebSocketDisconnect):
-        with client.websocket_connect(f"{CAMINHO}?patient_id=PAC-0001"):
-            pass
+    with pytest.raises(WebSocketDisconnect), client.websocket_connect(f"{CAMINHO}?patient_id=PAC-0001"):
+        pass
 
 
 def test_token_invalido_e_recusado(client):
-    with pytest.raises(WebSocketDisconnect):
-        with client.websocket_connect(
-            CAMINHO, headers={"Authorization": "Bearer nao-e-um-jwt"}
-        ):
-            pass
+    with pytest.raises(WebSocketDisconnect), client.websocket_connect(
+        CAMINHO, headers={"Authorization": "Bearer nao-e-um-jwt"}
+    ):
+        pass
 
 
 def test_cookie_de_sessao_conecta(client, cabecalho_auth):

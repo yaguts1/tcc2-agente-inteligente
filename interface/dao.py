@@ -12,7 +12,7 @@ refatoracao. Novo codigo deve importar diretamente de `interface.repositories.*`
 
 from __future__ import annotations
 
-from typing import List, Sequence
+from collections.abc import Sequence
 
 from interface.db_core import (
     ISO_FORMAT,
@@ -58,7 +58,6 @@ from interface.repositories.devices import (
 # aplicacao no import — foi exatamente o que aconteceu ao ligar o lint.
 __all__ = [
     "ISO_FORMAT",
-    "List",
     "PACIENTE_ID_PREFIX",
     "PERFIS_VALIDOS",
     "PatientRepository",
@@ -110,7 +109,7 @@ def listar_fichas_pacientes(
     incluir_rotinas: bool = False,
     unidades: set[int] | None = None,
     incluir_alta: bool = False,
-) -> List[dict]:
+) -> list[dict]:
     return PatientRepository(db_path).list_all(
         incluir_rotinas, unidades=unidades, incluir_alta=incluir_alta
     )

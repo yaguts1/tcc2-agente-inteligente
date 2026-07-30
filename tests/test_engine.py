@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Iterable, List, Tuple
+from collections.abc import Iterable
 from unittest.mock import patch
 
 import pandas as pd
@@ -13,12 +13,12 @@ from modulo_alerta.engine import processar_alertas
 ISO_FMT = "%Y-%m-%dT%H:%M:%S"
 
 
-def _grade_from_runs(runs: Iterable[Tuple[str, int]], start: str = "2025-01-01T00:00:00") -> pd.DataFrame:
+def _grade_from_runs(runs: Iterable[tuple[str, int]], start: str = "2025-01-01T00:00:00") -> pd.DataFrame:
     """Builds a minute-by-minute grade from (posture, size) runs."""
-    runs_list: List[Tuple[str, int]] = list(runs)
+    runs_list: list[tuple[str, int]] = list(runs)
     periods = sum(count for _, count in runs_list)
     timestamps = pd.date_range(start=start, periods=periods, freq="min")
-    posturas: List[str] = []
+    posturas: list[str] = []
     for postura, count in runs_list:
         posturas.extend([postura] * count)
     return pd.DataFrame({"timestamp": timestamps, "postura": posturas})

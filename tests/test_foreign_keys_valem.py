@@ -32,12 +32,11 @@ def test_pragma_esta_ligado_na_conexao_do_app(db):
 
 
 def test_filho_sem_pai_e_recusado(db):
-    with pytest.raises(sqlite3.IntegrityError):
-        with connect(db) as conn:
-            conn.execute(
-                "INSERT INTO paciente_fichas(paciente_id,nome,perfil,created_at,updated_at)"
-                " VALUES ('PAC-NAO-EXISTE','Fantasma','alto','2026-01-01','2026-01-01')"
-            )
+    with pytest.raises(sqlite3.IntegrityError), connect(db) as conn:
+        conn.execute(
+            "INSERT INTO paciente_fichas(paciente_id,nome,perfil,created_at,updated_at)"
+            " VALUES ('PAC-NAO-EXISTE','Fantasma','alto','2026-01-01','2026-01-01')"
+        )
 
 
 def test_agenda_aponta_para_tabela_que_existe(db):
@@ -65,12 +64,11 @@ def test_agenda_de_paciente_inexistente_e_recusada(db):
             " VALUES ('PAC-0001','cirurgia','08:00','12:00')"
         )
 
-    with pytest.raises(sqlite3.IntegrityError):
-        with connect(db) as conn:
-            conn.execute(
-                "INSERT INTO agendas_paciente(paciente_id,tipo,hora_inicio,hora_fim)"
-                " VALUES ('PAC-SUMIU','cirurgia','08:00','12:00')"
-            )
+    with pytest.raises(sqlite3.IntegrityError), connect(db) as conn:
+        conn.execute(
+            "INSERT INTO agendas_paciente(paciente_id,tipo,hora_inicio,hora_fim)"
+            " VALUES ('PAC-SUMIU','cirurgia','08:00','12:00')"
+        )
 
 
 def test_migracao_preserva_agendas_de_banco_legado(tmp_path):

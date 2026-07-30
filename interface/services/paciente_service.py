@@ -1,7 +1,6 @@
 """Service layer for Patient operations."""
 from __future__ import annotations
 
-from typing import List, Optional
 
 import structlog
 
@@ -125,11 +124,11 @@ class PatientService:
 
     def list_patients(
         self, unidades: set[int] | None = None, incluir_alta: bool = False
-    ) -> List[dict]:
+    ) -> list[dict]:
         fichas = self.repository.list_all(unidades=unidades, incluir_alta=incluir_alta)
         return [self._transform_patient(ficha) for ficha in fichas]
 
-    def get_patient(self, paciente_id: str) -> Optional[dict]:
+    def get_patient(self, paciente_id: str) -> dict | None:
         ficha = self.repository.get_by_id(paciente_id)
         if not ficha:
             return None
@@ -237,9 +236,9 @@ class PatientService:
         )
         return self._transform_patient(atualizado)
 
-    def delete_patient(self, paciente_id: str) -> Optional[dict]:
+    def delete_patient(self, paciente_id: str) -> dict | None:
         """Remove o paciente. Devolve o que foi apagado, ou None se nao existia."""
         return self.repository.delete(paciente_id)
 
-    def get_patient_by_bed(self, cama_id: str) -> Optional[dict]:
+    def get_patient_by_bed(self, cama_id: str) -> dict | None:
         return self.repository.get_by_cama(cama_id, include_routines=True)

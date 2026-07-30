@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import time
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, status
 
@@ -71,7 +71,7 @@ def health_check() -> dict:
         "version": APP_VERSION,
         "uptime_seconds": round(uptime_seconds, 2),
         "uptime_hours": round(uptime_hours, 2),
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "timestamp": datetime.now(UTC).isoformat(),
         "database": {
             "status": db_status,
             "path": DB_PATH,

@@ -12,24 +12,22 @@ import argparse
 import json
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from typing import Any
+from collections.abc import Iterable
 
 import pandas as pd
 
 
 def detect_input_paths(pattern: str) -> list[Path]:
-    p = Path('.').resolve()
-    if any(ch in pattern for ch in ['*', '?', '[']):
-        matches = list(p.glob(pattern))
-    else:
-        matches = [p.joinpath(pattern)]
+    p = Path().resolve()
+    matches = list(p.glob(pattern)) if any(ch in pattern for ch in ['*', '?', '[']) else [p.joinpath(pattern)]
     if not matches:
         raise FileNotFoundError(f"No files match pattern: {pattern}")
     return matches
 
 
-def read_jsonl(path: Path) -> Iterable[Dict[str, Any]]:
-    with open(path, 'r', encoding='utf-8') as fh:
+def read_jsonl(path: Path) -> Iterable[dict[str, Any]]:
+    with open(path, encoding='utf-8') as fh:
         for ln in fh:
             ln = ln.strip()
             if not ln:
@@ -37,10 +35,9 @@ def read_jsonl(path: Path) -> Iterable[Dict[str, Any]]:
             yield json.loads(ln)
 
 
-def read_csv(path: Path) -> Iterable[Dict[str, Any]]:
+def read_csv(path: Path) -> Iterable[dict[str, Any]]:
     df = pd.read_csv(path)
-    for rec in df.to_dict(orient='records'):
-        yield rec
+    yield from df.to_dict(orient='records')
 
 
 def normalize_iso(ts: str) -> str:
@@ -59,17 +56,14 @@ def normalize_iso(ts: str) -> str:
             raise ValueError(f"Could not parse timestamp: {ts}") from exc
 
 
-def map_record_to_alert(rec: Dict[str, Any]) -> Dict[str, Any]:
+def map_record_to_alert(rec: dict[str, Any]) -> dict[str, Any]:
     # Input shape may be frontend-shaped (id, patientName, lastRepositioning, nextRepositioning, riskLevel, status)
     # We need to produce DAO-shaped alert dict: paciente_id, inicio, tipo, perfil, janela_min, status
     paciente = rec.get('patientName') or rec.get('paciente_id') or None
     if not paciente:
         # try parsing from id
         rid = rec.get('id') or ''
-        if isinstance(rid, str) and '_' in rid:
-            paciente = rid.split('_')[0]
-        else:
-            paciente = 'PAC-0001'
+        paciente = rid.split('_')[0] if isinstance(rid, str) and '_' in rid else 'PAC-0001'
 
     inicio_raw = rec.get('lastRepositioning') or rec.get('inicio') or rec.get('timestamp')
     inicio = normalize_iso(inicio_raw)
@@ -95,7 +89,7 @@ def map_record_to_alert(rec: Dict[str, Any]) -> Dict[str, Any]:
     status_map = {'pending': 'aberto', 'acknowledged': 'reconhecido', 'completed': 'fechado'}
     status = status_map.get(str(rec.get('status') or '').lower(), 'aberto')
 
-    alerta = {
+    return {
         'paciente_id': paciente,
         'inicio': inicio,
         'tipo': 'imobilidade',
@@ -103,11 +97,10 @@ def map_record_to_alert(rec: Dict[str, Any]) -> Dict[str, Any]:
         'janela_min': int(janela_min),
         'status': status,
     }
-    return alerta
 
 
-def load_alerts_from_files(paths: List[Path]) -> List[Dict[str, Any]]:
-    alerts: List[Dict[str, Any]] = []
+def load_alerts_from_files(paths: list[Path]) -> list[dict[str, Any]]:
+    alerts: list[dict[str, Any]] = []
     for p in paths:
         if p.suffix.lower() == '.jsonl':
             for rec in read_jsonl(p):

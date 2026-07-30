@@ -31,7 +31,8 @@ import hashlib
 import hmac
 import json
 import os
-from typing import Any, Mapping, Sequence
+from typing import Any
+from collections.abc import Mapping, Sequence
 
 import structlog
 
@@ -82,7 +83,7 @@ def _canonico(registro: Mapping[str, Any]) -> str:
 
 
 def _payload(registro: Mapping[str, Any], hash_anterior: str) -> bytes:
-    return f"{hash_anterior}\n{_canonico(registro)}".encode("utf-8")
+    return f"{hash_anterior}\n{_canonico(registro)}".encode()
 
 
 def calcular(registro: Mapping[str, Any], hash_anterior: str) -> str:

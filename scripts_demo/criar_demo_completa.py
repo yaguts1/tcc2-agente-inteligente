@@ -6,7 +6,6 @@ Demonstra a capacidade do sistema em escala real.
 import subprocess
 import sys
 from pathlib import Path
-from typing import Dict
 import requests
 from time import sleep
 
@@ -57,7 +56,7 @@ def verificar_backend() -> bool:
         return False
 
 
-def criar_paciente(paciente: Dict) -> str | None:
+def criar_paciente(paciente: dict) -> str | None:
     """
     Cria paciente via API.
     Retorna o ID do paciente criado ou None em caso de erro.
@@ -75,10 +74,9 @@ def criar_paciente(paciente: Dict) -> str | None:
         if response.status_code == 201:
             data = response.json()
             return data["id"]
-        else:
-            print(f"   ERRO ao criar {paciente['name']}: {response.status_code}")
-            print(f"   {response.text}")
-            return None
+        print(f"   ERRO ao criar {paciente['name']}: {response.status_code}")
+        print(f"   {response.text}")
+        return None
     except Exception as e:
         print(f"   ERRO ao criar {paciente['name']}: {e}")
         return None
@@ -188,7 +186,7 @@ def main():
     print(f"   Baixo risco:  {perfis['low']} pacientes (6h de dados)")
     
     print("\nQuartos ocupados:")
-    quartos = set(f"{pac['room']}{pac['bed']}" for pac in pacientes_criados)
+    quartos = {f"{pac['room']}{pac['bed']}" for pac in pacientes_criados}
     for q in sorted(quartos):
         print(f"   - Quarto {q}")
     

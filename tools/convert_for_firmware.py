@@ -16,11 +16,12 @@ from __future__ import annotations
 import argparse
 import json
 from pathlib import Path
-from typing import Any, Dict, Iterable
+from typing import Any
+from collections.abc import Iterable
 import pandas as pd
 
 
-def read_jsonl(path: Path) -> Iterable[Dict[str, Any]]:
+def read_jsonl(path: Path) -> Iterable[dict[str, Any]]:
     with path.open('r', encoding='utf-8') as fh:
         for ln in fh:
             ln = ln.strip()
@@ -29,10 +30,9 @@ def read_jsonl(path: Path) -> Iterable[Dict[str, Any]]:
             yield json.loads(ln)
 
 
-def read_csv(path: Path) -> Iterable[Dict[str, Any]]:
+def read_csv(path: Path) -> Iterable[dict[str, Any]]:
     df = pd.read_csv(path)
-    for r in df.to_dict(orient='records'):
-        yield r
+    yield from df.to_dict(orient='records')
 
 
 def normalize_ts(ts: str, add_z: bool) -> str:
@@ -44,7 +44,7 @@ def normalize_ts(ts: str, add_z: bool) -> str:
     return out
 
 
-def map_record(rec: Dict[str, Any], device: str, paciente: str | None, cama: str | None, add_z: bool) -> Dict[str, Any]:
+def map_record(rec: dict[str, Any], device: str, paciente: str | None, cama: str | None, add_z: bool) -> dict[str, Any]:
     # Prefer explicit fields if present
     postura = rec.get('postura') or rec.get('style') or rec.get('position') or 'supino'
     confianca = float(rec.get('confianca') or rec.get('confidence') or 0.9)
@@ -54,7 +54,7 @@ def map_record(rec: Dict[str, Any], device: str, paciente: str | None, cama: str
         raise ValueError('No timestamp field present in record')
     ts_iso = normalize_ts(ts_raw, add_z)
 
-    payload = {
+    return {
         "device_id": device,
         "paciente_id": paciente or rec.get('paciente_id') or rec.get('patientName') or None,
         "cama_id": cama or rec.get('cama_id') or rec.get('cama') or None,
@@ -63,7 +63,6 @@ def map_record(rec: Dict[str, Any], device: str, paciente: str | None, cama: str
         "amostra_ms": int(amostra_ms),
         "ts_utc": ts_iso,
     }
-    return payload
 
 
 def main(argv=None) -> int:

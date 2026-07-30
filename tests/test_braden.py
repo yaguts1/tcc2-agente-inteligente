@@ -177,9 +177,8 @@ def test_total_gravado_nunca_diverge_das_partes(db, ana):
 
     repo.registrar(db, ana, GRAVE)
 
-    with pytest.raises(sqlite3.IntegrityError):
-        with connect(db) as conn:
-            conn.execute("UPDATE braden_avaliacoes SET total = 99")
+    with pytest.raises(sqlite3.IntegrityError), connect(db) as conn:
+        conn.execute("UPDATE braden_avaliacoes SET total = 99")
 
 
 def test_paciente_inexistente_e_recusado(db):

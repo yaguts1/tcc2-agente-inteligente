@@ -39,7 +39,7 @@ def verificar_evento_existe(conn: sqlite3.Connection, paciente_id: str, ts: str,
     return count > 0
 
 
-def popular_timeline_para_alertas(db_path: Path, dry_run: bool = False, paciente_filter: str = None):
+def popular_timeline_para_alertas(db_path: Path, dry_run: bool = False, paciente_filter: str | None = None):
     """
     Popula a timeline com eventos retroativos baseados nos alertas existentes.
     

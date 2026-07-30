@@ -3,8 +3,8 @@ from __future__ import annotations
 import asyncio
 import json
 from collections import defaultdict
-from datetime import datetime, timezone
-from typing import Any, Dict
+from datetime import datetime, UTC
+from typing import Any
 
 import structlog
 from fastapi import APIRouter, Depends, File, HTTPException, Request, UploadFile, status, WebSocket, WebSocketDisconnect
@@ -38,7 +38,7 @@ logger = structlog.get_logger(__name__)
 router = APIRouter(tags=["ingestao"])
 
 
-def _ts_da_medicao(payload: Dict[str, Any], device_id: str | None) -> datetime:
+def _ts_da_medicao(payload: dict[str, Any], device_id: str | None) -> datetime:
     """Quando a amostra foi MEDIDA, em UTC naive (a convencao do banco).
 
     Existe porque o instante da medicao e o da chegada podem estar horas
@@ -51,11 +51,11 @@ def _ts_da_medicao(payload: Dict[str, Any], device_id: str | None) -> datetime:
         try:
             dt = datetime.fromisoformat(str(bruto).replace("Z", "+00:00"))
             if dt.tzinfo is not None:
-                dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+                dt = dt.astimezone(UTC).replace(tzinfo=None)
             return dt
         except (ValueError, TypeError):
             logger.warning("ws_ts_utc_ilegivel", device_id=device_id, ts_utc=str(bruto))
-    return datetime.now(timezone.utc).replace(tzinfo=None)
+    return datetime.now(UTC).replace(tzinfo=None)
 
 
 @router.post(
@@ -65,7 +65,7 @@ def _ts_da_medicao(payload: Dict[str, Any], device_id: str | None) -> datetime:
 )
 def receber_evento(
     request: Request,
-    payload: Dict[str, Any],
+    payload: dict[str, Any],
     _: None = Depends(_aplicar_rate_limit),
     __: None = Depends(verificar_token_dispositivo),
 ) -> ApiResponse:
@@ -165,7 +165,7 @@ def receber_evento(
             },
         )
 
-    contagem: Dict[str, int] = defaultdict(int)
+    contagem: dict[str, int] = defaultdict(int)
     total_alertas = processar_eventos_filtrados(resultado.prontos, contagem)
     processados = sum(contagem.values())
 
@@ -206,7 +206,7 @@ async def receber_grade(
         )
 
     device_header = request.headers.get("X-Device-Id")
-    contagem_por_paciente: Dict[str, int] = defaultdict(int)
+    contagem_por_paciente: dict[str, int] = defaultdict(int)
     dispositivos_vistos: set[str] = set()
     total_alertas = 0
     linhas_lidas = 0
@@ -383,8 +383,7 @@ async def receber_grade(
 async def api_reconcile_device_events(device_id: str | None = None, limit: int = 100) -> dict:
     """Attempt to reconcile stored raw device events into patient events."""
     # delegate to shared reconcile helper which uses a lock and runs in a thread
-    result = await reconcile_device_events(device_id=device_id, limit=limit)
-    return result
+    return await reconcile_device_events(device_id=device_id, limit=limit)
 
 
 @router.post(
@@ -508,7 +507,7 @@ async def websocket_eventos(websocket: WebSocket):
                         # default fica, porque descartar seria pior, mas
                         # registrado, porque distorce a linha do tempo do
                         # paciente.
-                        payload["ts_utc"] = datetime.now(timezone.utc).isoformat()
+                        payload["ts_utc"] = datetime.now(UTC).isoformat()
                         logger.warning(
                             "ws_evento_sem_ts_utc",
                             device_id=device_id,
@@ -604,7 +603,7 @@ async def websocket_eventos(websocket: WebSocket):
                             # se nem isso for legivel.
                             ts_evento = _ts_da_medicao(payload, device_id)
                             ts_iso = ts_evento.strftime("%Y-%m-%dT%H:%M:%S")
-                            ts_ms = int(ts_evento.replace(tzinfo=timezone.utc).timestamp() * 1000)
+                            ts_ms = int(ts_evento.replace(tzinfo=UTC).timestamp() * 1000)
                             inserir_device_event(DB_PATH, device_id, ts_iso, ts_ms, payload)
                             persistido = True
                         except Exception:

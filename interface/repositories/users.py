@@ -2,7 +2,7 @@
 from __future__ import annotations
 
 import sqlite3
-from typing import Optional, Dict
+from typing import ClassVar
 
 import structlog
 
@@ -84,7 +84,7 @@ class UserRepository:
 
     PAPEIS_VALIDOS = frozenset({"admin", "staff"})
 
-    def listar(self) -> list[Dict]:
+    def listar(self) -> list[dict]:
         """Lista os usuarios, sem expor o hash de senha."""
         with connect(self.db_path) as conn:
             self._ensure_users_role_column(conn)
@@ -186,7 +186,7 @@ class UserRepository:
             if cur.rowcount == 0:
                 raise LookupError("usuario nao encontrado")
 
-    def get_by_username(self, username: str) -> Optional[Dict]:
+    def get_by_username(self, username: str) -> dict | None:
         uname = str(username or "").strip()
         if not uname:
             return None
@@ -203,7 +203,10 @@ class UserRepository:
     # ------------------------------------------------------------------
     # Identificacao profissional
     # ------------------------------------------------------------------
-    CATEGORIAS_VALIDAS = {"enfermeiro", "tecnico", "auxiliar", "outro"}
+    # `ClassVar`: e constante da classe, nao campo de instancia. Sem a
+    # anotacao, um dataclass futuro a trataria como campo com default
+    # mutavel COMPARTILHADO entre instancias.
+    CATEGORIAS_VALIDAS: ClassVar[set[str]] = {"enfermeiro", "tecnico", "auxiliar", "outro"}
 
     def definir_registro_profissional(
         self, username: str, coren: str | None, categoria: str | None

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import json
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 import os
 import secrets
 import structlog
@@ -191,7 +191,7 @@ def api_register(request: Request, req: RegisterRequest, _: None = Depends(_chec
         password_hash = bcrypt.hash(password)
     except Exception as exc:
         structlog.get_logger(__name__).exception("hash_error", erro=str(exc))
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={"code": "hash_error", "message": "Erro interno ao processar a requisicao."})
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={"code": "hash_error", "message": "Erro interno ao processar a requisicao."}) from exc
 
     try:
         structlog.get_logger(__name__).info("register_attempt", username=username)
@@ -200,10 +200,10 @@ def api_register(request: Request, req: RegisterRequest, _: None = Depends(_chec
         papel = user_repo.create(username, password_hash, display)
     except ValueError as exc:
         structlog.get_logger(__name__).warning("register_failed_user_exists", username=username, motivo=str(exc))
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={"code": "user_exists", "message": str(exc)})
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, detail={"code": "user_exists", "message": str(exc)}) from exc
     except Exception as exc:
         structlog.get_logger(__name__).exception("register_db_error", username=username, erro=str(exc))
-        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={"code": "db_error", "message": "Erro interno ao processar a requisicao."})
+        raise HTTPException(status.HTTP_500_INTERNAL_SERVER_ERROR, detail={"code": "db_error", "message": "Erro interno ao processar a requisicao."}) from exc
 
     # auto-login after register: set cookie
     
@@ -235,7 +235,7 @@ def api_logout(request: Request) -> dict:
             revogar_token(
                 DB_PATH,
                 jti=payload["jti"],
-                expira_em=datetime.fromtimestamp(int(payload["exp"]), tz=timezone.utc),
+                expira_em=datetime.fromtimestamp(int(payload["exp"]), tz=UTC),
                 username=payload.get("sub"),
             )
         except Exception:

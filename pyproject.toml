@@ -12,4 +12,59 @@ line-length = 120
 # de verdade que estavam escondidos no meio das violações: `Any` usado sem
 # import em main.py, chave repetida num dicionário de mapeamento de status, e
 # uma contagem calculada e descartada que fazia a tela exibir o número errado.
-select = ["E4", "E7", "E9", "F"]
+#
+# SEGUNDA ONDA. O conjunto abaixo acrescenta as famílias que apontam defeito, e
+# deixa de fora as que só apontam gosto. O critério foi: a regra descreve algo
+# que pode dar errado em execução, ou descreve como alguém preferiria ter
+# escrito? Só a primeira entra.
+#
+#   B904  — `raise ... from`. Eram 20 sítios que engoliam a exceção original:
+#           o 500 chegava no log sem a causa, que é exatamente o que se procura
+#           às 3h da manhã. Corrigidos todos.
+#   RUF   — inclui RUF006, que era BUG REAL: `asyncio.create_task` sem guardar
+#           referência. O asyncio só mantém referência fraca, então o coletor
+#           pode recolher a task em voo e o broadcast some sem erro nenhum.
+#   C4    — chamadas de coleção desnecessárias; pega `dict()` em laço quente.
+#   PIE, RET, ISC, A, UP — mecânicas, sem julgamento de estilo. `A` (shadowing
+#           de builtin) e `UP` (sintaxe obsoleta) evitam surpresa de escopo.
+#
+# FICARAM DE FORA, e a razão importa mais que a lista:
+#
+#   DTZ   — 149 achados, dos quais só 4 em código de produção (corrigidos: dois
+#           `datetime.now()` medindo duração, que saltam uma hora no horário de
+#           verão, e dois `.timestamp()` comparados contra `st_mtime`). O resto
+#           é `datetime(2026, ...)` literal em teste, onde datetime ingênuo é o
+#           ponto. Ligar a família obrigaria a poluir a suíte inteira com `tz=`
+#           para calar um alarme que não descreve defeito nenhum.
+#   S     — 1546 achados, quase todos `S101` (assert em teste). Sinal afogado.
+#   T20   — 345 `print`, em scripts cuja saída é a interface.
+#   BLE001— 99 `except Exception`. É sinal legítimo, mas cada sítio pede
+#           decisão sobre QUAL exceção esperar; vira refactor, não lint.
+#   SIM105/SIM102, PTH — reescrita de estilo. `contextlib.suppress` no lugar de
+#           try/except vazio não é mais claro, e migrar `os.path` para `pathlib`
+#           mexe em código de I/O que funciona, sem nada a ganhar.
+#
+# ARMADILHA, encontrada aplicando isto: rodar `--select RUF100` ISOLADO faz o
+# ruff apagar todo `# noqa` cujo código não esteja no select daquela invocação —
+# ele os considera redundantes. Apagou cinco noqa legítimos aqui, incluindo os
+# dois que silenciam `Import`/`env` do PlatformIO, que o SCons injeta em tempo
+# de build. O arquivo passou a ter F821 de verdade. Ao mexer em RUF100, rode
+# sempre com o select completo.
+select = [
+    "E4", "E7", "E9", "F",
+    "A", "B904", "C4", "ISC", "PIE", "RET", "RUF", "UP",
+]
+
+ignore = [
+    # Acentuação e travessão em comentário. O código é comentado em português;
+    # `–` e `’` são pontuação correta aqui, não homoglifo suspeito. A regra
+    # existe para pegar caractere invisível em identificador, e comentário em
+    # língua latina é o falso positivo previsto dela.
+    "RUF003",
+    # `noqa` de regra não habilitada. Os `# noqa: S608` e `# noqa: BLE001` deste
+    # repositório documentam POR QUE aquele trecho é seguro, e as duas famílias
+    # estão deliberadamente fora do select (ver acima). Apagá-los perderia a
+    # justificativa escrita e reabriria a discussão no dia em que a família for
+    # ligada — que é justamente quando a nota vale mais.
+    "RUF100",
+]

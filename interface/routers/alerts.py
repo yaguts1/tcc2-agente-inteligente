@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-from typing import List, Optional
 
 import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status, Query, WebSocket, WebSocketDisconnect
@@ -36,7 +35,7 @@ router = APIRouter(tags=["alerts"])
 
 @router.get(
     "/frontend/alerts",
-    response_model=List[FrontendAlert],
+    response_model=list[FrontendAlert],
     status_code=status.HTTP_200_OK,
 )
 async def frontend_alerts(
@@ -131,7 +130,7 @@ async def frontend_acknowledge(alert_id: str, user: str = Depends(get_current_us
     try:
         await reconhecer_alerta(alert_id, user)
     except LookupError:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"code": "not_found", "message": "Alert not found"})
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"code": "not_found", "message": "Alert not found"}) from None
     except TransicaoInvalida as exc:
         # 409, e nao 400: o pedido e valido, o estado atual do alerta e que o
         # recusa. Acontece quando duas pessoas agem no mesmo alerta em telas
@@ -169,7 +168,7 @@ async def frontend_complete(
     try:
         await completar_alerta(alert_id, user, motivo=payload.motivo if payload else None)
     except LookupError:
-        raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"code": "not_found", "message": "Alert not found"})
+        raise HTTPException(status.HTTP_404_NOT_FOUND, detail={"code": "not_found", "message": "Alert not found"}) from None
     except TransicaoInvalida as exc:
         # 409, e nao 400: o pedido e valido, o estado atual do alerta e que o
         # recusa. Acontece quando duas pessoas agem no mesmo alerta em telas
@@ -186,10 +185,10 @@ async def frontend_complete(
 
 @router.get("/alerts/export/csv")
 def export_alerts_csv(
-    start_date: Optional[str] = Query(None, description="Data inicial (YYYY-MM-DD)"),
-    end_date: Optional[str] = Query(None, description="Data final (YYYY-MM-DD)"),
-    status_filter: Optional[str] = Query(None, alias="status", description="Status: pending, acknowledged, completed"),
-    patient_id: Optional[str] = Query(None, description="ID do paciente"),
+    start_date: str | None = Query(None, description="Data inicial (YYYY-MM-DD)"),
+    end_date: str | None = Query(None, description="Data final (YYYY-MM-DD)"),
+    status_filter: str | None = Query(None, alias="status", description="Status: pending, acknowledged, completed"),
+    patient_id: str | None = Query(None, description="ID do paciente"),
     limit: int = Query(10000, ge=1, le=100000, description="Limite de registros"),
     user: str = Depends(get_current_user),
     _: None = Depends(_check_api_rate_limit),
@@ -215,7 +214,7 @@ def export_alerts_csv(
             start_dt = parsear_data_export(start_date, "start_date")
             end_dt = parsear_data_export(end_date, "end_date")
         except ValueError as exc:
-            raise HTTPException(400, detail=str(exc))
+            raise HTTPException(400, detail=str(exc)) from exc
 
         filters = ExportFilters(
             start_date=start_dt,
@@ -243,15 +242,15 @@ def export_alerts_csv(
         raise
     except Exception as e:
         logger.error("csv_export_error", error=str(e), user=user)
-        raise HTTPException(500, detail=f"Erro ao exportar CSV: {str(e)}")
+        raise HTTPException(500, detail=f"Erro ao exportar CSV: {e!s}") from e
 
 
 @router.get("/alerts/export/pdf")
 def export_alerts_pdf(
-    start_date: Optional[str] = Query(None, description="Data inicial (YYYY-MM-DD)"),
-    end_date: Optional[str] = Query(None, description="Data final (YYYY-MM-DD)"),
-    status_filter: Optional[str] = Query(None, alias="status", description="Status: pending, acknowledged, completed"),
-    patient_id: Optional[str] = Query(None, description="ID do paciente"),
+    start_date: str | None = Query(None, description="Data inicial (YYYY-MM-DD)"),
+    end_date: str | None = Query(None, description="Data final (YYYY-MM-DD)"),
+    status_filter: str | None = Query(None, alias="status", description="Status: pending, acknowledged, completed"),
+    patient_id: str | None = Query(None, description="ID do paciente"),
     user: str = Depends(get_current_user),
     _: None = Depends(_check_api_rate_limit),
 ):
@@ -275,7 +274,7 @@ def export_alerts_pdf(
             start_dt = parsear_data_export(start_date, "start_date")
             end_dt = parsear_data_export(end_date, "end_date")
         except ValueError as exc:
-            raise HTTPException(400, detail=str(exc))
+            raise HTTPException(400, detail=str(exc)) from exc
 
         filters = ExportFilters(
             start_date=start_dt,
@@ -303,7 +302,7 @@ def export_alerts_pdf(
         raise
     except Exception as e:
         logger.error("pdf_export_error", error=str(e), user=user)
-        raise HTTPException(500, detail=f"Erro ao exportar PDF: {str(e)}")
+        raise HTTPException(500, detail=f"Erro ao exportar PDF: {e!s}") from e
 
 
 # ==================== END EXPORT ENDPOINTS ====================
@@ -313,9 +312,9 @@ def export_alerts_pdf(
 @router.websocket("/ws/alerts")
 async def websocket_alerts(
     websocket: WebSocket,
-    severity: Optional[str] = Query(None),
-    patient_id: Optional[str] = Query(None),
-    alert_types: Optional[str] = Query(None),
+    severity: str | None = Query(None),
+    patient_id: str | None = Query(None),
+    alert_types: str | None = Query(None),
 ):
     """WebSocket endpoint for real-time alert updates with filtering.
 

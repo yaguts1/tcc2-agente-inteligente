@@ -1,9 +1,9 @@
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
-from typing import Generator
+from collections.abc import Generator
 
 import pytest
 
@@ -33,7 +33,7 @@ def test_exportar_grade_para_jsonl_normaliza_campos(tmp_path: Path) -> None:
             "postura": "lateral_direito",
             "confianca": 0.87,
             "amostra_ms": 300000,
-            "ts_utc": datetime(2024, 1, 1, 0, 5, tzinfo=timezone.utc),
+            "ts_utc": datetime(2024, 1, 1, 0, 5, tzinfo=UTC),
             "pressao_pico": "12.5",
         },
     ]

@@ -2,7 +2,7 @@ import sys
 import time
 import requests
 import argparse
-from datetime import datetime, timezone
+from datetime import datetime, UTC
 from pathlib import Path
 import pandas as pd
 
@@ -39,7 +39,7 @@ def main():
     # datetime.now() os timestamps saíam no fuso da máquina e as amostras
     # entravam 3h deslocadas — o mesmo defeito que corrompia a correlação
     # sensor->paciente do lado do servidor.
-    inicio = datetime.now(timezone.utc).replace(tzinfo=None)
+    inicio = datetime.now(UTC).replace(tzinfo=None)
     df_grade, _ = gerar_sessao_simulada(
         duracao_horas=args.duration,
         passo_min=1,  # 1 minuto de resolução para ficar mais fluido
@@ -57,7 +57,7 @@ def main():
         ts_simulado = pd.to_datetime(row["timestamp"])
 
         # Calcular delay necessário
-        agora = datetime.now(timezone.utc).replace(tzinfo=None)
+        agora = datetime.now(UTC).replace(tzinfo=None)
         tempo_decorrido_real = (agora - inicio).total_seconds()
         tempo_decorrido_simulado = (ts_simulado - inicio).total_seconds()
         

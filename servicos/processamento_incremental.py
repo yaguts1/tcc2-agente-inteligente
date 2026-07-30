@@ -7,8 +7,8 @@ import os
 import sqlite3
 import time
 from collections import defaultdict
-from datetime import datetime, timedelta, timezone
-from typing import Dict, Iterable, Mapping, Optional
+from datetime import datetime, timedelta, UTC
+from collections.abc import Iterable, Mapping
 
 import structlog
 
@@ -62,14 +62,14 @@ class _SQLiteStateStore:
       """
     )
 
-  def load(self) -> Dict[str, dict]:
+  def load(self) -> dict[str, dict]:
     with sqlite3.connect(self._db_path) as conn:
       cursor = conn.execute("SELECT paciente_id, estado_json FROM estado_incremental")
       return {row[0]: json.loads(row[1]) for row in cursor.fetchall()}
 
   def save(self, paciente_id: str, state: dict, conn=None) -> None:
     payload = json.dumps(state)
-    agora = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    agora = datetime.now(UTC).strftime("%Y-%m-%dT%H:%M:%S")
     # `conexao_ou_propria` em vez de `sqlite3.connect` cru: quando a ingestao
     # passa a conexao dela, o estado do motor entra na MESMA transacao da
     # amostra que o produziu — e nao numa quarta transacao separada, que podia
@@ -121,8 +121,8 @@ class _RedisStateStore:  # pragma: no cover - dependencia nao exercitada em test
   def _key(self, paciente_id: str) -> str:
     return f"estado_incremental:{paciente_id}"
 
-  def load(self) -> Dict[str, dict]:
-    estados: Dict[str, dict] = {}
+  def load(self) -> dict[str, dict]:
+    estados: dict[str, dict] = {}
     for chave in self._cliente.scan_iter(match="estado_incremental:*"):
       raw = self._cliente.get(chave)
       if raw is None:
@@ -158,12 +158,12 @@ def _coerce_datetime(valor: object) -> datetime:
       texto = texto[:-1] + "+00:00"
     dt = datetime.fromisoformat(texto)
   if dt.tzinfo is not None:
-    dt = dt.astimezone(timezone.utc).replace(tzinfo=None)
+    dt = dt.astimezone(UTC).replace(tzinfo=None)
   return dt.replace(microsecond=0)
 
 
 def _estado_para_dict(estado: EstadoDecisor) -> dict:
-  def _dt(valor: Optional[datetime]) -> Optional[str]:
+  def _dt(valor: datetime | None) -> str | None:
     # `strftime("%Y-...")` depende da libc da plataforma para o ano: no Linux
     # nao faz zero-padding para anos < 1000, no Windows chega a lancar
     # ValueError. `cooldown_ate` usa datetime.min (ano 1) como sentinela de
@@ -171,7 +171,7 @@ def _estado_para_dict(estado: EstadoDecisor) -> dict:
     # portavel) em vez de strftime().
     return None if valor is None else valor.isoformat()
 
-  dados = {
+  return {
     "perfil": estado.perfil,
     "paciente_id": estado.paciente_id,
     "janela_min": estado.janela_min,
@@ -193,11 +193,10 @@ def _estado_para_dict(estado: EstadoDecisor) -> dict:
     "alivio_por_sitio": dict(estado.alivio_por_sitio),
     "sitio_do_alerta": estado.sitio_do_alerta,
   }
-  return dados
 
 
 def _dict_para_estado(dados: Mapping[str, object]) -> EstadoDecisor:
-  def _dt(valor: Optional[str]) -> Optional[datetime]:
+  def _dt(valor: str | None) -> datetime | None:
     return None if valor is None else _coerce_datetime(valor)
 
   estado = EstadoDecisor(
@@ -258,13 +257,13 @@ class ProcessadorIncremental:
     self._confianca_min = confianca_min
     self._resolver_perfil = resolver_perfil
 
-    self._estado_cache: Dict[str, EstadoDecisor] = {}
-    self._ultima_ts: Dict[str, datetime] = {}
+    self._estado_cache: dict[str, EstadoDecisor] = {}
+    self._ultima_ts: dict[str, datetime] = {}
     # Quem esta dentro de uma janela de supressao agora. So serve para detectar
     # a BORDA de saida (e reiniciar a corrida uma vez), nao para decidir
     # supressao — quem decide e sempre a agenda no banco, para uma agenda criada
     # ou removida durante o turno valer na amostra seguinte.
-    self._em_supressao: Dict[str, bool] = {}
+    self._em_supressao: dict[str, bool] = {}
 
     if estrategia == "estado_em_memoria":
       if redis_url:
@@ -280,9 +279,9 @@ class ProcessadorIncremental:
       self._carregar_estados_persistidos()
     else:
       self._store = None
-      self._buffers: Dict[str, list] = defaultdict(list)
+      self._buffers: dict[str, list] = defaultdict(list)
       self._janela_td = timedelta(minutes=janela_recalculo_min)
-      self._alertas_status: Dict[str, Dict[str, str]] = defaultdict(dict)
+      self._alertas_status: dict[str, dict[str, str]] = defaultdict(dict)
       logger.info("processador_recalcular_janela", janela_min=janela_recalculo_min)
 
   # ------------------------------------------------------------------
@@ -518,7 +517,7 @@ class ProcessadorIncremental:
     deduplicado = {}
     for evt in buffer:
       deduplicado[evt["timestamp"]] = evt
-    buffer[:] = list(sorted(deduplicado.values(), key=lambda evt: evt["timestamp"]))
+    buffer[:] = sorted(deduplicado.values(), key=lambda evt: evt["timestamp"])
 
     if not buffer:
       return []

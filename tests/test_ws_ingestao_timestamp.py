@@ -12,7 +12,7 @@ que resolve o dono da leitura pelo `ts_ms` do evento: uma amostra medida as
 exatamente o defeito que a resolucao por tempo eliminou.
 """
 
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta, UTC
 
 from interface.routers.ingestao import _ts_da_medicao
 
@@ -41,7 +41,7 @@ def test_aceita_sufixo_z():
 
 def test_sem_ts_cai_na_hora_atual():
     """Descartar seria pior; o default fica, mas e o ultimo recurso."""
-    antes = datetime.now(timezone.utc).replace(tzinfo=None)
+    antes = datetime.now(UTC).replace(tzinfo=None)
 
     resultado = _ts_da_medicao({}, "dev-1")
 
@@ -50,7 +50,7 @@ def test_sem_ts_cai_na_hora_atual():
 
 
 def test_ts_ilegivel_cai_na_hora_atual_sem_estourar():
-    antes = datetime.now(timezone.utc).replace(tzinfo=None)
+    antes = datetime.now(UTC).replace(tzinfo=None)
 
     resultado = _ts_da_medicao({"ts_utc": "ontem de manha"}, "dev-1")
 
@@ -67,7 +67,7 @@ def test_amostra_atrasada_preserva_o_instante_da_medicao():
 
     resultado = _ts_da_medicao({"ts_utc": medido.strftime("%Y-%m-%dT%H:%M:%S")}, "dev-1")
 
-    agora = datetime.now(timezone.utc).replace(tzinfo=None)
+    agora = datetime.now(UTC).replace(tzinfo=None)
     assert resultado == medido
     assert abs((agora - resultado).total_seconds()) > 60, (
         "o teste so tem valor se a medicao for claramente anterior a execucao"

@@ -7,7 +7,8 @@ import ipaddress
 import os
 import time
 from collections import defaultdict
-from typing import Any, AsyncIterator, Dict, List
+from typing import Any
+from collections.abc import AsyncIterator
 
 import structlog
 from fastapi import HTTPException, Request, UploadFile, status
@@ -239,7 +240,7 @@ class RateLimiter:
     """Flexible rate limiter with configurable windows and limits."""
     
     def __init__(self):
-        self._attempts: Dict[str, Dict[str, List[float]]] = defaultdict(lambda: defaultdict(list))
+        self._attempts: dict[str, dict[str, list[float]]] = defaultdict(lambda: defaultdict(list))
         self._lock = asyncio.Lock()
     
     async def check_limit(self, key: str, limit: int, window_seconds: int, request: Request) -> None:
@@ -367,7 +368,7 @@ class SimpleCache:
     """Simple in-memory cache with TTL (Time To Live)."""
     
     def __init__(self):
-        self._cache: Dict[str, tuple[Any, float]] = {}
+        self._cache: dict[str, tuple[Any, float]] = {}
         self._lock = asyncio.Lock()
     
     async def get(self, key: str) -> Any | None:
@@ -417,7 +418,7 @@ api_cache = SimpleCache()
 _TOKEN_BUCKET_CAPACITY = float(os.getenv("INGESTAO_BURST", "30"))
 _TOKEN_BUCKET_REFILL_RATE = float(os.getenv("INGESTAO_RPS", "10"))  # tokens por segundo
 _rate_limiter_lock = asyncio.Lock()
-_rate_buckets: Dict[str, Dict[str, float]] = {}
+_rate_buckets: dict[str, dict[str, float]] = {}
 
 
 def _expirar_baldes(agora: float) -> None:

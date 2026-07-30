@@ -25,7 +25,7 @@ fazer com `JANELA_ALTO=60` numa variavel de ambiente.
 """
 from __future__ import annotations
 
-from typing import Mapping
+from collections.abc import Mapping
 
 # Os seis subescores. Cinco vao de 1 a 4; friccao/cisalhamento vai de 1 a 3 — e
 # nao e detalhe de digitacao: aceitar 4 ali inflaria o total e poderia rebaixar

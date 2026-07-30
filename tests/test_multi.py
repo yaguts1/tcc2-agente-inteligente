@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Iterable, List, Tuple
+from collections.abc import Iterable
 
 import pandas as pd
 
@@ -17,9 +17,9 @@ from main import processar_alertas_multi
 ISO_FMT = "%Y-%m-%dT%H:%M:%S"
 
 
-def _grade_runs(paciente_id: str, runs: Iterable[Tuple[str, int]], inicio: str) -> pd.DataFrame:
+def _grade_runs(paciente_id: str, runs: Iterable[tuple[str, int]], inicio: str) -> pd.DataFrame:
     """Monta grade minuto a minuto a partir de blocos (postura, minutos)."""
-    registros: List[tuple[str, str, str]] = []
+    registros: list[tuple[str, str, str]] = []
     momento = pd.to_datetime(inicio)
     for postura, minutos in runs:
         idx = pd.date_range(start=momento, periods=minutos, freq="min")

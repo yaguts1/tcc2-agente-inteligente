@@ -129,7 +129,7 @@ def test_amostra_que_gera_alerta_tambem_usa_uma_conexao(ingestao, monkeypatch):
     # Perfil alto: janela de 60 min. A carga chega a 60 na amostra do minuto 60,
     # entao e ELA que abre o alerta — as seguintes devolvem zero, porque o
     # alerta ja esta aberto.
-    for minuto in range(0, 60):
+    for minuto in range(60):
         ingestao.registrar_evento(_amostra(minuto))
 
     contagem = _contar(monkeypatch, "connect")
@@ -181,7 +181,7 @@ def test_o_anuncio_acontece_fora_da_transacao(ingestao, monkeypatch):
     monkeypatch.setattr(ingestao, "inserir_alertas", marcar_insercao)
     monkeypatch.setattr(ingestao, "_anunciar", lambda *_: momentos.append("anuncia"))
 
-    for minuto in range(0, 61):
+    for minuto in range(61):
         ingestao.registrar_evento(_amostra(minuto))
 
     assert momentos, "premissa: algum alerta deveria ter sido aberto"

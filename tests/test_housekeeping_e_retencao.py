@@ -10,7 +10,7 @@ prazo arbitrario". Estes testes fixam essa distincao.
 from __future__ import annotations
 
 import sqlite3
-from datetime import timedelta, timezone
+from datetime import timedelta, UTC
 from unittest import mock
 
 import pytest
@@ -34,7 +34,7 @@ async def client_admin(app_isolado, cabecalho_auth):
 
 
 def _ms(dt) -> int:
-    return int(dt.replace(tzinfo=timezone.utc).timestamp() * 1000)
+    return int(dt.replace(tzinfo=UTC).timestamp() * 1000)
 
 
 def _entrada(db_path: str, dias_atras: int, usuario: str = "alguem") -> None:

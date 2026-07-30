@@ -8,7 +8,7 @@ import json
 import os
 import sys
 from pathlib import Path
-from datetime import datetime, timezone, timedelta
+from datetime import datetime, timedelta, UTC
 
 sys.path.insert(0, str(Path(__file__).parent))
 
@@ -86,7 +86,7 @@ def teste_completo_reconciliacao():
     
     # PASSO 2: Criar evento órfão (ANTES do assignment)
     print_info("\nPASSO 2: Criando evento órfão (sem assignment)...")
-    event_timestamp = datetime.now(timezone.utc)
+    event_timestamp = datetime.now(UTC)
     payload = criar_payload_esp32_valido(test_device_id, event_timestamp)
     
     print_info("Payload ESP32:")
@@ -309,9 +309,8 @@ def main():
         print_info("  [OK] Marcacao de eventos como processados")
         print_info("  [OK] Registro de eventos na tabela principal")
         return 0
-    else:
-        print_fail("FALHA! Verifique os logs acima.")
-        return 1
+    print_fail("FALHA! Verifique os logs acima.")
+    return 1
 
 
 if __name__ == "__main__":

@@ -1,6 +1,5 @@
 """Validação de Coerência de Sessões Simuladas - Problema 6."""
 
-from typing import Dict, List, Tuple
 import pandas as pd
 
 # Posturas válidas (do gerador)
@@ -14,7 +13,7 @@ TRANSICOES_VALIDAS = {
 }
 
 
-def validar_timestamps_ordenados(df_eventos: pd.DataFrame) -> Tuple[bool, List[str]]:
+def validar_timestamps_ordenados(df_eventos: pd.DataFrame) -> tuple[bool, list[str]]:
     """Valida se timestamps estão em ordem crescente."""
     avisos = []
     
@@ -29,7 +28,7 @@ def validar_timestamps_ordenados(df_eventos: pd.DataFrame) -> Tuple[bool, List[s
     return True, avisos
 
 
-def validar_duracoes_positivas(df_eventos: pd.DataFrame) -> Tuple[bool, List[str]]:
+def validar_duracoes_positivas(df_eventos: pd.DataFrame) -> tuple[bool, list[str]]:
     """Valida se todas as durações são positivas."""
     avisos = []
     
@@ -47,7 +46,7 @@ def validar_duracoes_positivas(df_eventos: pd.DataFrame) -> Tuple[bool, List[str
     return True, avisos
 
 
-def validar_posturas_validas(df_eventos: pd.DataFrame) -> Tuple[bool, List[str]]:
+def validar_posturas_validas(df_eventos: pd.DataFrame) -> tuple[bool, list[str]]:
     """Valida se todas as posturas são válidas."""
     avisos = []
     
@@ -67,7 +66,7 @@ def validar_posturas_validas(df_eventos: pd.DataFrame) -> Tuple[bool, List[str]]
     return True, avisos
 
 
-def validar_transicoes_validas(df_eventos: pd.DataFrame) -> Tuple[bool, List[str]]:
+def validar_transicoes_validas(df_eventos: pd.DataFrame) -> tuple[bool, list[str]]:
     """Valida se transições entre posturas respeitam o grafo."""
     avisos = []
     
@@ -94,7 +93,7 @@ def validar_transicoes_validas(df_eventos: pd.DataFrame) -> Tuple[bool, List[str
     return True, avisos
 
 
-def validar_cobertura_temporal(df_eventos: pd.DataFrame) -> Tuple[bool, List[str]]:
+def validar_cobertura_temporal(df_eventos: pd.DataFrame) -> tuple[bool, list[str]]:
     """Valida se a cobertura temporal é consistente."""
     avisos = []
     
@@ -121,12 +120,12 @@ def validar_cobertura_temporal(df_eventos: pd.DataFrame) -> Tuple[bool, List[str
             # Não é erro crítico
             return True, avisos
     except Exception as e:
-        avisos.append(f"⚠️  Erro ao validar cobertura temporal: {str(e)}")
+        avisos.append(f"⚠️  Erro ao validar cobertura temporal: {e!s}")
     
     return True, avisos
 
 
-def validar_sem_duplicatas(df_eventos: pd.DataFrame) -> Tuple[bool, List[str]]:
+def validar_sem_duplicatas(df_eventos: pd.DataFrame) -> tuple[bool, list[str]]:
     """Valida se não há registros duplicados."""
     avisos = []
     
@@ -149,7 +148,7 @@ def validar_sessao(
     df_eventos: pd.DataFrame,
     df_grade: pd.DataFrame = None,
     verbose: bool = True
-) -> Dict[str, bool]:
+) -> dict[str, bool]:
     """
     Valida coerência completa de uma sessão simulada.
     
@@ -245,9 +244,8 @@ def validar_sessao(
 
 
 # Função auxiliar para resumo
-def resumo_validacao(resultado: Dict[str, bool]) -> str:
+def resumo_validacao(resultado: dict[str, bool]) -> str:
     """Retorna resumo textual da validação."""
     if resultado.get("valido"):
         return "✅ Válido"
-    else:
-        return "❌ Inválido"
+    return "❌ Inválido"

@@ -1,4 +1,3 @@
-# -- coding: utf-8 --
 # dados_simulados/gerador.py
 from __future__ import annotations
 from dataclasses import dataclass
@@ -6,7 +5,6 @@ from datetime import datetime, timedelta
 import random
 import numpy as np
 import pandas as pd
-from typing import Tuple
 
 from .contextos import (
     EventoContextual,
@@ -97,9 +95,9 @@ def _gerar_eventos(
         refeicao_aplicada = False
         for h in refeicoes:
             if h not in refeicoes_inseridas and ts >= h and ts < h + timedelta(minutes=1):
-                eventos.append(dict(timestamp=h, postura="supino",
-                                    duracao_min=perfil.duracao_refeicao,
-                                    origem="refeicao", falha=False))
+                eventos.append({"timestamp": h, "postura": "supino",
+                                    "duracao_min": perfil.duracao_refeicao,
+                                    "origem": "refeicao", "falha": False})
                 ts = h + timedelta(minutes=perfil.duracao_refeicao)
                 atual = "supino"
                 refeicoes_inseridas.add(h)
@@ -126,8 +124,8 @@ def _gerar_eventos(
             dur = max(1.0, (fim - ts).total_seconds() / 60.0)
             fim_bloco = ts + timedelta(minutes=dur)
 
-        eventos.append(dict(timestamp=ts, postura=atual,
-                            duracao_min=dur, origem="normal", falha=falha))
+        eventos.append({"timestamp": ts, "postura": atual,
+                            "duracao_min": dur, "origem": "normal", "falha": falha})
         ts = fim_bloco
 
         # Próxima postura respeitando transições válidas
@@ -312,9 +310,8 @@ def validar_sessao_gerada(
         )
     
     # Chamar validador
-    resultado = validar_sessao(df_validar, df_grade=df_grade, verbose=verbose)
+    return validar_sessao(df_validar, df_grade=df_grade, verbose=verbose)
     
-    return resultado
 
 
 def gerar_sessao_multi(
@@ -327,7 +324,7 @@ def gerar_sessao_multi(
     tipos_eventos: dict[str, bool] | None = None,
     perfis_customizados: list[PerfilPaciente] | None = None,
     distribuir_por_risco: bool = False,
-) -> Tuple[dict[str, pd.DataFrame], dict[str, list[EventoContextual]], pd.DataFrame]:
+) -> tuple[dict[str, pd.DataFrame], dict[str, list[EventoContextual]], pd.DataFrame]:
     """
     Gera grade e eventos para múltiplos pacientes simulados.
     

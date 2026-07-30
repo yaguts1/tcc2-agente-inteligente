@@ -5,7 +5,6 @@ from __future__ import annotations
 import os
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict
 
 from logging_setup import configure_logging
 
@@ -17,11 +16,11 @@ configure_logging()
 _ENV_ROOT = Path(__file__).resolve().parent
 
 
-def _load_env_file() -> Dict[str, str]:
+def _load_env_file() -> dict[str, str]:
   caminho = _ENV_ROOT / ".env"
   if not caminho.exists():
     return {}
-  dados: Dict[str, str] = {}
+  dados: dict[str, str] = {}
   for linha in caminho.read_text(encoding="utf-8").splitlines():
     linha = linha.strip()
     if not linha or linha.startswith("#") or "=" not in linha:
@@ -31,7 +30,7 @@ def _load_env_file() -> Dict[str, str]:
   return dados
 
 
-def _get_env(chave: str, default: str | None = None, origem: Dict[str, str] | None = None) -> str | None:
+def _get_env(chave: str, default: str | None = None, origem: dict[str, str] | None = None) -> str | None:
   if origem is None:
     origem = {}
   valor = os.getenv(chave)
@@ -74,7 +73,7 @@ class Configuracao:
   db_path: str
 
   @property
-  def janela_por_perfil(self) -> Dict[str, int]:
+  def janela_por_perfil(self) -> dict[str, int]:
     return {
       "baixo": self.janela_baixo_min,
       "medio": self.janela_medio_min,
@@ -86,10 +85,7 @@ def carregar_configuracao() -> Configuracao:
   origem_env = _load_env_file()
 
   modo = _get_env("MODE", "batch", origem_env)
-  if modo is None or modo.lower() not in {"batch", "stream"}:
-    modo = "batch"
-  else:
-    modo = modo.lower()
+  modo = "batch" if modo is None or modo.lower() not in {"batch", "stream"} else modo.lower()
 
   redis_url = _get_env("REDIS_URL", None, origem_env)
   

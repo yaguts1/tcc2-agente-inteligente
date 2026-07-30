@@ -1,7 +1,6 @@
 import os
 import secrets
-from datetime import datetime, timezone
-from typing import Optional
+from datetime import datetime, UTC
 
 import structlog
 from fastapi import Depends, Request, HTTPException, WebSocket, status
@@ -12,7 +11,7 @@ logger = structlog.get_logger(__name__)
 TOKEN_DISPOSITIVO_HEADER = "X-Device-Token"
 
 
-def token_dispositivo_configurado() -> Optional[str]:
+def token_dispositivo_configurado() -> str | None:
     """Token compartilhado que os ESP32 apresentam, ou None se nao configurado."""
     return os.getenv("UPP_DEVICE_TOKEN") or None
 
@@ -81,7 +80,7 @@ def verificar_token_dispositivo(request: Request) -> None:
         )
 
 
-def _payload_do_jwt(request: "Request | WebSocket") -> Optional[dict]:
+def _payload_do_jwt(request: "Request | WebSocket") -> dict | None:
     """Payload do JWT apresentado (header ou cookie), ou None.
 
     Aceita `WebSocket` alem de `Request`: as duas classes expoem `.headers` e
@@ -166,8 +165,8 @@ def sessao_valida(payload: dict) -> bool:
             # repositories/sessoes.revogar_sessoes_do_usuario), porque o `iat`
             # do JWT tem resolucao de 1s e, sem isso, a sessao criada no mesmo
             # segundo da revogacao sobreviveria.
-            corte_dt = datetime.fromisoformat(str(corte)[:19]).replace(tzinfo=timezone.utc)
-            if datetime.fromtimestamp(int(emitido_em), tz=timezone.utc) < corte_dt:
+            corte_dt = datetime.fromisoformat(str(corte)[:19]).replace(tzinfo=UTC)
+            if datetime.fromtimestamp(int(emitido_em), tz=UTC) < corte_dt:
                 return False
     except Exception:
         logger.warning("falha_ao_validar_sessao", usuario=username, exc_info=True)
@@ -176,7 +175,7 @@ def sessao_valida(payload: dict) -> bool:
     return True
 
 
-def usuario_de_jwt(request: Request) -> Optional[str]:
+def usuario_de_jwt(request: Request) -> str | None:
     """Username autenticado, ou None se não houver sessão válida."""
     payload = _payload_do_jwt(request)
     if not payload or not sessao_valida(payload):
@@ -184,7 +183,7 @@ def usuario_de_jwt(request: Request) -> Optional[str]:
     return payload.get("sub")
 
 
-async def exigir_sessao_websocket(websocket: WebSocket) -> Optional[str]:
+async def exigir_sessao_websocket(websocket: WebSocket) -> str | None:
     """Username autenticado no handshake do WebSocket, ou None (ja fechado).
 
     Fecha com 1008 (policy violation) ANTES do `accept()`: nao ha o que negociar
@@ -217,7 +216,7 @@ async def get_current_user(request: Request) -> str:
     return user
 
 
-async def escopo_de_unidades(request: Request) -> Optional[set[int]]:
+async def escopo_de_unidades(request: Request) -> set[int] | None:
     """Dependency: quais unidades o chamador enxerga. `None` = todas (admin).
 
     Existe como dependency, e nao como consulta dentro de cada endpoint, para
@@ -240,7 +239,7 @@ async def escopo_de_unidades(request: Request) -> Optional[set[int]]:
     return unidades_do_usuario(DB_PATH, username, payload.get("role"))
 
 
-def papel_do_jwt(request: Request) -> Optional[str]:
+def papel_do_jwt(request: Request) -> str | None:
     """Papel declarado no JWT, ou None se nao houver sessao valida.
 
     Passa pela mesma validacao de sessao que `usuario_de_jwt`: um token

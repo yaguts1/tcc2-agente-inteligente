@@ -16,6 +16,7 @@ import structlog
 from interface.db_core import connect
 from interface.repositories.unidades import filtro_sql as filtro_de_unidades
 from interface.tempo import agora_utc_naive
+from datetime import UTC
 
 logger = structlog.get_logger(__name__)
 
@@ -44,14 +45,11 @@ DESFECHOS_VALIDOS = {"cicatrizada", "alta_com_lesao", "obito", "erro_de_registro
 
 
 def _ts_e_ms(quando: str | None = None) -> tuple[str, int]:
-    from datetime import datetime, timezone
+    from datetime import datetime
 
-    if quando:
-        dt = datetime.fromisoformat(str(quando)[:19])
-    else:
-        dt = agora_utc_naive().replace(microsecond=0)
+    dt = datetime.fromisoformat(str(quando)[:19]) if quando else agora_utc_naive().replace(microsecond=0)
     return dt.strftime("%Y-%m-%dT%H:%M:%S"), int(
-        dt.replace(tzinfo=timezone.utc).timestamp() * 1000
+        dt.replace(tzinfo=UTC).timestamp() * 1000
     )
 
 

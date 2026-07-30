@@ -23,7 +23,7 @@ import argparse
 import sqlite3
 from dataclasses import dataclass
 from pathlib import Path
-from typing import List, Sequence, Tuple
+from collections.abc import Sequence
 
 
 @dataclass
@@ -45,7 +45,7 @@ def table_exists(conn: sqlite3.Connection, name: str) -> bool:
     return cur.fetchone() is not None
 
 
-def fetch_single_value(conn: sqlite3.Connection, sql: str, params: Tuple[object, ...] = ()) -> int | None:
+def fetch_single_value(conn: sqlite3.Connection, sql: str, params: tuple[object, ...] = ()) -> int | None:
     cur = conn.execute(sql, params)
     row = cur.fetchone()
     return None if row is None else row[0]
@@ -55,7 +55,7 @@ def format_table(headers: Sequence[str], rows: Sequence[Sequence[object]]) -> st
     if not rows:
         return "(sem dados)"
 
-    str_rows: List[List[str]] = [["" if value is None else str(value) for value in row] for row in rows]
+    str_rows: list[list[str]] = [["" if value is None else str(value) for value in row] for row in rows]
     col_widths = [len(str(header)) for header in headers]
 
     for row in str_rows:
@@ -131,7 +131,7 @@ def duplicate_summary(
     pk_columns: Sequence[str],
     order_column: str,
     limit: int = 3,
-) -> Tuple[int, List[Tuple[object, ...]]]:
+) -> tuple[int, list[tuple[object, ...]]]:
     if not table_exists(conn, table):
         return 0, []
 
@@ -161,8 +161,8 @@ def build_duplicates_section(conn: sqlite3.Connection) -> Section:
         ("eventos", ("paciente_id", "inicio"), "inicio"),
         ("alertas", ("paciente_id", "inicio"), "inicio"),
     ]
-    rows: List[Tuple[str, int]] = []
-    details: List[List[str]] = []
+    rows: list[tuple[str, int]] = []
+    details: list[list[str]] = []
 
     for table, pk_cols, order_col in items:
         total, dup_rows = duplicate_summary(conn, table, pk_cols, order_col)
@@ -172,7 +172,7 @@ def build_duplicates_section(conn: sqlite3.Connection) -> Section:
             key_repr = ", ".join(str(key) for key in keys)
             details.append([table, key_repr, repeticoes])
 
-    note_lines: List[str] = []
+    note_lines: list[str] = []
     if details:
         detail_headers = ("Tabela", "Chave (PK)", "Repeticoes")
         note_lines.append("Duplicidades detectadas (ate 3 mais recentes por tabela):")

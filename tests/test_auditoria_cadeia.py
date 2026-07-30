@@ -256,7 +256,7 @@ def test_rebaixar_entradas_para_sha256_fica_visivel(app_isolado, monkeypatch):
         conn.execute("UPDATE auditoria SET usuario = 'apagado' WHERE id = 1")
         anterior = cadeia.GENESE
         for linha in conn.execute("SELECT * FROM auditoria ORDER BY id").fetchall():
-            payload = f"{anterior}\n{cadeia._canonico(dict(linha))}".encode("utf-8")
+            payload = f"{anterior}\n{cadeia._canonico(dict(linha))}".encode()
             forjado = hashlib.sha256(payload).hexdigest()
             conn.execute(
                 "UPDATE auditoria SET hash = ?, hash_anterior = ? WHERE id = ?",
