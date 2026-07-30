@@ -5,6 +5,7 @@ import structlog
 from fastapi import APIRouter, Depends, HTTPException, Request, Response, status, Query, WebSocket, WebSocketDisconnect
 from fastapi.responses import StreamingResponse
 
+from interface.auditoria_contexto import declarar_pacientes
 from interface.api_shared import DB_PATH, _check_api_rate_limit, _check_batch_rate_limit
 from interface.alert_id import AlertIdInvalido, partir_alert_id
 from interface.schemas import (
@@ -77,6 +78,33 @@ async def frontend_alerts(
     return pagina.itens
 
 
+
+def _declarar_pacientes_do_lote(request, alert_ids: list[str]) -> None:
+    """Informa a trilha de auditoria QUEM este lote toca.
+
+    Os identificadores viajam no corpo, e o middleware so sabe ler o caminho —
+    entao sem isto a operacao de escrita de maior volume do sistema auditava
+    `paciente_id = NULL`, e "quais titulares foram afetados" (Art. 48 da LGPD)
+    ficava sem resposta justamente ali.
+
+    Declarado ANTES de executar: se o lote falhar no meio, a trilha ainda tem de
+    registrar a tentativa e sobre quem ela foi. O `status` da linha distingue as
+    duas coisas.
+
+    `alert_id` malformado e ignorado em vez de derrubar a requisicao: a trilha
+    nao pode ser o motivo de uma operacao clinica falhar, e o proprio
+    `processar_lote` ja devolve o erro daquele item.
+    """
+    pacientes = []
+    for alert_id in alert_ids:
+        try:
+            paciente_id, _ = partir_alert_id(alert_id)
+        except AlertIdInvalido:
+            continue
+        pacientes.append(paciente_id)
+    declarar_pacientes(request, pacientes)
+
+
 @router.post(
     "/frontend/alerts/batch/acknowledge",
     response_model=BatchResultResponse,
@@ -90,6 +118,7 @@ async def batch_acknowledge(
 ) -> dict:
     """Acknowledge multiple alerts at once."""
     logger.info("batch_acknowledge_called", alert_ids_count=len(payload.alert_ids), user=user)
+    _declarar_pacientes_do_lote(request, payload.alert_ids)
     return await processar_lote(payload.alert_ids, user, "acknowledge")
 
 
@@ -111,6 +140,7 @@ async def batch_complete(
         user=user,
         motivo=payload.motivo,
     )
+    _declarar_pacientes_do_lote(request, payload.alert_ids)
     return await processar_lote(payload.alert_ids, user, "complete", motivo=payload.motivo)
 
 

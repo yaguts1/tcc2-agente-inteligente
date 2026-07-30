@@ -191,7 +191,18 @@ class DeviceRegisterRequest(BaseModel):
 
 class BatchAlertRequest(BaseModel):
     """Request body for batch alert operations."""
-    alert_ids: list[str]
+
+    # Teto de 100, que e o tamanho da pagina que a tela carrega — "selecionar
+    # tudo" sobre uma pagina cheia continua funcionando.
+    #
+    # Nao e limite de UX, e de dominio: cada item vira uma linha de auditoria e
+    # um registro de reposicionamento em prontuario. Sem teto, um POST com
+    # 10.000 ids produz 10.000 linhas de documentacao clinica a partir de uma
+    # requisicao, e o custo de descobrir isso depois e alto.
+    #
+    # `min_length=1` porque lote vazio e sempre erro do chamador, e hoje ele
+    # respondia 200 com zero processados — indistinguivel de sucesso.
+    alert_ids: list[str] = Field(min_length=1, max_length=100)
     # Por que o alerta foi fechado. Ignorado em `acknowledge`, que so registra
     # que alguem VIU. Ausente vale como `reposicionado`, o caso comum — ver
     # `MotivoFechamento`.

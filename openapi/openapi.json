@@ -472,6 +472,8 @@
             "items": {
               "type": "string"
             },
+            "maxItems": 100,
+            "minItems": 1,
             "title": "Alert Ids",
             "type": "array"
           },
