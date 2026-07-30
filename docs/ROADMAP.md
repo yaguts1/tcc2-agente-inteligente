@@ -58,6 +58,13 @@ Três defeitos que só apareceram porque as ferramentas foram ligadas:
 memória), `datetime.now()` medindo duração (salta uma hora no horário de verão),
 e `console.log` despejando a lista de pacientes no console do navegador.
 
+### Bloco 4 — parcial
+
+| # | Entrega | Commit |
+|---|---|---|
+| 4.4 | Modo noturno ligado; 24 cores neutras fixas trocadas por token semântico (11 delas no popover de alertas críticos, a tela das 3h) | `9d9d0dc` |
+| 4.6 | Lote audita um paciente por linha e marca-se como lote; teto de 100 e mínimo de 1 | `a3abc4e` |
+
 ### Bloco 2 — contratos
 
 | # | Entrega | Commit |
@@ -106,11 +113,7 @@ estiveram dentro de uma imagem distribuível.
 - **4.2** Sem escada de escalonamento — alerta de 03:00 renderiza igual às 07:00. **M**
 - **4.3** Tabela de 8 colunas com `overflow-x-auto` e botões abaixo de 44px:
   não usável à beira do leito, de luva. **M**
-- **4.4** Modo noturno escrito e não ligado — os tokens `.dark` existem em
-  `globals.css` e nada aplica a classe. **S**
 - **4.5** Sem triagem nem "meus pacientes" (depende de 1.2 e 1.3, já prontos). **M**
-- **4.6** Ações em lote fabricam documentação; e `middleware_auditoria` extrai
-  `paciente_id` do path, então os endpoints de lote auditam `NULL`. **S**
 - **4.7** Ações offline se perdem — a maior parte do trabalho já existe:
   `alert_id` é chave natural e `alterar_status_alerta` já é idempotente. **M**
 
