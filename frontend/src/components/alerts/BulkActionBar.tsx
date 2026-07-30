@@ -50,13 +50,13 @@ export function BulkActionBar({
   }
 
   return (
-    <div className="sticky bottom-0 left-0 right-0 bg-white border-t border-gray-200 shadow-lg p-4 flex items-center justify-between gap-4 rounded-lg animate-in slide-in-from-bottom-2">
+    <div className="sticky bottom-0 left-0 right-0 bg-card border-t border-border shadow-lg p-4 flex items-center justify-between gap-4 rounded-lg animate-in slide-in-from-bottom-2">
       {/* Left Side: Selection Info */}
       <div className="flex items-center gap-3">
         <Badge variant="default" className="text-base px-3 py-1">
           {selectedCount} selecionado{selectedCount !== 1 ? 's' : ''}
         </Badge>
-        <p className="text-sm text-gray-600">
+        <p className="text-sm text-muted-foreground">
           Escolha uma ação abaixo para prosseguir
         </p>
       </div>

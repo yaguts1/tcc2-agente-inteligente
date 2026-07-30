@@ -73,14 +73,14 @@ export function CriticalAlertBadge({
           </div>
 
           {/* Summary */}
-          <div className="p-4 bg-gray-50">
+          <div className="p-4 bg-muted">
             <div className="grid grid-cols-2 gap-2 text-sm">
-              <div className="bg-white p-2 rounded border border-red-200">
-                <p className="text-gray-600">Risco Alto</p>
+              <div className="bg-card p-2 rounded border border-red-200">
+                <p className="text-muted-foreground">Risco Alto</p>
                 <p className="text-lg font-bold text-red-600">{highRisk}</p>
               </div>
-              <div className="bg-white p-2 rounded border border-yellow-200">
-                <p className="text-gray-600">Médio (Reconh.)</p>
+              <div className="bg-card p-2 rounded border border-yellow-200">
+                <p className="text-muted-foreground">Médio (Reconh.)</p>
                 <p className="text-lg font-bold text-yellow-600">{acknowledgedMedium}</p>
               </div>
             </div>
@@ -93,7 +93,7 @@ export function CriticalAlertBadge({
                 <div
                   key={alert.id}
                   onClick={() => onAlertClick?.(alert)}
-                  className="p-3 border-b last:border-b-0 hover:bg-gray-50 cursor-pointer transition-colors"
+                  className="p-3 border-b last:border-b-0 hover:bg-muted cursor-pointer transition-colors"
                 >
                   <div className="flex items-start gap-2">
                     <div
@@ -104,13 +104,13 @@ export function CriticalAlertBadge({
                       }`}
                     />
                     <div className="flex-1 min-w-0">
-                      <p className="font-medium text-sm text-gray-900 truncate">
+                      <p className="font-medium text-sm text-foreground truncate">
                         {alert.patientName}
                       </p>
-                      <p className="text-xs text-gray-600 mt-1">
+                      <p className="text-xs text-muted-foreground mt-1">
                         Sala: {alert.room} | Leito: {alert.bed}
                       </p>
-                      <p className="text-xs text-gray-500 mt-1">
+                      <p className="text-xs text-muted-foreground mt-1">
                         Status:{' '}
                         <span
                           className={
@@ -124,7 +124,7 @@ export function CriticalAlertBadge({
                             : 'Pendente'}
                         </span>
                       </p>
-                      <p className="text-xs text-gray-500 mt-1">
+                      <p className="text-xs text-muted-foreground mt-1">
                         Próximo: {new Date(alert.nextRepositioning).toLocaleTimeString('pt-BR')}
                       </p>
                     </div>
@@ -144,7 +144,7 @@ export function CriticalAlertBadge({
 
           {/* Empty State */}
           {criticalAlerts.length === 0 && (
-            <div className="p-6 text-center text-gray-500">
+            <div className="p-6 text-center text-muted-foreground">
               <p className="text-sm">Nenhum alerta crítico no momento</p>
             </div>
           )}

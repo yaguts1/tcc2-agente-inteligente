@@ -11,6 +11,7 @@ import {
   X,
 } from 'lucide-react';
 import { Button } from '../ui/button';
+import { SeletorDeTema } from './SeletorDeTema';
 import { CriticalAlertBadge } from '../alerts/CriticalAlertBadge';
 import { CriticalAlert } from '../../hooks/useCriticalAlerts';
 import { NavLink } from 'react-router-dom';
@@ -123,9 +124,12 @@ export function AppLayout({
                   <p className="text-foreground">{currentUser}</p>
                   <p className="text-muted-foreground">Conectado</p>
                 </div>
-                <Button variant="outline" size="sm" onClick={onLogout}>
-                  <LogOut className="w-4 h-4" />
-                </Button>
+                <div className="flex items-center gap-2">
+                  <SeletorDeTema compacto />
+                  <Button variant="outline" size="sm" onClick={onLogout}>
+                    <LogOut className="w-4 h-4" />
+                  </Button>
+                </div>
               </div>
             </div>
           </div>
@@ -185,6 +189,10 @@ export function AppLayout({
                   onAlertClick={onCriticalAlertClick}
                 />
               )}
+            </div>
+            <div className="flex items-center justify-between gap-2">
+              <span className="text-muted-foreground text-sm">Tema</span>
+              <SeletorDeTema compacto />
             </div>
             <Button
               variant="outline"

@@ -71,27 +71,27 @@ export class ErrorBoundary extends Component<Props, State> {
 
       // UI de fallback padrão
       return (
-        <div className="min-h-screen bg-gray-50 flex items-center justify-center p-4">
-          <div className="max-w-md w-full bg-white rounded-lg shadow-lg p-6">
+        <div className="min-h-screen bg-muted flex items-center justify-center p-4">
+          <div className="max-w-md w-full bg-card rounded-lg shadow-lg p-6">
             <div className="flex items-center gap-3 mb-4">
               <div className="p-2 bg-red-100 rounded-full">
                 <AlertCircle className="h-6 w-6 text-red-600" />
               </div>
-              <h1 className="text-xl font-semibold text-gray-900">
+              <h1 className="text-xl font-semibold text-foreground">
                 Algo deu errado
               </h1>
             </div>
 
-            <p className="text-gray-600 mb-4">
+            <p className="text-muted-foreground mb-4">
               Desculpe, ocorreu um erro inesperado. Nossa equipe foi notificada.
             </p>
 
             {process.env.NODE_ENV === 'development' && this.state.error && (
-              <details className="mb-4 p-3 bg-gray-50 rounded border border-gray-200">
-                <summary className="cursor-pointer font-medium text-sm text-gray-700 mb-2">
+              <details className="mb-4 p-3 bg-muted rounded border border-border">
+                <summary className="cursor-pointer font-medium text-sm text-foreground mb-2">
                   Detalhes técnicos (dev only)
                 </summary>
-                <div className="text-xs font-mono text-gray-600 space-y-2">
+                <div className="text-xs font-mono text-muted-foreground space-y-2">
                   <div>
                     <strong>Erro:</strong> {this.state.error.toString()}
                   </div>
@@ -116,7 +116,7 @@ export class ErrorBoundary extends Component<Props, State> {
               </button>
               <button
                 onClick={this.handleReload}
-                className="flex items-center gap-2 px-4 py-2 border border-gray-300 rounded hover:bg-gray-50 transition-colors"
+                className="flex items-center gap-2 px-4 py-2 border border-border rounded hover:bg-muted transition-colors"
               >
                 <RefreshCw className="h-4 w-4" />
                 Recarregar
