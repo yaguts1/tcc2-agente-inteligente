@@ -5,5 +5,16 @@
 	#
 	# Para "localhost" (default de desenvolvimento), o Caddy usa um
 	# certificado local autoassinado em vez de tentar Let's Encrypt.
+	# `/metrics` NAO sai para a internet.
+	#
+	# O endpoint expoe contagem de pacientes sem monitoramento, volume de
+	# alertas e latencia da instalacao. Nao e PHI, mas e inteligencia
+	# operacional sobre uma unidade de saude, servida sem autenticacao.
+	#
+	# Bloquear aqui nao custa nada: o Prometheus raspa `app:8000` pela rede
+	# interna do compose, sem passar por este proxy.
+	@metrics path /TCC/metrics /metrics
+	respond @metrics 404
+
 	reverse_proxy app:8000
 }

@@ -1,0 +1,31 @@
+# Prometheus raspando a própria aplicação.
+#
+# Antes disto, `/metrics` era servido e ninguém consumia — inclusive
+# `pacientes_sem_monitoramento`, que é o melhor sinal que o sistema produz.
+
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+rule_files:
+  - /etc/prometheus/regras_alertas.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["alertmanager:9093"]
+
+scrape_configs:
+  - job_name: upp-app
+    # O caminho carrega o APP_PREFIX: as rotas são montadas sob ele, então
+    # `/metrics` na raiz devolve 404. Se o prefixo mudar no compose, muda aqui —
+    # `tests/test_regras_de_alerta.py` compara os dois e falha se divergirem,
+    # porque o sintoma natural seria o Prometheus marcar o alvo como `down` e
+    # disparar `AplicacaoForaDoAr` com a aplicação perfeitamente saudável.
+    metrics_path: /TCC/metrics
+    static_configs:
+      # `app:8000` pela rede interna do compose, e NÃO pelo Caddy. Duas razões:
+      # não depende de TLS nem de DNS público para monitorar, e permite fechar
+      # `/metrics` na borda — o que o Caddyfile passou a fazer, porque as
+      # métricas expõem contagem de pacientes e volume de alertas da instalação.
+      - targets: ["app:8000"]

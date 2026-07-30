@@ -74,7 +74,48 @@ services:
       app:
         condition: service_healthy
 
+  # Prometheus e Alertmanager NAO ficam atras de um profile.
+  #
+  # Um profile opcional reproduziria exatamente o problema que estes dois vem
+  # resolver: `/metrics` existia desde sempre e ninguem raspava. Monitoramento
+  # que so sobe quando alguem lembra de pedir e monitoramento que nao existe.
+  prometheus:
+    image: prom/prometheus:v2.55.1
+    container_name: upp_prometheus
+    restart: unless-stopped
+    command:
+      - --config.file=/etc/prometheus/prometheus.yml
+      - --storage.tsdb.path=/prometheus
+      # 90 dias: o suficiente para o relatorio gerencial olhar para tras uma
+      # temporada inteira, e barato num volume local.
+      - --storage.tsdb.retention.time=90d
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml:ro
+      - ./monitoring/regras_alertas.yml:/etc/prometheus/regras_alertas.yml:ro
+      - prometheus_data:/prometheus
+    # SEM `ports`. A UI do Prometheus expoe contagem de pacientes e volume de
+    # alertas da instalacao; publicar a porta na VM a deixaria acessivel a quem
+    # alcance o IP. Quem precisar olhar usa tunel SSH:
+    #   ssh -L 9090:localhost:9090 usuario@vm  (e entao localhost:9090)
+    expose:
+      - "9090"
+    depends_on:
+      app:
+        condition: service_healthy
+
+  alertmanager:
+    image: prom/alertmanager:v0.27.0
+    container_name: upp_alertmanager
+    restart: unless-stopped
+    volumes:
+      - ./monitoring/alertmanager.yml:/etc/alertmanager/alertmanager.yml:ro
+      - alertmanager_data:/alertmanager
+    expose:
+      - "9093"
+
 volumes:
   app_data:
   caddy_data:
   caddy_config:
+  prometheus_data:
+  alertmanager_data:

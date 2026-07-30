@@ -1,0 +1,53 @@
+# Roteamento dos alertas de infraestrutura.
+#
+# O receiver padrão é um webhook desabilitado de propósito: sem um destino real
+# definido pela instalação (e-mail da equipe de TI, Slack, plantão), qualquer
+# valor aqui seria falso — e um alerta roteado para um destino inexistente é
+# pior que nenhum alerta, porque a configuração parece completa.
+#
+# O que este arquivo já entrega sem destino nenhum: os alertas ficam visíveis e
+# agrupados na UI do Alertmanager (porta 9093), com histórico e silenciamento.
+# Para ligar um destino de verdade, descomente o bloco de exemplo e defina
+# ALERTMANAGER_WEBHOOK no `.env`.
+
+global:
+  resolve_timeout: 5m
+
+route:
+  # Agrupa por nome do alerta e severidade: 12 leitos sem monitoramento por
+  # causa de uma queda de switch devem chegar como UMA notificação, não doze.
+  group_by: ["alertname", "severity"]
+  group_wait: 30s
+  group_interval: 5m
+  # 4h de repetição para o que segue aberto. Curto demais vira ruído e a equipe
+  # silencia a regra inteira; longo demais e um sensor morto de madrugada só
+  # reaparece depois do turno.
+  repeat_interval: 4h
+  receiver: padrao
+
+  routes:
+    # Crítico repete mais rápido: são os dois casos em que a equipe acredita
+    # estar sendo avisada de deterioração clínica e não está.
+    - matchers:
+        - severity = "critical"
+      receiver: padrao
+      repeat_interval: 1h
+
+receivers:
+  - name: padrao
+    # Sem destino configurado. Ver o cabeçalho: preencher isto com um valor
+    # inventado faria a instalação parecer monitorada sem estar.
+    #
+    # webhook_configs:
+    #   - url: "https://exemplo.invalido/alertas"
+    #     send_resolved: true
+
+inhibit_rules:
+  # Com a aplicação fora do ar, `pacientes_sem_monitoramento` não fica alto —
+  # fica AUSENTE, e as regras clínicas param de avaliar. Ainda assim, se as duas
+  # coincidirem numa janela de scraping, a causa raiz é uma só.
+  - source_matchers:
+      - alertname = "AplicacaoForaDoAr"
+    target_matchers:
+      - severity =~ "critical|warning"
+    equal: ["job"]

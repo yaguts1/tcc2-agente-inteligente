@@ -1,0 +1,117 @@
+# Regras de alerta sobre as próprias métricas do sistema.
+#
+# Contexto: `/metrics` era servido desde sempre e NINGUÉM raspava. Um sistema
+# orientado a evento falha em silêncio — sensor morto não gera erro, apenas para
+# de produzir alertas, e a tela fica calma. A tela calma é ambígua: significa
+# "todos os pacientes bem" ou "não estamos vendo nada", e nada na interface
+# distingue os dois.
+#
+# Cada regra abaixo existe para tornar um silêncio específico audível. A ordem é
+# por gravidade clínica, não por facilidade de implementação.
+#
+# Os nomes de métrica aqui são verificados contra `servicos/metricas.py` por
+# `tests/test_regras_de_alerta.py`. Sem esse teste, um `_total` errado num nome
+# produz uma regra que NUNCA dispara — e uma regra que nunca dispara é
+# indistinguível de um sistema saudável, que é exatamente o modo de falha que
+# este arquivo existe para eliminar.
+
+groups:
+  - name: upp-monitoramento-clinico
+    interval: 30s
+    rules:
+      # ---------------------------------------------------------------------
+      # A métrica mais importante do sistema
+      # ---------------------------------------------------------------------
+      - alert: PacienteSemMonitoramento
+        # `> 0` e não um limiar maior: um paciente descoberto já é o caso que
+        # importa. Este número conta paciente COM LEITO ATRIBUÍDO cujo sensor
+        # parou de reportar — a equipe acredita estar sendo avisada e não está.
+        expr: pacientes_sem_monitoramento > 0
+        # 10 min tolera reinício de container, reconexão de Wi-Fi e a janela de
+        # 15 min do próprio watchdog sem alarmar. Abaixo disso, o alerta dispara
+        # em toda manutenção e vira ruído — e regra ignorada não protege nada.
+        for: 10m
+        labels:
+          severity: critical
+        annotations:
+          resumo: "{{ $value }} paciente(s) em leito sem leitura recente"
+          descricao: >-
+            Sensor, rede ou ingestão pararam para pelo menos um leito ocupado.
+            O dashboard NÃO indica risco nesses leitos — ele simplesmente não
+            recebe dados, e a ausência de alerta é lida como ausência de
+            problema. Conferir /TCC/api/monitoramento para os leitos nomeados.
+
+      - alert: IngestaoParada
+        # O watchdog acima é por paciente e depende de haver ficha com leito.
+        # Este é sobre o cano inteiro: zero eventos em 15 min com a aplicação de
+        # pé significa que nenhum ESP32 está falando com o backend.
+        expr: rate(eventos_recebidos_total[15m]) == 0
+        for: 15m
+        labels:
+          severity: critical
+        annotations:
+          resumo: "Nenhum evento de sensor recebido nos últimos 15 minutos"
+          descricao: >-
+            A aplicação está de pé e respondendo, mas nada chega. Falha de rede
+            da ala, firmware travado, ou token de dispositivo rejeitado — os
+            três se parecem daqui, e nenhum deles produz erro na tela.
+
+      - alert: TaxaDeDescarteAlta
+        # `confianca` abaixo do limiar some em `info`/`debug`. Um sensor
+        # derivando produz MENOS dados, logo MENOS alertas — degradação que se
+        # disfarça de melhora. O watchdog de silêncio não pega, porque as
+        # amostras continuam chegando.
+        expr: >-
+          rate(eventos_descartados_total[30m])
+          / clamp_min(rate(eventos_recebidos_total[30m]), 0.001) > 0.3
+        for: 30m
+        labels:
+          severity: warning
+        annotations:
+          resumo: "{{ $value | humanizePercentage }} dos eventos descartados"
+          descricao: >-
+            Mais de 30% das amostras estão sendo filtradas por qualidade. A
+            amostragem efetiva caiu na mesma proporção, então os alertas
+            atrasam sem que nada na tela mude.
+
+  - name: upp-disponibilidade
+    interval: 30s
+    rules:
+      - alert: AplicacaoForaDoAr
+        expr: up{job="upp-app"} == 0
+        for: 2m
+        labels:
+          severity: critical
+        annotations:
+          resumo: "A aplicação não responde ao scraping há 2 minutos"
+          descricao: >-
+            Sem a aplicação não há alerta nenhum sendo gerado, e as demais
+            regras deste arquivo também param de avaliar — `pacientes_sem_
+            monitoramento` não fica alto, fica ausente. Esta regra é a única
+            que cobre o caso.
+
+      - alert: LatenciaDeIngestaoAlta
+        # p95 do processamento por evento. O caminho de escrita foi medido e
+        # otimizado (uma transação por amostra, ~17 ms com 1 thread); 500 ms de
+        # p95 é uma ordem de grandeza acima e indica contenção de escrita.
+        expr: >-
+          histogram_quantile(0.95, rate(tempo_processamento_ms_hist_bucket[10m])) > 500
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          resumo: "p95 de processamento por evento em {{ $value | printf \"%.0f\" }} ms"
+          descricao: >-
+            Referência medida após a unificação de transação: ~17 ms por amostra
+            com uma thread. Meia ordem de grandeza acima sugere contenção no
+            lock de escritor do WAL ou disco saturado.
+
+      - alert: ErrosHTTP5xx
+        expr: >-
+          rate(http_requests_total{status=~"5.."}[10m])
+          / clamp_min(rate(http_requests_total[10m]), 0.001) > 0.05
+        for: 10m
+        labels:
+          severity: warning
+        annotations:
+          resumo: "{{ $value | humanizePercentage }} das requisições retornando 5xx"
