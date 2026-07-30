@@ -44,7 +44,7 @@ enquanto existissem.
 | # | Entrega | Commit |
 |---|---|---|
 | 3.1 | Uma transação por amostra no lugar de quatro: ~26 → ~58 amostras/s com 1 thread, e concorrência passou a escalar (4 threads dão ~145/s, contra 36/s que 8 threads davam antes). Ganho de atomicidade junto | `9b59cfa` |
-| 3.2 | Query do watchdog: `GROUP BY`+`MAX` → subconsulta correlacionada. 130 ms → <1 ms com 260 mil linhas | (este) |
+| 3.2 | Query do watchdog: `GROUP BY`+`MAX` → subconsulta correlacionada. 130 ms → <1 ms com 260 mil linhas | `94954f5` |
 
 `scripts/medir_ingestao.py` fica no repositório para a próxima medição ser
 comparável.
