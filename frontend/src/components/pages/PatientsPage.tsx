@@ -66,9 +66,7 @@ export function PatientsPage() {
 
   const fetchPatients = async () => {
     try {
-      console.log('[PatientsPage] fetchPatients() called');
       const data = await patientsApi.getPatients();
-      console.log('[PatientsPage] API returned patients:', data);
       setPatients(data);
       setError(null);
     } catch (err) {
@@ -252,10 +250,7 @@ export function PatientsPage() {
         <PatientForm
           patient={editingPatient || undefined}
           onSuccess={async () => {
-            console.log('[PatientsPage] PatientForm.onSuccess() called');
-            console.log('[PatientsPage] Calling fetchPatients() after form success');
             await fetchPatients();
-            console.log('[PatientsPage] fetchPatients() completed, hiding form');
             setShowForm(false);
             setEditingPatient(null);
           }}

@@ -26,6 +26,20 @@ export function useCriticalAlerts(
   const [hasNewCritical, setHasNewCritical] = useState(false);
   const audioContextRef = useRef<AudioContext | null>(null);
   const notificationRef = useRef<Notification | null>(null);
+  // Espelho de `criticalAlerts` para o efeito abaixo LER sem depender dele.
+  //
+  // O efeito compara os criticos novos contra os anteriores e tambem GRAVA o
+  // resultado. Lendo o state direto, ele fecha sobre o valor do render em que
+  // foi agendado; incluir `criticalAlerts` nas dependencias — o que o
+  // `exhaustive-deps` pede — criaria laco infinito, porque o proprio efeito o
+  // altera. O ref quebra o ciclo: e sempre o valor corrente, e nao entra na
+  // lista de dependencias.
+  //
+  // Sem isto, o que se perde e a deteccao do alerta NOVO: um critico ja
+  // conhecido reapareceria como novo e o beep tocaria de novo (fadiga de
+  // alarme), ou um critico de fato novo seria visto como conhecido e passaria
+  // em silencio.
+  const criticalAlertsRef = useRef<CriticalAlert[]>([]);
 
   // Get critical alerts (high or medium with acknowledged status)
   const getCriticalAlerts = useCallback(() => {
@@ -149,7 +163,7 @@ export function useCriticalAlerts(
     if (!enabled) return;
 
     const newCritical = getCriticalAlerts();
-    const previousCritical = criticalAlerts;
+    const previousCritical = criticalAlertsRef.current;
 
     // Detect new critical alerts
     const newAlerts = newCritical.filter(
@@ -172,12 +186,15 @@ export function useCriticalAlerts(
         notificationSent: newAlerts.some((a) => a.id === alert.id),
       }));
 
+      criticalAlertsRef.current = updated;
       setCriticalAlerts(updated);
 
       // Reset hasNewCritical after 5 seconds
       setTimeout(() => setHasNewCritical(false), 5000);
     } else {
-      setCriticalAlerts(newCritical.map((alert) => ({ ...alert, isNew: false, notificationSent: false })));
+      const limpos = newCritical.map((alert) => ({ ...alert, isNew: false, notificationSent: false }));
+      criticalAlertsRef.current = limpos;
+      setCriticalAlerts(limpos);
     }
   }, [alerts, enabled, getCriticalAlerts, playAlertSound, sendNotification]);
 

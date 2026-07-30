@@ -60,7 +60,6 @@ export function useWebSocket({
           const ws = new WebSocket(url);
 
           ws.onopen = () => {
-            console.log('WebSocket connected');
             setIsConnected(true);
             setLastError(null);
             reconnectAttemptsRef.current = 0;
@@ -84,7 +83,6 @@ export function useWebSocket({
           ws.onmessage = (event) => {
             try {
               const message: AlertUpdate = JSON.parse(event.data);
-              console.log('WebSocket message received:', message);
               onMessage?.(message);
             } catch (err) {
               console.error('Failed to parse WebSocket message:', err, event.data);
@@ -99,7 +97,6 @@ export function useWebSocket({
           };
 
           ws.onclose = () => {
-            console.log('WebSocket disconnected');
             setIsConnected(false);
             
             // Clear heartbeat interval
@@ -116,7 +113,6 @@ export function useWebSocket({
               const maxDelay = 30000; // Max 30 segundos
               const delayMs = Math.min(exponentialDelay, maxDelay);
               
-              console.log(`Attempting to reconnect (${reconnectAttemptsRef.current}/${maxReconnectAttempts})... waiting ${delayMs}ms`);
               
               if (reconnectTimeoutRef.current) {
                 clearTimeout(reconnectTimeoutRef.current);
@@ -185,6 +181,11 @@ export function useWebSocket({
     };
   }, [disconnect]);
 
+  // Sem `console.log` de ciclo de vida aqui. Alem de nao serem lidos, o que
+  // eles ecoavam ja sai por este return — `isConnected` e `reconnectAttempts`
+  // vao para a UI. E `console.log('WebSocket message received', message)`
+  // despejava o payload de cada alerta (paciente e severidade) no console de
+  // uma estacao compartilhada da ala.
   return {
     isConnected,
     lastError,

@@ -380,7 +380,7 @@ export function AlertsTable({
       {/* Confirmation Dialog */}
       <AlertDialog
         open={confirmingComplete !== null}
-        onOpenChange={(open: boolean) => {
+        onOpenChange={(_open: boolean) => {
           if (!confirmingComplete) return;
           setConfirmingComplete(null);
           setMotivo('reposicionado');

@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { ChevronDown, Download, RotateCcw, AlertCircle, Info } from 'lucide-react';
-import { exportAlertsToCSV, exportAlertsToPDF, formatDateForExport } from '../lib/api';
+import { exportAlertsToCSV, exportAlertsToPDF } from '../lib/api';
 import { ApiException } from '../lib/api';
 import { Button } from './ui/button';
 import { Input } from './ui/input';

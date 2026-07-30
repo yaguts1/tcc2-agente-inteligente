@@ -69,15 +69,11 @@ export function PatientForm({ patient, onSuccess, onCancel }: PatientFormProps) 
 
     try {
       if (patient) {
-        console.log('[PatientForm] Updating patient:', patient.id);
         await patientsApi.updatePatient(patient.id, formData);
-        console.log('[PatientForm] Patient updated successfully');
         toast.success('Paciente atualizado com sucesso');
         setShowSimulation(true);
       } else {
-        console.log('[PatientForm] Creating new patient with data:', formData);
         const newPatient = await patientsApi.createPatient(formData);
-        console.log('[PatientForm] Patient created successfully:', newPatient);
         toast.success('Paciente criado com sucesso');
         setCreatedPatient(newPatient);
         setShowSimulation(true);
@@ -95,7 +91,6 @@ export function PatientForm({ patient, onSuccess, onCancel }: PatientFormProps) 
   };
 
   const handleSimulationSuccess = () => {
-    console.log('[PatientForm] Simulation completed, calling onSuccess()');
     toast.success('Dados simulados carregados na Timeline!');
   };
 
@@ -125,10 +120,8 @@ export function PatientForm({ patient, onSuccess, onCancel }: PatientFormProps) 
               type="button"
               variant="outline"
               onClick={async () => {
-                console.log('[PatientForm] "Voltar à Lista" clicked, calling onSuccess()');
                 setShowSimulation(false);
                 await onSuccess();
-                console.log('[PatientForm] onSuccess() completed');
               }}
               className="w-full"
             >

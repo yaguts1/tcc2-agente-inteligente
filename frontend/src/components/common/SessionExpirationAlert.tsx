@@ -3,7 +3,7 @@
  * Displays warning and options when session is about to expire
  */
 
-import { useEffect, useState } from 'react';
+import { useState } from 'react';
 import { AlertCircle, LogOut } from 'lucide-react';
 import { Card, CardContent } from '../ui/card';
 import { Button } from '../ui/button';

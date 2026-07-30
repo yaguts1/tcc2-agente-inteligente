@@ -1,4 +1,4 @@
-import { useState, useCallback, useMemo, useEffect } from 'react';
+import { useState, useCallback, useEffect } from 'react';
 
 export function useAlertSelection(alertIds: string[]) {
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());

@@ -6,7 +6,6 @@ import {
   PopoverContent,
   PopoverTrigger,
 } from '../ui/popover';
-import { Card } from '../ui/card';
 import { CriticalAlert } from '../../hooks/useCriticalAlerts';
 
 interface CriticalAlertBadgeProps {

@@ -15,7 +15,6 @@
  */
 import { useState } from 'react';
 import { usuariosApi, ApiException, SENHA_MIN_LEN } from '../../lib/api';
-import { Button } from '../ui/button';
 import { Input } from '../ui/input';
 import { Label } from '../ui/label';
 import { Spinner } from '../shared/Spinner';

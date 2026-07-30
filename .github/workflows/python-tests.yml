@@ -135,6 +135,14 @@ jobs:
       - name: Type-check
         run: npm run typecheck
 
+      # ESLint era ausente. O `tsc --noEmit` acima passa limpo em tudo que o
+      # lint acusou — dependência faltando em `useEffect`, `console.log`
+      # despejando a lista de pacientes, import morto — porque nenhuma dessas
+      # classes é um erro de TIPO. Ver `frontend/eslint.config.js` para o
+      # critério de quais regras entraram.
+      - name: Lint
+        run: npm run lint
+
       - name: Run unit tests
         run: npm run test
 

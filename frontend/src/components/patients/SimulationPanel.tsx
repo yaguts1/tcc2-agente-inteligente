@@ -43,7 +43,7 @@ export function SimulationPanel({ patientId, onSuccess }: SimulationPanelProps) 
         `✅ Simulação concluída! ${result.amostras} amostras, ${result.eventos} eventos e ${result.alertas} alertas gerados`,
       );
       onSuccess?.(result);
-    } catch (err) {
+    } catch {
       // Erro já é tratado pelo hook
     }
   };

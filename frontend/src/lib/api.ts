@@ -77,7 +77,9 @@ async function request<T>(
     // avoid logging bodies for security, but show method and url
     // eslint-disable-next-line no-console
     console.debug('[api] request', url, options && options.method ? options.method : 'GET');
-  } catch (_) {}
+  } catch {
+    // O log de diagnostico nunca pode derrubar a requisicao que ele descreve.
+  }
 
   // Add stored token to Authorization header if available
   const token = getStoredToken();

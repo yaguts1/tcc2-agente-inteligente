@@ -15,7 +15,7 @@
  *  - o texto de Excluir aponta a alternativa, porque um botão destrutivo sem
  *    saída à vista é o que produz o uso errado.
  */
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
