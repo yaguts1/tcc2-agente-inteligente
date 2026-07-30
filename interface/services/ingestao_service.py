@@ -16,6 +16,7 @@ from fastapi import HTTPException, status
 from pydantic import ValidationError
 
 from interface.api_shared import DB_PATH, DEFAULT_PERFIL
+from interface.db_core import connect
 from interface.dao import obter_ficha_paciente, obter_ficha_por_cama
 from interface.repositories.alertas import inserir_alertas
 from interface.repositories.devices import (
@@ -94,16 +95,36 @@ def _event_to_eventos_df(payload: EventPayload) -> pd.DataFrame:
 
 
 def registrar_evento(payload: EventPayload) -> dict[str, Any]:
-    df_grade = _event_to_grade_df(payload)
-    inserir_grade(DB_PATH, df_grade, payload.paciente_id)
+    """Persiste a amostra e processa os alertas dela, numa transacao SO.
 
-    df_eventos = _event_to_eventos_df(payload)
-    inserir_eventos(DB_PATH, df_eventos, payload.paciente_id)
+    Antes eram QUATRO conexoes e quatro commits por amostra — grade, eventos,
+    estado do motor e alertas, cada um abrindo a propria. Cada conexao paga
+    abertura, quatro PRAGMAs e um commit, e no SQLite os commits de escrita
+    serializam entre si: era por isso que o teto medido quase nao melhorava com
+    concorrencia (26 amostras/s com 1 thread, 36 com 8 — 37% de ganho para 8x
+    de paralelismo).
 
-    evento_dict = payload.model_dump(mode="python")
-    alertas = PROCESSADOR.processar_amostra(evento_dict)
+    A CORRETUDE tambem muda, e sozinha ja justificaria: com quatro transacoes,
+    uma falha no meio deixava a grade gravada e o alerta nao — a amostra existia
+    no historico do paciente sem o alerta que ela deveria ter produzido. Agora
+    ou a amostra entra inteira, ou nao entra.
+
+    O anuncio no WebSocket fica FORA da transacao, depois do commit: e efeito
+    colateral externo, e um cliente WS lento nao pode segurar um lock de escrita
+    do banco.
+    """
+    with connect(DB_PATH) as conn:
+        inserir_grade(DB_PATH, _event_to_grade_df(payload), payload.paciente_id, conn=conn)
+        inserir_eventos(DB_PATH, _event_to_eventos_df(payload), payload.paciente_id, conn=conn)
+
+        evento_dict = payload.model_dump(mode="python")
+        alertas = PROCESSADOR.processar_amostra(evento_dict, conn=conn)
+        if alertas:
+            inserir_alertas(DB_PATH, alertas, conn=conn)
+
+    # Fora do `with`: so anuncia o que ja esta commitado. Anunciar dentro faria
+    # o cliente receber um alerta que uma falha posterior ainda poderia desfazer.
     if alertas:
-        inserir_alertas(DB_PATH, alertas)
         _anunciar(alertas)
     return {"alertas": len(alertas)}
 

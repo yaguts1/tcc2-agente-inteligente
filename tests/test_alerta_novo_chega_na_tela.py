@@ -142,7 +142,15 @@ def test_ingestao_anuncia_o_alerta_que_o_motor_abriu(monkeypatch):
     monkeypatch.setattr(ing, "inserir_grade", lambda *a, **k: None)
     monkeypatch.setattr(ing, "inserir_eventos", lambda *a, **k: None)
     monkeypatch.setattr(ing, "inserir_alertas", lambda *a, **k: 1)
-    monkeypatch.setattr(ing.PROCESSADOR, "processar_amostra", lambda evento: [ALERTA])
+    monkeypatch.setattr(
+        ing.PROCESSADOR,
+        "processar_amostra",
+        # `**_` porque a ingestao passa a conexao compartilhada: grade,
+        # eventos, estado do motor e alertas gravam numa transacao so.
+        # O contrato que este teste protege — o alerta recem-aberto
+        # chegar ao anuncio — nao mudou.
+        lambda evento, **_: [ALERTA],
+    )
 
     from interface.schemas import EventPayload
 
@@ -171,7 +179,15 @@ def test_falha_no_anuncio_nao_derruba_a_ingestao(monkeypatch):
     monkeypatch.setattr(ing, "inserir_grade", lambda *a, **k: None)
     monkeypatch.setattr(ing, "inserir_eventos", lambda *a, **k: None)
     monkeypatch.setattr(ing, "inserir_alertas", lambda *a, **k: 1)
-    monkeypatch.setattr(ing.PROCESSADOR, "processar_amostra", lambda evento: [ALERTA])
+    monkeypatch.setattr(
+        ing.PROCESSADOR,
+        "processar_amostra",
+        # `**_` porque a ingestao passa a conexao compartilhada: grade,
+        # eventos, estado do motor e alertas gravam numa transacao so.
+        # O contrato que este teste protege — o alerta recem-aberto
+        # chegar ao anuncio — nao mudou.
+        lambda evento, **_: [ALERTA],
+    )
 
     from interface.schemas import EventPayload
 

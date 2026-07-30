@@ -48,26 +48,51 @@ class _SQLiteStateStore:
     if pasta:
       os.makedirs(pasta, exist_ok=True)
     with sqlite3.connect(self._db_path) as conn:
-      conn.execute(
-        """
-        CREATE TABLE IF NOT EXISTS estado_incremental (
-          paciente_id TEXT PRIMARY KEY,
-          estado_json TEXT NOT NULL,
-          atualizado_em TEXT NOT NULL
-        )
-        """
+      self._criar_tabela(conn)
+
+  @staticmethod
+  def _criar_tabela(conn) -> None:
+    conn.execute(
+      """
+      CREATE TABLE IF NOT EXISTS estado_incremental (
+        paciente_id TEXT PRIMARY KEY,
+        estado_json TEXT NOT NULL,
+        atualizado_em TEXT NOT NULL
       )
+      """
+    )
 
   def load(self) -> Dict[str, dict]:
     with sqlite3.connect(self._db_path) as conn:
       cursor = conn.execute("SELECT paciente_id, estado_json FROM estado_incremental")
       return {row[0]: json.loads(row[1]) for row in cursor.fetchall()}
 
-  def save(self, paciente_id: str, state: dict) -> None:
+  def save(self, paciente_id: str, state: dict, conn=None) -> None:
     payload = json.dumps(state)
     agora = datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
-    with sqlite3.connect(self._db_path) as conn:
-      conn.execute(
+    # `conexao_ou_propria` em vez de `sqlite3.connect` cru: quando a ingestao
+    # passa a conexao dela, o estado do motor entra na MESMA transacao da
+    # amostra que o produziu — e nao numa quarta transacao separada, que podia
+    # falhar deixando grade gravada e estado velho.
+    #
+    # De quebra some o vazamento: `with sqlite3.connect()` commita mas NAO
+    # fecha, que e exatamente o que `db_core.connect` foi escrito para corrigir.
+    from interface.db_core import conexao_ou_propria
+
+    with conexao_ou_propria(self._db_path, conn) as cx:
+      # A tabela e garantida NA CONEXAO que vai gravar, e nao so no construtor.
+      #
+      # `_ensure_table` roda uma vez, no import, contra o caminho que o
+      # PROCESSADOR tinha naquele momento. Enquanto o store abria conexao
+      # propria isso bastava; ao aceitar conexao de fora, ela pode apontar para
+      # outro banco — e o sintoma foi `no such table: estado_incremental` na
+      # reconciliacao, com o erro engolido e o evento apenas nao processado.
+      #
+      # `CREATE TABLE IF NOT EXISTS` e barato (o SQLite resolve no cache de
+      # statements) e elimina a dependencia de qual caminho estava valendo no
+      # import.
+      self._criar_tabela(cx)
+      cx.execute(
         """
         INSERT INTO estado_incremental (paciente_id, estado_json, atualizado_em)
         VALUES (?, ?, ?)
@@ -78,7 +103,7 @@ class _SQLiteStateStore:
         (paciente_id, payload, agora),
       )
 
-  def delete(self, paciente_id: str) -> None:
+  def delete(self, paciente_id: str, conn=None) -> None:
     with sqlite3.connect(self._db_path) as conn:
       conn.execute("DELETE FROM estado_incremental WHERE paciente_id = ?", (paciente_id,))
 
@@ -276,22 +301,22 @@ class ProcessadorIncremental:
         logger.warning("estado_incremental_invalido", paciente_id=paciente_id, motivo=str(exc))
         continue
 
-  def _persistir_estado(self, paciente_id: str) -> None:
+  def _persistir_estado(self, paciente_id: str, conn=None) -> None:
     if self._store is None:
       return
     estado = self._estado_cache.get(paciente_id)
     if estado is None:
-      self._store.delete(paciente_id)
+      self._store.delete(paciente_id, conn=conn)
       return
-    self._store.save(paciente_id, _estado_para_dict(estado))
+    self._store.save(paciente_id, _estado_para_dict(estado), conn=conn)
 
   # ------------------------------------------------------------------
   # Processamento principal
   # ------------------------------------------------------------------
-  def processar_amostra(self, evento: Mapping[str, object]) -> list:
-    return self.processar_lote([evento])
+  def processar_amostra(self, evento: Mapping[str, object], conn=None) -> list:
+    return self.processar_lote([evento], conn=conn)
 
-  def processar_lote(self, eventos: Iterable[Mapping[str, object]]) -> list:
+  def processar_lote(self, eventos: Iterable[Mapping[str, object]], conn=None) -> list:
     alertas_emitidos: list = []
     for evento in eventos:
       paciente_id = str(evento.get("paciente_id") or "").strip()
@@ -320,14 +345,14 @@ class ProcessadorIncremental:
         logger.debug("evento_fora_ordem", paciente_id=paciente_id, ts=str(timestamp), ultimo=str(ultimo))
         continue
 
-      if self._suprimir_por_agenda(paciente_id, timestamp):
+      if self._suprimir_por_agenda(paciente_id, timestamp, conn=conn):
         self._ultima_ts[paciente_id] = timestamp
         continue
 
       inicio = time.perf_counter()
 
       if self._estrategia == "estado_em_memoria":
-        alertas = self._processar_estado_memoria(paciente_id, postura, timestamp)
+        alertas = self._processar_estado_memoria(paciente_id, postura, timestamp, conn=conn)
       else:
         alertas = self._processar_recalculo(paciente_id, postura, timestamp)
 
@@ -346,7 +371,7 @@ class ProcessadorIncremental:
   # ------------------------------------------------------------------
   # Agenda de supressao
   # ------------------------------------------------------------------
-  def _suprimir_por_agenda(self, paciente_id: str, timestamp: datetime) -> bool:
+  def _suprimir_por_agenda(self, paciente_id: str, timestamp: datetime, conn=None) -> bool:
     """True quando a amostra cai numa janela em que NAO se deve alertar.
 
     A supressao existia so em `modulo_alerta/engine.py`, que e chamado pelo
@@ -380,6 +405,7 @@ class ProcessadorIncremental:
         db_path=self._db_path,
         paciente_id=paciente_id,
         timestamp=timestamp_local,
+        conn=conn,
       )
     except Exception as exc:
       logger.warning("agenda_consulta_falhou", paciente_id=paciente_id, motivo=str(exc))
@@ -396,12 +422,14 @@ class ProcessadorIncremental:
       estado = self._estado_cache.get(paciente_id)
       if estado is not None:
         self._estado_cache[paciente_id] = reiniciar_corrida(estado)
-        self._persistir_estado(paciente_id)
+        self._persistir_estado(paciente_id, conn=conn)
 
     return False
 
   # ------------------------------------------------------------------
-  def _processar_estado_memoria(self, paciente_id: str, postura: str, timestamp: datetime) -> list:
+  def _processar_estado_memoria(
+    self, paciente_id: str, postura: str, timestamp: datetime, conn=None
+  ) -> list:
     estado = self._estado_cache.get(paciente_id)
     if estado is None:
       perfil = self._resolver_perfil(paciente_id)
@@ -412,7 +440,7 @@ class ProcessadorIncremental:
       {"timestamp": timestamp, "postura": postura},
     )
     self._estado_cache[paciente_id] = novo_estado
-    self._persistir_estado(paciente_id)
+    self._persistir_estado(paciente_id, conn=conn)
     return alertas
 
   # ------------------------------------------------------------------

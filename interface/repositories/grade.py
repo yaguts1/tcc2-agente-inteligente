@@ -3,10 +3,18 @@ from __future__ import annotations
 
 from datetime import timedelta
 
+import sqlite3
+
 import pandas as pd
 import structlog
 
-from interface.db_core import connect, ensure_paciente, norm_iso, _ensure_grade_confianca_column
+from interface.db_core import (
+    conexao_ou_propria,
+    connect,
+    ensure_paciente,
+    norm_iso,
+    _ensure_grade_confianca_column,
+)
 from interface.tempo import agora_utc_naive
 
 logger = structlog.get_logger(__name__)
@@ -32,6 +40,7 @@ def inserir_grade(
     db_path: str,
     df_grade: pd.DataFrame,
     paciente_id: str = "P1",
+    conn: "sqlite3.Connection | None" = None,
 ) -> int:
     """Insere amostras da grade simulada."""
     required = {"timestamp", "postura"}
@@ -72,17 +81,17 @@ def inserir_grade(
     if not registros:
         return 0
 
-    with connect(db_path) as conn:
-        ensure_paciente(conn, paciente_id)
-        _ensure_grade_confianca_column(conn)
-        before = conn.total_changes
-        conn.executemany(
+    with conexao_ou_propria(db_path, conn) as cx:
+        ensure_paciente(cx, paciente_id)
+        _ensure_grade_confianca_column(cx, db_path)
+        before = cx.total_changes
+        cx.executemany(
             "INSERT OR IGNORE INTO grade"
             " (paciente_id, ts, ts_ms, postura, confianca, pressao_pico)"
             " VALUES (?, ?, ?, ?, ?, ?)",
             registros,
         )
-        inseridos = conn.total_changes - before
+        inseridos = cx.total_changes - before
 
     # `OR IGNORE` continua sendo o que queremos — reenvio do dispositivo e
     # reingestao de evento orfao dependem dele para serem idempotentes. O que
@@ -107,6 +116,7 @@ def inserir_eventos(
     db_path: str,
     df_eventos: pd.DataFrame,
     paciente_id: str = "P1",
+    conn: "sqlite3.Connection | None" = None,
 ) -> int:
     """Insere eventos simulados em lote."""
     required = {"inicio", "fim"}
@@ -130,14 +140,14 @@ def inserir_eventos(
     if not registros:
         return 0
 
-    with connect(db_path) as conn:
-        ensure_paciente(conn, paciente_id)
-        before = conn.total_changes
-        conn.executemany(
+    with conexao_ou_propria(db_path, conn) as cx:
+        ensure_paciente(cx, paciente_id)
+        before = cx.total_changes
+        cx.executemany(
             "INSERT OR IGNORE INTO eventos (paciente_id, inicio, fim, tipo) VALUES (?, ?, ?, ?)",
             registros,
         )
-        return conn.total_changes - before
+        return cx.total_changes - before
 
 
 def selecionar_grade_janela(db_path: str, horas: int | None = 24) -> list[dict]:

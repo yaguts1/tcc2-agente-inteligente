@@ -55,6 +55,27 @@ def connect(db_path: str) -> Iterator[sqlite3.Connection]:
         # pai e a limpeza em cascata nunca acontecia — as remocoes funcionavam
         # so porque `repositories/pacientes.py` apaga tabela por tabela na mao.
         conn.execute("PRAGMA foreign_keys=ON")
+        # `synchronous=FULL` (o default) faz um fsync a CADA commit. Com o
+        # caminho de ingestao commitando varias vezes por amostra, era o item
+        # isolado mais caro do perfil: 24% do tempo total em `commit`.
+        #
+        # `NORMAL` COM WAL nao e o mesmo afrouxamento que seria sem WAL. A
+        # garantia que se perde e estreita e vale ser dita com precisao:
+        #
+        #   * crash da APLICACAO, kill -9, excecao, container reiniciado: nada
+        #     se perde. O WAL ja esta escrito, e o SQLite o recupera na proxima
+        #     abertura;
+        #   * crash do SISTEMA OPERACIONAL ou queda de energia: as ultimas
+        #     transacoes commitadas podem se perder. O banco NAO corrompe — essa
+        #     e a diferenca em relacao a desligar o journal.
+        #
+        # O que se perderia sao os ultimos segundos de amostra de sensor num
+        # apagao. O firmware reenvia enquanto a falha for transiente, e o dado
+        # e uma serie temporal continua: um buraco de segundos e recuperavel, e
+        # menor que o custo de um teto de ingestao que nao aguenta a ala cheia.
+        #
+        # Recomendacao oficial do SQLite para WAL, e nao um truque.
+        conn.execute("PRAGMA synchronous=NORMAL")
         yield conn
         conn.commit()
     except Exception:
@@ -62,6 +83,36 @@ def connect(db_path: str) -> Iterator[sqlite3.Connection]:
         raise
     finally:
         conn.close()
+
+@contextmanager
+def conexao_ou_propria(
+    db_path: str, conn: sqlite3.Connection | None
+) -> Iterator[sqlite3.Connection]:
+    """Usa a conexao recebida, ou abre uma propria se `conn` for None.
+
+    Existe para uma funcao de repositorio poder participar de uma transacao MAIOR
+    sem duplicar a versao "com conexao" e a versao "sem".
+
+    Quando `conn` vem de fora, o commit e o fechamento sao de quem abriu — daqui
+    sai so o trabalho. Isso e o que torna possivel gravar grade, eventos, estado
+    do motor e alertas numa transacao so.
+
+    Por que importa: o caminho de ingestao abria QUATRO conexoes e commitava
+    quatro vezes por amostra. Cada conexao paga abertura, quatro PRAGMAs e um
+    commit, e no SQLite os commits de escrita serializam entre si — e por isso
+    que o teto medido nao melhorava com concorrencia (26 amostras/s com 1 thread,
+    36 com 8).
+
+    E ha um ganho de CORRETUDE junto, que sozinho justificaria a mudanca: com
+    quatro transacoes, uma falha no meio deixava a grade gravada e o alerta nao.
+    Numa so, ou a amostra entra inteira ou nao entra.
+    """
+    if conn is not None:
+        yield conn
+        return
+    with connect(db_path) as propria:
+        yield propria
+
 
 def utc_now_iso() -> str:
     """`agora` em UTC naive, no mesmo referencial dos timestamps do banco.
@@ -88,18 +139,41 @@ def ensure_paciente(conn: sqlite3.Connection, paciente_id: str) -> None:
     conn.execute("INSERT OR IGNORE INTO pacientes(id) VALUES (?)", (paciente_id,))
 
 
-def _ensure_grade_confianca_column(conn: sqlite3.Connection) -> None:
-    """Add confianca column to grade table if it doesn't exist.
+# Bancos em que a coluna `grade.confianca` ja foi conferida neste processo.
+# Ver `_ensure_grade_confianca_column`.
+_GRADE_CONFIANCA_CONFERIDA: set[str] = set()
 
-    Redundante para bancos criados via migrations/0001_baseline.sql (que já
-    inclui a coluna), mas mantido como checagem defensiva de baixo custo
-    para quem chama inserir_grade diretamente (ver interface/repositories/grade.py).
+
+def _ensure_grade_confianca_column(
+    conn: sqlite3.Connection, db_path: str | None = None
+) -> None:
+    """Garante `grade.confianca`, uma vez por banco e por processo.
+
+    Redundante para bancos criados via migrations/0001_baseline.sql (que ja
+    inclui a coluna), e mantida como rede para quem chama `inserir_grade`
+    diretamente.
+
+    O comentario anterior a chamava de "checagem de baixo custo". Nao era: ela
+    roda no caminho de INGESTAO, ou seja a cada amostra de sensor, e custava um
+    `PRAGMA table_info` mais um `commit` — que, alem do tempo, ENCERRAVA a
+    transacao da amostra pelo meio. Depois de a ingestao passar a gravar tudo
+    numa transacao so, isso deixou de ser desperdicio e passou a ser um furo na
+    atomicidade.
+
+    Agora: memoizada por caminho de banco, e sem `commit`. Se a coluna precisar
+    ser criada, o ALTER participa da transacao de quem chamou — no SQLite DDL e
+    transacional — e quem abriu a transacao decide quando commitar.
     """
+    chave = str(db_path) if db_path else ""
+    if chave and chave in _GRADE_CONFIANCA_CONFERIDA:
+        return
+
     info = conn.execute("PRAGMA table_info(grade)").fetchall()
     colunas = {str(row["name"]) for row in info}
     if "confianca" not in colunas:
         conn.execute("ALTER TABLE grade ADD COLUMN confianca REAL")
-    conn.commit()
+    if chave:
+        _GRADE_CONFIANCA_CONFERIDA.add(chave)
 
 
 def criar_esquema(db_path: str = "dados.db") -> None:

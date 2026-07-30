@@ -1,13 +1,14 @@
 """Repository for alert (alertas) operations."""
 from __future__ import annotations
 
+import sqlite3
 from datetime import datetime, timedelta
 from typing import Dict, List
 
 import pandas as pd
 import structlog
 
-from interface.db_core import connect, ensure_paciente, norm_iso
+from interface.db_core import conexao_ou_propria, connect, ensure_paciente, norm_iso
 from interface.tempo import agora_utc_naive
 
 logger = structlog.get_logger(__name__)
@@ -41,7 +42,9 @@ def _registrar_timeline(conn, paciente_id: str, ts: str, ts_ms: int, tipo: str) 
     )
 
 
-def inserir_alertas(db_path: str, alertas: List[dict]) -> int:
+def inserir_alertas(
+    db_path: str, alertas: List[dict], conn: "sqlite3.Connection | None" = None
+) -> int:
     """Insere ou atualiza alertas calculados pelo motor."""
     if not alertas:
         return 0
@@ -104,10 +107,10 @@ def inserir_alertas(db_path: str, alertas: List[dict]) -> int:
     if not registros:
         return 0
 
-    with connect(db_path) as conn:
+    with conexao_ou_propria(db_path, conn) as cx:
         for paciente in pacientes:
-            ensure_paciente(conn, paciente)
-        before = conn.total_changes
+            ensure_paciente(cx, paciente)
+        before = cx.total_changes
         # O motor incremental (caminho do sensor real, `processar_amostra`) emite
         # o alerta DUAS vezes: 'aberto' quando a janela estoura e 'fechado'
         # quando detecta o reposicionamento — duas chamadas, mesma chave
@@ -123,7 +126,7 @@ def inserir_alertas(db_path: str, alertas: List[dict]) -> int:
         #     reemissao de 'aberto' nunca rebaixa o status de uma linha que a
         #     enfermagem ja reconheceu ou concluiu pela tela;
         #   - `alertas.fim IS NULL` — nao sobrescreve um fechamento ja gravado.
-        conn.executemany(
+        cx.executemany(
             """
             INSERT INTO alertas
             (paciente_id, inicio, fim, tipo, perfil, janela_min, status, duracao_min,
@@ -139,7 +142,7 @@ def inserir_alertas(db_path: str, alertas: List[dict]) -> int:
             registros,
         )
         # number of DB changes caused by alert inserts only
-        delta_alerts = conn.total_changes - before
+        delta_alerts = cx.total_changes - before
         # For each alerta we persisted, add timeline event(s) so historical/simulated
         # navigation reflects when alerts were triggered and (if already resolved)
         # when they were closed. `alert_open` is always logged at `inicio`; batch
@@ -159,14 +162,14 @@ def inserir_alertas(db_path: str, alertas: List[dict]) -> int:
                 except Exception:
                     ts_ms_inicio = None
                 if ts_ms_inicio is not None:
-                    _registrar_timeline(conn, paciente_id, inicio_val, ts_ms_inicio, "alert_open")
+                    _registrar_timeline(cx, paciente_id, inicio_val, ts_ms_inicio, "alert_open")
                 if status_val.lower() == "fechado" and fim_val is not None:
                     try:
                         ts_ms_fim = int(pd.to_datetime(fim_val).timestamp() * 1000)
                     except Exception:
                         ts_ms_fim = None
                     if ts_ms_fim is not None:
-                        _registrar_timeline(conn, paciente_id, fim_val, ts_ms_fim, "alert_close")
+                        _registrar_timeline(cx, paciente_id, fim_val, ts_ms_fim, "alert_close")
         except Exception:
             # Do not fail alert insertion for timeline logging errors
             pass

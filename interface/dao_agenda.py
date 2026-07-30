@@ -165,10 +165,19 @@ def obter_agenda(db_path: str, paciente_id: str, agenda_id: int) -> dict:
 def listar_agendas(
     db_path: str,
     paciente_id: str,
-    ativo_only: bool = True
+    ativo_only: bool = True,
+    conn=None,
 ) -> list[dict]:
-    """Lista agendas de um paciente."""
-    with _connect(db_path) as conn:
+    """Lista agendas de um paciente.
+
+    Aceita conexao de fora porque esta consulta roda a CADA amostra de sensor,
+    pelo caminho de supressao. Com conexao propria ela custava 14% do tempo de
+    ingestao — nao pela consulta em si, que e trivial, mas por abrir conexao e
+    rodar os PRAGMAs de novo.
+    """
+    from interface.db_core import conexao_ou_propria
+
+    with conexao_ou_propria(db_path, conn) as conn:
         query = """
             SELECT id, paciente_id, tipo, descricao,
                    dias_semana, hora_inicio, hora_fim,
@@ -243,7 +252,8 @@ def deletar_agenda(db_path: str, paciente_id: str, agenda_id: int) -> bool:
 def is_timestamp_in_suppressed_period(
     db_path: str,
     paciente_id: str,
-    timestamp: datetime
+    timestamp: datetime,
+    conn=None,
 ) -> tuple[bool, str]:
     """
     Verifica se um timestamp está dentro de período suprimido.
@@ -258,7 +268,7 @@ def is_timestamp_in_suppressed_period(
         - is_suppressed: True se em período suprimido
         - modo_resultado: Modo resultante (suprimir, reduzir, monitorar)
     """
-    agendas = listar_agendas(db_path, paciente_id, ativo_only=True)
+    agendas = listar_agendas(db_path, paciente_id, ativo_only=True, conn=conn)
     
     matching_agendas = []
     
