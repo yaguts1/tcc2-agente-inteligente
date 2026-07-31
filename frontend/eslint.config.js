@@ -57,6 +57,20 @@ export default tseslint.config(
     },
   },
   {
+    // O service worker roda num escopo global PRÓPRIO (`ServiceWorkerGlobalScope`),
+    // não no `window`. Sem declarar `self`, o ESLint acusa nove `no-undef` num
+    // arquivo perfeitamente correto — e "adicionar globals" é a correção certa,
+    // não desligar a regra, que continua valendo para o resto.
+    //
+    // `no-console` também sai: o SW não tem UI, e o console do worker é o único
+    // canal de diagnóstico quando ele falha em entregar uma notificação.
+    files: ['public/**/*.js'],
+    languageOptions: {
+      globals: { self: 'readonly', clients: 'readonly', caches: 'readonly' },
+    },
+    rules: { 'no-console': 'off' },
+  },
+  {
     // Testes: `any` e console são ferramentas legítimas de teste.
     files: ['**/*.test.{ts,tsx}', '**/setupTests.ts'],
     rules: {

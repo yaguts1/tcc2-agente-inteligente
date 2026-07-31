@@ -635,6 +635,47 @@ export const bradenApi = {
     }),
 };
 
+// Notificação que sobrevive à aba fechada
+//
+// O beep e a Notification API de `useCriticalAlerts` exigem a aba viva. Este é
+// o único canal que atravessa a aba — e o navegador — fechados.
+
+export interface ChavePublicaPush {
+  /**
+   * Se o SERVIDOR tem VAPID. Explícito em vez de deduzido de `chave === null`:
+   * a tela precisa distinguir "este servidor não oferece push" de "a chave não
+   * carregou", e tratar os dois igual faria a interface mostrar um botão que
+   * nunca funciona.
+   */
+  configurado: boolean;
+  chave_publica: string | null;
+}
+
+export interface AssinaturaPush {
+  endpoint: string;
+  p256dh: string;
+  auth: string;
+}
+
+export const pushApi = {
+  chavePublica: () => request<ChavePublicaPush>('/api/push/chave-publica'),
+
+  inscrever: (dados: AssinaturaPush) =>
+    request<{ ok: boolean }>('/api/push/inscrever', {
+      method: 'POST',
+      body: JSON.stringify(dados),
+    }),
+
+  desinscrever: (endpoint: string) =>
+    request<{ ok: boolean }>('/api/push/desinscrever', {
+      method: 'POST',
+      // `p256dh`/`auth` são exigidos pelo schema e irrelevantes para remover:
+      // o endpoint é a chave. Mandá-los vazios seria recusado pelo `min_length`
+      // que existe para pegar inscrição malformada na entrada.
+      body: JSON.stringify({ endpoint, p256dh: 'ignorado', auth: 'ignorado' }),
+    }),
+};
+
 // Lesões por pressão — a variável de DESFECHO
 //
 // O sistema media adesão ao reposicionamento e nunca registrava se a lesão

@@ -33,7 +33,9 @@ from interface.lifespan_tasks import (
     stop_reconciler_task,
     start_backup_task,
     stop_backup_task,
+    start_push_task,
     start_watchdog_task,
+    stop_push_task,
     stop_watchdog_task,
     start_housekeeping_task,
     stop_housekeeping_task,
@@ -141,6 +143,8 @@ async def _lifespan(app: FastAPI):
     # Vigia a AUSENCIA de dados: sem isto, um sensor morto nao gera erro
     # nenhum — o sistema so para de emitir alertas e a tela fica calma.
     start_watchdog_task(app, DB_PATH)
+    # A unica notificacao que atravessa a aba fechada. Ver `servicos/push.py`.
+    start_push_task(app, DB_PATH)
     # Limpezas de tabelas que so crescem (tokens revogados e, se a instituicao
     # tiver declarado retencao, a trilha de auditoria). As duas rotinas ja
     # existiam prontas e sem nenhum chamador fora dos testes.
@@ -152,6 +156,7 @@ async def _lifespan(app: FastAPI):
         await stop_reconciler_task(app)
         await stop_backup_task(app)
         await stop_watchdog_task(app)
+        await stop_push_task(app)
         await stop_housekeeping_task(app)
 
 

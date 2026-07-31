@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { Button } from '../ui/button';
 import { SeletorDeTema } from './SeletorDeTema';
+import { BotaoDeNotificacao } from './BotaoDeNotificacao';
 import { CriticalAlertBadge } from '../alerts/CriticalAlertBadge';
 import { CriticalAlert } from '../../hooks/useCriticalAlerts';
 import { NavLink } from 'react-router-dom';
@@ -125,6 +126,7 @@ export function AppLayout({
                   <p className="text-muted-foreground">Conectado</p>
                 </div>
                 <div className="flex items-center gap-2">
+                  <BotaoDeNotificacao compacto />
                   <SeletorDeTema compacto />
                   <Button variant="outline" size="sm" onClick={onLogout}>
                     <LogOut className="w-4 h-4" />
@@ -194,6 +196,11 @@ export function AppLayout({
               <span className="text-muted-foreground text-sm">Tema</span>
               <SeletorDeTema compacto />
             </div>
+            {/*
+              Sem isto, o aviso so toca com esta aba aberta — e a madrugada e
+              justamente quando ninguem esta olhando a tela.
+            */}
+            <BotaoDeNotificacao />
             <Button
               variant="outline"
               className="w-full justify-start"

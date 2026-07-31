@@ -673,6 +673,32 @@
         "title": "BradenCreate",
         "type": "object"
       },
+      "ChavePublicaResponse": {
+        "description": "A chave VAPID que o navegador precisa para se inscrever.\n\n`configurado` e explicito em vez de deduzido de `chave is None`: a tela\nprecisa distinguir \"o servidor nao tem push\" de \"a chave nao carregou\", e\ntratar as duas igual faria a interface oferecer um botao que nunca funciona.",
+        "properties": {
+          "chave_publica": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Chave Publica"
+          },
+          "configurado": {
+            "title": "Configurado",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "configurado",
+          "chave_publica"
+        ],
+        "title": "ChavePublicaResponse",
+        "type": "object"
+      },
       "DashboardStatsResponse": {
         "properties": {
           "acknowledgedAlerts": {
@@ -1140,6 +1166,48 @@
           }
         },
         "title": "HTTPValidationError",
+        "type": "object"
+      },
+      "InscricaoRequest": {
+        "properties": {
+          "auth": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "Auth",
+            "type": "string"
+          },
+          "endpoint": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "title": "Endpoint",
+            "type": "string"
+          },
+          "p256dh": {
+            "maxLength": 500,
+            "minLength": 1,
+            "title": "P256Dh",
+            "type": "string"
+          }
+        },
+        "required": [
+          "endpoint",
+          "p256dh",
+          "auth"
+        ],
+        "title": "InscricaoRequest",
+        "type": "object"
+      },
+      "InscricaoResponse": {
+        "properties": {
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok"
+        ],
+        "title": "InscricaoResponse",
         "type": "object"
       },
       "LesaoCreate": {
@@ -2319,6 +2387,112 @@
         "summary": "Export Alerts Pdf",
         "tags": [
           "alerts"
+        ]
+      }
+    },
+    "/api/api/push/chave-publica": {
+      "get": {
+        "description": "Exige sessao mesmo sendo uma chave PUBLICA.\n\nNao e a chave que se protege — e o fato de que este servidor existe e roda\neste sistema. Endpoint anonimo que responde com configuracao e superficie de\nreconhecimento de graca.",
+        "operationId": "obter_chave_publica_api_api_push_chave_publica_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ChavePublicaResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Obter Chave Publica",
+        "tags": [
+          "push"
+        ]
+      }
+    },
+    "/api/api/push/desinscrever": {
+      "post": {
+        "description": "Remove o aparelho.\n\n`POST` e nao `DELETE` porque o endpoint identificador vai no CORPO — ele e\numa URL longa, e coloca-lo no path o faria bater no limite de tamanho e\nexigir escape de barras.",
+        "operationId": "desinscrever_api_api_push_desinscrever_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InscricaoRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InscricaoResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Desinscrever",
+        "tags": [
+          "push"
+        ]
+      }
+    },
+    "/api/api/push/inscrever": {
+      "post": {
+        "description": "Registra o aparelho do usuario da sessao.\n\nO usuario vem do JWT e NAO do corpo: aceita-lo do cliente permitiria\ninscrever o aparelho de alguem para receber os alertas de outra pessoa.",
+        "operationId": "inscrever_api_api_push_inscrever_post",
+        "requestBody": {
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/InscricaoRequest"
+              }
+            }
+          },
+          "required": true
+        },
+        "responses": {
+          "201": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/InscricaoResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Inscrever",
+        "tags": [
+          "push"
         ]
       }
     },

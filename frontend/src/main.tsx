@@ -3,6 +3,27 @@
   import App from "./App.tsx";
   import "./styles/globals.css";
 
+  /*
+    Registro do service worker — o unico codigo desta aplicacao que roda com a
+    aba fechada, e portanto o unico caminho pelo qual um alerta que escala as
+    04:00 chega a alguem.
+
+    Falhar aqui NAO pode impedir a aplicacao de subir: o painel funciona
+    sozinho, e a notificacao e uma camada sobre ele. Mas tambem nao pode falhar
+    calado, que e exatamente o defeito que ele veio corrigir — o beep de
+    `useCriticalAlerts` ja desiste em silencio quando o Chrome recusa autoplay.
+
+    O escopo carrega o BASE_URL: sob `/TCC/`, um service worker registrado na
+    raiz nao controla as paginas do prefixo, e o `pushManager` fica inacessivel
+    sem nenhum erro obvio.
+  */
+  if ("serviceWorker" in navigator) {
+    const base = import.meta.env.BASE_URL || "/";
+    navigator.serviceWorker
+      .register(`${base}sw.js`, { scope: base })
+      .catch((erro) => console.error("[push] service worker nao registrado:", erro));
+  }
+
   createRoot(document.getElementById("root")!).render(
     /*
       O modo escuro estava escrito e nao ligado: `globals.css` tem

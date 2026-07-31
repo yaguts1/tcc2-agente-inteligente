@@ -60,6 +60,13 @@ services:
       - DEVICE_RECONCILE_INTERVAL=${DEVICE_RECONCILE_INTERVAL:-}
       # Idem: o default real e `estado_em_memoria`.
       - PROCESSADOR_ESTRATEGIA=${PROCESSADOR_ESTRATEGIA:-estado_em_memoria}
+      # Web Push. Sem estas o aviso so toca com a aba aberta — e
+      # `tests/test_configuracao_chega_ao_container.py` existe justamente para
+      # impedir que uma variavel documentada no .env.example nao chegue aqui.
+      - VAPID_PUBLIC_KEY=${VAPID_PUBLIC_KEY:-}
+      - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY:-}
+      - VAPID_SUBJECT=${VAPID_SUBJECT:-}
+      - PUSH_CHECK_INTERVAL=${PUSH_CHECK_INTERVAL:-}
     ports:
       - "8000:8000"
     volumes:

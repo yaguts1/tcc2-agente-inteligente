@@ -194,6 +194,77 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/api/push/chave-publica": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Obter Chave Publica
+         * @description Exige sessao mesmo sendo uma chave PUBLICA.
+         *
+         *     Nao e a chave que se protege — e o fato de que este servidor existe e roda
+         *     este sistema. Endpoint anonimo que responde com configuracao e superficie de
+         *     reconhecimento de graca.
+         */
+        get: operations["obter_chave_publica_api_api_push_chave_publica_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/api/push/desinscrever": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Desinscrever
+         * @description Remove o aparelho.
+         *
+         *     `POST` e nao `DELETE` porque o endpoint identificador vai no CORPO — ele e
+         *     uma URL longa, e coloca-lo no path o faria bater no limite de tamanho e
+         *     exigir escape de barras.
+         */
+        post: operations["desinscrever_api_api_push_desinscrever_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/api/push/inscrever": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Inscrever
+         * @description Registra o aparelho do usuario da sessao.
+         *
+         *     O usuario vem do JWT e NAO do corpo: aceita-lo do cliente permitiria
+         *     inscrever o aparelho de alguem para receber os alertas de outra pessoa.
+         */
+        post: operations["inscrever_api_api_push_inscrever_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/auditoria": {
         parameters: {
             query?: never;
@@ -1829,6 +1900,20 @@ export interface components {
             /** Umidade */
             umidade: number;
         };
+        /**
+         * ChavePublicaResponse
+         * @description A chave VAPID que o navegador precisa para se inscrever.
+         *
+         *     `configurado` e explicito em vez de deduzido de `chave is None`: a tela
+         *     precisa distinguir "o servidor nao tem push" de "a chave nao carregou", e
+         *     tratar as duas igual faria a interface oferecer um botao que nunca funciona.
+         */
+        ChavePublicaResponse: {
+            /** Chave Publica */
+            chave_publica: string | null;
+            /** Configurado */
+            configurado: boolean;
+        };
         /** DashboardStatsResponse */
         DashboardStatsResponse: {
             /** Acknowledgedalerts */
@@ -2005,6 +2090,20 @@ export interface components {
         HTTPValidationError: {
             /** Detail */
             detail?: components["schemas"]["ValidationError"][];
+        };
+        /** InscricaoRequest */
+        InscricaoRequest: {
+            /** Auth */
+            auth: string;
+            /** Endpoint */
+            endpoint: string;
+            /** P256Dh */
+            p256dh: string;
+        };
+        /** InscricaoResponse */
+        InscricaoResponse: {
+            /** Ok */
+            ok: boolean;
         };
         /** LesaoCreate */
         LesaoCreate: {
@@ -2487,6 +2586,92 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    obter_chave_publica_api_api_push_chave_publica_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ChavePublicaResponse"];
+                };
+            };
+        };
+    };
+    desinscrever_api_api_push_desinscrever_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InscricaoRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InscricaoResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    inscrever_api_api_push_inscrever_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody: {
+            content: {
+                "application/json": components["schemas"]["InscricaoRequest"];
+            };
+        };
+        responses: {
+            /** @description Successful Response */
+            201: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["InscricaoResponse"];
                 };
             };
             /** @description Validation Error */

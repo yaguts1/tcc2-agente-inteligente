@@ -129,6 +129,137 @@ async def stop_reconciler_task(app: FastAPI) -> None:
             logger.info("reconciler_stopped")
 
 
+# ---------------------------------------------------------------------------
+# Notificacao que sobrevive a aba fechada
+# ---------------------------------------------------------------------------
+
+
+async def ciclo_push(db_path: str, ja_notificados: dict) -> dict[str, int]:
+    """Um ciclo de envio. Separado do loop para poder ser testado direto.
+
+    Devolve contagem, e MUTA `ja_notificados` — o estado de "ate que nivel cada
+    alerta ja foi avisado" e mantido em memoria pelo loop e persistido em
+    `push_nivel_notificado`, para que um restart nao reenvie tudo.
+    """
+    from interface.repositories import push as repo_push
+    from interface.services.alerts_service import listar_alertas_frontend
+    from nucleo.escalonamento import ORDEM
+    from servicos import push as servico_push
+
+    if not servico_push.configurado():
+        return {"enviados": 0, "alertas": 0}
+
+    # `unidades=None` = a instalacao inteira. O escopo por unidade e da TELA,
+    # que responde a quem perguntou; aqui nao ha quem perguntou — o loop avisa
+    # quem se inscreveu, e a inscricao pertence a um usuario.
+    alertas = await listar_alertas_frontend(horas=48, unidades=None)
+
+    enviados = 0
+    tocados = 0
+    for alerta in alertas:
+        nivel_atual = str(alerta.get("escalationLevel") or "normal")
+        if ORDEM[nivel_atual] <= ORDEM["normal"]:
+            continue
+        if alerta.get("status") == "completed":
+            continue
+
+        chave = (str(alerta.get("patientId")), str(alerta.get("id", "")).split("__", 1)[-1])
+        anterior = ja_notificados.get(chave, "normal")
+        # SUBIDA, e nao estado. Notificar "ha alerta critico" a cada ciclo e a
+        # maneira mais rapida de fazer a equipe desligar as notificacoes do
+        # navegador — e uma vez desligadas, elas nao voltam.
+        if ORDEM[nivel_atual] <= ORDEM[anterior]:
+            continue
+
+        inscricoes = await asyncio.to_thread(repo_push.listar, db_path)
+        if not inscricoes:
+            # Ninguem inscrito: registra o nivel assim mesmo, senao o primeiro
+            # aparelho a se inscrever receberia de uma vez todo o historico
+            # acumulado.
+            ja_notificados[chave] = nivel_atual
+            await asyncio.to_thread(
+                repo_push.registrar_nivel, db_path, chave[0], chave[1], nivel_atual
+            )
+            continue
+
+        payload = servico_push.montar_payload(alerta)
+        resultado = await asyncio.to_thread(servico_push.enviar, inscricoes, payload)
+        enviados += resultado.enviados
+        tocados += 1
+
+        if resultado.mortas:
+            removidas = await asyncio.to_thread(
+                repo_push.remover_mortas, db_path, resultado.mortas
+            )
+            logger.info("push_inscricoes_removidas", quantidade=removidas)
+
+        ja_notificados[chave] = nivel_atual
+        await asyncio.to_thread(
+            repo_push.registrar_nivel, db_path, chave[0], chave[1], nivel_atual
+        )
+
+    await asyncio.to_thread(repo_push.limpar_alertas_fechados, db_path)
+    return {"enviados": enviados, "alertas": tocados}
+
+
+def start_push_task(app: FastAPI, db_path: str) -> asyncio.Task:
+    """Envia notificacao quando um alerta SOBE de nivel.
+
+    O beep e a Notification API de `useCriticalAlerts` exigem a aba viva, e o
+    tratamento da suspensao de autoplay do Chrome desiste em silencio quando o
+    navegador recusa. Clinicamente: o aviso pode nunca soar sem que ninguem
+    saiba. Este loop e o unico caminho que atravessa a aba fechada.
+    """
+    try:
+        intervalo = max(30, int(os.getenv("PUSH_CHECK_INTERVAL", "60")))
+    except Exception:
+        intervalo = 60
+
+    async def _loop() -> None:
+        from interface.repositories import push as repo_push
+        from servicos import push as servico_push
+
+        servico_push.avisar_se_desconfigurado()
+        logger.info("push_task_started", interval=intervalo, ativo=servico_push.configurado())
+
+        # Carregado do banco: sem isto, um restart reenviaria notificacao de
+        # todo alerta aberto — e um deploy as 3h acordaria a ala inteira.
+        try:
+            ja_notificados = await asyncio.to_thread(repo_push.niveis_notificados, db_path)
+        except Exception as exc:
+            logger.warning("push_estado_nao_carregado", erro=str(exc))
+            ja_notificados = {}
+
+        while True:
+            try:
+                resultado = await ciclo_push(db_path, ja_notificados)
+                if resultado["enviados"]:
+                    logger.info("push_enviado", **resultado)
+            except asyncio.CancelledError:
+                logger.info("push_task_cancelled")
+                raise
+            except Exception as exc:
+                logger.exception("push_task_error", motivo=str(exc))
+            try:
+                await asyncio.sleep(intervalo)
+            except asyncio.CancelledError:
+                raise
+
+    task = asyncio.create_task(_loop(), name="push_escalonamento")
+    app.state._push_task = task
+    return task
+
+
+async def stop_push_task(app: FastAPI) -> None:
+    task = getattr(app.state, "_push_task", None)
+    if task is not None and not task.done():
+        task.cancel()
+        try:
+            await task
+        except asyncio.CancelledError:
+            logger.info("push_task_stopped")
+
+
 def start_backup_task(app: FastAPI, db_path: str, backup_dir: str) -> asyncio.Task:
     """Inicia o loop que cria e limpa backups do banco periodicamente."""
     interval_hours = intervalo_de_backup_horas()
