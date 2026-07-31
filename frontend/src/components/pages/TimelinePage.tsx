@@ -241,7 +241,7 @@ export function TimelinePage() {
         );
       case 'alert_acknowledged':
         return (
-          <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-200">
+          <Badge className="bg-blue-100 dark:bg-blue-900 text-blue-800 hover:bg-blue-200">
             Reconhecido
           </Badge>
         );

@@ -92,4 +92,36 @@ describe('cores fixas', () => {
 
     expect(achados, achados.join('\n')).toEqual([]);
   });
+
+  /**
+   * Tom claro (50/100) de uma cor COM significado — azul de selecionado,
+   * vermelho de perigo, verde de sucesso — é uma superfície quase branca. Ela
+   * não é "neutra", então escapou da regra acima, e continuava quase branca no
+   * tema escuro: uma linha selecionada virava uma faixa clara atravessando uma
+   * tela escura.
+   *
+   * Foi uma lacuna real da primeira versão deste guarda: o modo escuro foi
+   * ligado e oito ocorrências seguiram erradas, sem nada acusar. A regra não
+   * pede que a cor suma — ela carrega informação — e sim que exista o par
+   * escuro, que preserva o significado e inverte a luminosidade.
+   */
+  const TOM_CLARO =
+    /\b(?:bg|text|border)-(?:blue|red|green|yellow|amber|indigo|purple)-(?:50|100)\b/g;
+
+  it('todo tom claro tem par escuro', () => {
+    const achados: string[] = [];
+
+    for (const arquivo of arquivosTsx(join(__dirname, '..', '..'))) {
+      const conteudo = readFileSync(arquivo, 'utf-8');
+      for (const classe of conteudo.match(TOM_CLARO) ?? []) {
+        const [prop, familia, tom] = classe.split('-');
+        const par = `dark:${prop}-${familia}-${tom === '50' ? '950' : '900'}`;
+        if (!conteudo.includes(par)) {
+          achados.push(`${arquivo.split('src')[1]}: ${classe} sem ${par}`);
+        }
+      }
+    }
+
+    expect(achados, achados.join('\n')).toEqual([]);
+  });
 });

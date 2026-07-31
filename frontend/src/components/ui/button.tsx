@@ -25,6 +25,16 @@ const buttonVariants = cva(
         sm: "h-8 rounded-md gap-1.5 px-3 has-[>svg]:px-2.5",
         lg: "h-10 rounded-md px-6 has-[>svg]:px-4",
         icon: "size-9 rounded-md",
+        // 44px é o alvo de toque mínimo recomendado (WCAG 2.5.5 / HIG).
+        // Nenhum dos tamanhos acima o alcança: o maior é `h-10`, 40px.
+        //
+        // Não é preciosismo de acessibilidade aqui. A enfermagem opera a tela à
+        // beira do leito DE LUVA, muitas vezes com uma mão só, segurando outra
+        // coisa na outra. Errar o alvo numa ação de fechar alerta não é um
+        // clique perdido: ou marca o paciente errado, ou faz desistir da tela e
+        // registrar no papel — que é o caminho mais curto para o abandono da
+        // ferramenta.
+        toque: "min-h-11 rounded-md px-5 py-2.5 has-[>svg]:px-4",
       },
     },
     defaultVariants: {

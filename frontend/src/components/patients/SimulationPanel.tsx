@@ -69,7 +69,7 @@ export function SimulationPanel({ patientId, onSuccess }: SimulationPanelProps) 
 
         {result && result.success ? (
           <div className="space-y-4">
-            <Alert className="border-green-200 bg-green-50">
+            <Alert className="border-green-200 bg-green-50 dark:bg-green-950">
               <CheckCircle2 className="h-4 w-4 text-green-600" />
               <AlertDescription className="text-green-800">
                 ✅ Simulação concluída com sucesso!

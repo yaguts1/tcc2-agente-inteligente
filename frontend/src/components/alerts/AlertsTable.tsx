@@ -8,6 +8,8 @@ import {
 } from '../../lib/api';
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
+import { CartaoDeAlerta } from './CartaoDeAlerta';
+import { useTelaEstreita } from '../../hooks/useTelaEstreita';
 import { Checkbox } from '../ui/checkbox';
 import {
   Table,
@@ -51,6 +53,7 @@ export function AlertsTable({
   onBulkComplete,
   isLoading,
 }: AlertsTableProps) {
+  const telaEstreita = useTelaEstreita();
   const [confirmingComplete, setConfirmingComplete] = useState<string | null>(null);
   const [motivo, setMotivo] = useState<MotivoFechamento>('reposicionado');
   const [processingId, setProcessingId] = useState<string | null>(null);
@@ -126,7 +129,7 @@ export function AlertsTable({
     switch (status) {
       case 'acknowledged':
         return (
-          <Badge className="bg-blue-100 text-blue-800 hover:bg-blue-200">
+          <Badge className="bg-blue-100 dark:bg-blue-900 text-blue-800 hover:bg-blue-200">
             Reconhecido
           </Badge>
         );
@@ -266,6 +269,49 @@ export function AlertsTable({
 
   return (
     <>
+      {/*
+        Abaixo de `lg`, cartoes. A tabela de 8 colunas dentro de
+        `overflow-x-auto` exigia rolagem HORIZONTAL para alcancar os botoes no
+        celular — dava para navegar ate esta tela e nao dava para USA-LA, que e
+        justamente a tela aberta a beira do leito.
+
+        Layout diferente, e nao a mesma tabela refluida: a ORDEM da informacao
+        muda. Na tabela o paciente vem primeiro; no cartao vem o LEITO, porque
+        quem esta com o aparelho na mao esta indo ATE um quarto.
+
+        Uma arvore SO, escolhida em JS — ver `useTelaEstreita` para por que nao
+        `lg:hidden`: montar as duas deixaria cada alerta anunciado duas vezes
+        por leitor de tela.
+      */}
+      {telaEstreita ? (
+      <div className="space-y-3">
+        {sortedAlerts.map((alert) => {
+          const overdue = isOverdue(alert.nextRepositioning);
+          return (
+            <CartaoDeAlerta
+              key={alert.id}
+              alerta={alert}
+              atrasado={overdue}
+              selecionado={selectedIds.includes(alert.id)}
+              processando={processingId === alert.id}
+              rotuloDeSitio={rotuloDeSitio}
+              selo={{
+                risco: getRiskBadge(alert.riskLevel),
+                status: getStatusBadge(alert.status),
+              }}
+              tempo={{
+                proximo: formatTime(alert.nextRepositioning),
+                restante: getTimeUntil(alert.nextRepositioning),
+                ultimo: formatTime(alert.lastRepositioning),
+              }}
+              onSelecionar={() => toggleAlert(alert.id)}
+              onReconhecer={() => handleAcknowledgeClick(alert.id)}
+              onReposicionar={() => setConfirmingComplete(alert.id)}
+            />
+          );
+        })}
+      </div>
+      ) : (
       <div className="overflow-x-auto">
         <Table>
           <TableHeader>
@@ -296,7 +342,7 @@ export function AlertsTable({
                 <TableRow
                   key={alert.id}
                   className={`${overdue ? 'bg-danger-light/20' : ''} ${
-                    isSelected ? 'bg-blue-50' : ''
+                    isSelected ? 'bg-blue-50 dark:bg-blue-950' : ''
                   }`}
                 >
                   <TableCell>
@@ -376,6 +422,7 @@ export function AlertsTable({
           </TableBody>
         </Table>
       </div>
+      )}
 
       {/* Confirmation Dialog */}
       <AlertDialog

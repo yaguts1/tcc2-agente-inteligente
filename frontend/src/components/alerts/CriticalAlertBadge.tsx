@@ -62,7 +62,7 @@ export function CriticalAlertBadge({
       <PopoverContent className="w-80 p-0">
         <div className="divide-y">
           {/* Header */}
-          <div className="p-4 bg-red-50">
+          <div className="p-4 bg-red-50 dark:bg-red-950">
             <div className="flex items-center gap-2 mb-2">
               <AlertTriangle className="w-5 h-5 text-red-600" />
               <h3 className="font-semibold text-red-900">Alertas Críticos</h3>
@@ -130,7 +130,7 @@ export function CriticalAlertBadge({
                     </div>
                     {alert.isNew && (
                       <div className="flex-shrink-0">
-                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-red-100 text-red-700">
+                        <span className="inline-flex items-center gap-1 px-2 py-1 rounded-full text-xs font-medium bg-red-100 dark:bg-red-900 text-red-700">
                           <Bell className="w-3 h-3" />
                           Novo
                         </span>
