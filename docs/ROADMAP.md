@@ -63,6 +63,7 @@ e `console.log` despejando a lista de pacientes no console do navegador.
 | # | Entrega | Commit |
 |---|---|---|
 | 4.4 | Modo noturno ligado; 24 cores neutras fixas trocadas por token semântico (11 delas no popover de alertas críticos, a tela das 3h) | `9d9d0dc` |
+| 4.2 | Escada de escalonamento em múltiplos da janela; renotificação por mudança de nível; ordenação por gravidade | `794134c` |
 | 4.3 | Cartões abaixo de `lg`, alvo de toque de 44px, uma árvore só (leitor de tela anunciava cada alerta duas vezes) | `068a1fb` |
 | 4.6 | Lote audita um paciente por linha e marca-se como lote; teto de 100 e mínimo de 1 | `a3abc4e` |
 
@@ -111,7 +112,6 @@ estiveram dentro de uma imagem distribuível.
 ### Bloco 4 — entrega e uso à beira do leito
 
 - **4.1** Notificação morre com a aba: sem service worker, sem Web Push. **M**
-- **4.2** Sem escada de escalonamento — alerta de 03:00 renderiza igual às 07:00. **M**
 - **4.5** Sem triagem nem "meus pacientes" (depende de 1.2 e 1.3, já prontos). **M**
 - **4.7** Ações offline se perdem — a maior parte do trabalho já existe:
   `alert_id` é chave natural e `alterar_status_alerta` já é idempotente. **M**
