@@ -635,6 +635,49 @@ export const bradenApi = {
     }),
 };
 
+// Triagem — "meus pacientes"
+//
+// O dashboard de 30 leitos é uma lista de TODO MUNDO, logo de NINGUÉM: cada
+// enfermeira lê as trinta linhas e decide quais são suas, a cada atualização.
+
+export interface Responsavel {
+  usuario: string;
+  display_name: string | null;
+  coren: string | null;
+  categoria: string | null;
+  atribuido_em: string;
+  /** Distingue auto-atribuição de distribuição pela coordenação. */
+  atribuido_por: string;
+}
+
+export const triagemApi = {
+  /** Ids atribuídos a QUEM PEDIU. Não aceita usuário — ver a rota. */
+  meusPacientes: () => request<string[]>('/api/meus-pacientes'),
+
+  responsaveis: (pacienteId: string) =>
+    request<Responsavel[]>(
+      `/api/pacientes/${encodeURIComponent(pacienteId)}/responsaveis`,
+    ),
+
+  assumir: (pacienteId: string) =>
+    request<{ ok: boolean; mudou: boolean }>(
+      `/api/pacientes/${encodeURIComponent(pacienteId)}/assumir`,
+      { method: 'POST' },
+    ),
+
+  liberar: (pacienteId: string) =>
+    request<{ ok: boolean; mudou: boolean }>(
+      `/api/pacientes/${encodeURIComponent(pacienteId)}/liberar`,
+      { method: 'POST' },
+    ),
+
+  /** Fim de plantão. Sem isto ninguém libera leito a leito — e não faria. */
+  liberarTodos: () =>
+    request<{ ok: boolean; mudou: boolean }>('/api/meus-pacientes/liberar-todos', {
+      method: 'POST',
+    }),
+};
+
 // Notificação que sobrevive à aba fechada
 //
 // O beep e a Notification API de `useCriticalAlerts` exigem a aba viva. Este é

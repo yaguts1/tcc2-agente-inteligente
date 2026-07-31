@@ -86,10 +86,11 @@ async def listar_alertas_frontend(
     limit: int = 100,
     offset: int = 0,
     unidades: set[int] | None = None,
+    meus_de: str | None = None,
 ) -> list[dict]:
     """Apenas os itens da página. Ver `listar_alertas_frontend_paginado`."""
     pagina = await listar_alertas_frontend_paginado(
-        horas, risk_level, status_filter, room, limit, offset, unidades
+        horas, risk_level, status_filter, room, limit, offset, unidades, meus_de
     )
     return pagina.itens
 
@@ -102,6 +103,7 @@ async def listar_alertas_frontend_paginado(
     limit: int = 100,
     offset: int = 0,
     unidades: set[int] | None = None,
+    meus_de: str | None = None,
 ) -> PaginaDeAlertas:
     """Busca alertas no formato consumido pelo frontend React, com o total
     correspondente aos filtros e cache de 30s por combinação."""
@@ -113,8 +115,14 @@ async def listar_alertas_frontend_paginado(
     # nenhuma — recebe a pagina dela pronta do cache. Seria pior que nao ter
     # escopo, porque a tela pareceria correta.
     escopo = "todas" if unidades is None else ",".join(str(u) for u in sorted(unidades))
+    # `meus_de` ENTRA NA CHAVE, pela mesma razao que `unidades` entrou: sem
+    # isso a lista filtrada de uma enfermeira serviria, do cache, para a
+    # proxima pessoa a perguntar — e ela veria os pacientes de outra pessoa
+    # como se fossem os dela. Pior que nao ter o filtro, porque a tela pareceria
+    # correta.
     cache_key = (
-        f"alerts:{horas}:{risk_level}:{status_filter}:{room}:{limit}:{offset}:u={escopo}"
+        f"alerts:{horas}:{risk_level}:{status_filter}:{room}:{limit}:{offset}"
+        f":u={escopo}:meus={meus_de or '-'}"
     )
     cached_result = await api_cache.get(cache_key)
     if cached_result is not None:
@@ -170,6 +178,18 @@ async def listar_alertas_frontend_paginado(
         # dashboard mostrava o `cama_id` inteiro como quarto e o leito vazio.
         quarto, leito = dividir_cama(ficha.get("cama_id") if ficha else None)
         return nome, quarto, leito
+
+    # "Meus pacientes". Depois do escopo por unidade, e nunca no lugar dele:
+    # os dois filtram, mas por razoes diferentes — a unidade e uma fronteira de
+    # ACESSO (fecha o que a pessoa nao pode ver), a atribuicao e uma fronteira
+    # de ATENCAO (esconde o que ela pode ver e nao precisa agora). Trocar um
+    # pelo outro transformaria uma escolha de triagem em controle de acesso, ou
+    # o contrario.
+    if meus_de:
+        from interface.repositories.atribuicoes import pacientes_de
+
+        meus = pacientes_de(DB_PATH, meus_de)
+        candidatos = [c for c in candidatos if str(c[0].get("paciente_id")) in meus]
 
     # O filtro por quarto depende da ficha, entao vem depois do passo 2.
     if room:

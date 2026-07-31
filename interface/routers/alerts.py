@@ -47,6 +47,7 @@ async def frontend_alerts(
     room: str | None = None,
     limit: int = 100,
     offset: int = 0,
+    apenas_meus: bool = False,
     _: str = Depends(get_current_user),
     __: None = Depends(_check_api_rate_limit),
     unidades: set[int] | None = Depends(escopo_de_unidades),
@@ -60,6 +61,12 @@ async def frontend_alerts(
     - room: str - Filter by room number (fuzzy match)
     - limit: int (default 100) - Pagination limit
     - offset: int (default 0) - Pagination offset
+    - apenas_meus: bool - so os pacientes atribuidos a quem pediu
+
+    `apenas_meus` usa o usuario da SESSAO, nunca um parametro. Aceitar um nome
+    aqui permitiria olhar a lista de trabalho de outra pessoa — e, num sistema
+    onde a lista revela leito e risco, isso e leitura de dado clinico por uma
+    porta lateral.
 
     Each alert contains: id, patientName, room, bed, lastRepositioning (ISO),
     nextRepositioning (ISO), riskLevel (high|medium|low), status (pending|acknowledged|completed)
@@ -72,7 +79,8 @@ async def frontend_alerts(
     paciente atrasado ficaria fora da tela sem nenhum sinal.
     """
     pagina = await listar_alertas_frontend_paginado(
-        horas, riskLevel, status_filter, room, limit, offset, unidades
+        horas, riskLevel, status_filter, room, limit, offset, unidades,
+        meus_de=_ if apenas_meus else None,
     )
     response.headers["X-Total-Count"] = str(pagina.total)
     return pagina.itens

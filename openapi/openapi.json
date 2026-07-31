@@ -1,6 +1,24 @@
 {
   "components": {
     "schemas": {
+      "AcaoResponse": {
+        "properties": {
+          "mudou": {
+            "title": "Mudou",
+            "type": "boolean"
+          },
+          "ok": {
+            "title": "Ok",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "ok",
+          "mudou"
+        ],
+        "title": "AcaoResponse",
+        "type": "object"
+      },
       "AgendaCreate": {
         "description": "Criação de agenda.",
         "properties": {
@@ -1481,6 +1499,65 @@
         "title": "RegistroProfissional",
         "type": "object"
       },
+      "ResponsavelResponse": {
+        "properties": {
+          "atribuido_em": {
+            "title": "Atribuido Em",
+            "type": "string"
+          },
+          "atribuido_por": {
+            "title": "Atribuido Por",
+            "type": "string"
+          },
+          "categoria": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Categoria"
+          },
+          "coren": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Coren"
+          },
+          "display_name": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "title": "Display Name"
+          },
+          "usuario": {
+            "title": "Usuario",
+            "type": "string"
+          }
+        },
+        "required": [
+          "usuario",
+          "display_name",
+          "coren",
+          "categoria",
+          "atribuido_em",
+          "atribuido_por"
+        ],
+        "title": "ResponsavelResponse",
+        "type": "object"
+      },
       "RotinaConfig": {
         "properties": {
           "ativo": {
@@ -2387,6 +2464,187 @@
         "summary": "Export Alerts Pdf",
         "tags": [
           "alerts"
+        ]
+      }
+    },
+    "/api/api/meus-pacientes": {
+      "get": {
+        "description": "Os ids atribuidos a quem pediu. A tela usa para marcar as linhas.",
+        "operationId": "meus_pacientes_api_api_meus_pacientes_get",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "type": "string"
+                  },
+                  "title": "Response Meus Pacientes Api Api Meus Pacientes Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Meus Pacientes",
+        "tags": [
+          "atribuicoes"
+        ]
+      }
+    },
+    "/api/api/meus-pacientes/liberar-todos": {
+      "post": {
+        "description": "Fim de plantao: solta todos os leitos de uma vez.\n\nSem isto, quem sai do turno teria de liberar leito a leito — e nao faria,\nporque ninguem faz. As atribuicoes ficariam vivas indefinidamente e \"meus\npacientes\" acumularia o hospital inteiro ao longo de semanas, ate deixar de\nsignificar qualquer coisa.",
+        "operationId": "liberar_todos_api_api_meus_pacientes_liberar_todos_post",
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcaoResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          }
+        },
+        "summary": "Liberar Todos",
+        "tags": [
+          "atribuicoes"
+        ]
+      }
+    },
+    "/api/api/pacientes/{paciente_id}/assumir": {
+      "post": {
+        "description": "Assume o leito para o usuario da SESSAO.\n\nSem parametro de usuario: aceita-lo permitiria atribuir pacientes a\nterceiros sem que eles soubessem, e a lista de trabalho de alguem passaria\na ser escrita por outra pessoa.",
+        "operationId": "assumir_api_api_pacientes__paciente_id__assumir_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "paciente_id",
+            "required": true,
+            "schema": {
+              "title": "Paciente Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcaoResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Assumir",
+        "tags": [
+          "atribuicoes"
+        ]
+      }
+    },
+    "/api/api/pacientes/{paciente_id}/liberar": {
+      "post": {
+        "description": "Libera o leito. Idempotente: liberar o que nao era seu e sucesso.",
+        "operationId": "liberar_api_api_pacientes__paciente_id__liberar_post",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "paciente_id",
+            "required": true,
+            "schema": {
+              "title": "Paciente Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AcaoResponse"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Liberar",
+        "tags": [
+          "atribuicoes"
+        ]
+      }
+    },
+    "/api/api/pacientes/{paciente_id}/responsaveis": {
+      "get": {
+        "description": "Quem responde por este paciente agora.\n\nLista, e nao um so: numa transicao de plantao e legitimo que dois vejam o\nmesmo leito por alguns minutos, e mostrar apenas um esconderia a passagem.",
+        "operationId": "listar_responsaveis_api_api_pacientes__paciente_id__responsaveis_get",
+        "parameters": [
+          {
+            "in": "path",
+            "name": "paciente_id",
+            "required": true,
+            "schema": {
+              "title": "Paciente Id",
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "items": {
+                    "$ref": "#/components/schemas/ResponsavelResponse"
+                  },
+                  "title": "Response Listar Responsaveis Api Api Pacientes  Paciente Id  Responsaveis Get",
+                  "type": "array"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Listar Responsaveis",
+        "tags": [
+          "atribuicoes"
         ]
       }
     },
@@ -3373,7 +3631,7 @@
     },
     "/api/frontend/alerts": {
       "get": {
-        "description": "Return alerts in a shape convenient for the React frontend with optional filters.\n\nQuery Parameters:\n- horas: int (default 24) - Time window in hours\n- riskLevel: 'high'|'medium'|'low' - Filter by risk level\n- status_filter: 'pending'|'acknowledged'|'completed' - Filter by status\n- room: str - Filter by room number (fuzzy match)\n- limit: int (default 100) - Pagination limit\n- offset: int (default 0) - Pagination offset\n\nEach alert contains: id, patientName, room, bed, lastRepositioning (ISO),\nnextRepositioning (ISO), riskLevel (high|medium|low), status (pending|acknowledged|completed)\n\nCabecalho `X-Total-Count`: quantos alertas casam com os filtros, ANTES do\ncorte por `limit`. O corpo continua sendo o array puro (o contrato que o\nfrontend e os testes usam), mas sem esse numero a resposta omite em\nsilencio: uma lista de 100 com `limit=100` e indistinguivel de \"existem\nexatamente 100\", e o dashboard filtra em memoria sobre o que recebeu — um\npaciente atrasado ficaria fora da tela sem nenhum sinal.",
+        "description": "Return alerts in a shape convenient for the React frontend with optional filters.\n\nQuery Parameters:\n- horas: int (default 24) - Time window in hours\n- riskLevel: 'high'|'medium'|'low' - Filter by risk level\n- status_filter: 'pending'|'acknowledged'|'completed' - Filter by status\n- room: str - Filter by room number (fuzzy match)\n- limit: int (default 100) - Pagination limit\n- offset: int (default 0) - Pagination offset\n- apenas_meus: bool - so os pacientes atribuidos a quem pediu\n\n`apenas_meus` usa o usuario da SESSAO, nunca um parametro. Aceitar um nome\naqui permitiria olhar a lista de trabalho de outra pessoa — e, num sistema\nonde a lista revela leito e risco, isso e leitura de dado clinico por uma\nporta lateral.\n\nEach alert contains: id, patientName, room, bed, lastRepositioning (ISO),\nnextRepositioning (ISO), riskLevel (high|medium|low), status (pending|acknowledged|completed)\n\nCabecalho `X-Total-Count`: quantos alertas casam com os filtros, ANTES do\ncorte por `limit`. O corpo continua sendo o array puro (o contrato que o\nfrontend e os testes usam), mas sem esse numero a resposta omite em\nsilencio: uma lista de 100 com `limit=100` e indistinguivel de \"existem\nexatamente 100\", e o dashboard filtra em memoria sobre o que recebeu — um\npaciente atrasado ficaria fora da tela sem nenhum sinal.",
         "operationId": "frontend_alerts_api_frontend_alerts_get",
         "parameters": [
           {
@@ -3459,6 +3717,16 @@
               "default": 0,
               "title": "Offset",
               "type": "integer"
+            }
+          },
+          {
+            "in": "query",
+            "name": "apenas_meus",
+            "required": false,
+            "schema": {
+              "default": false,
+              "title": "Apenas Meus",
+              "type": "boolean"
             }
           }
         ],

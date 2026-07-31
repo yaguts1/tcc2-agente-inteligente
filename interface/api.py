@@ -45,6 +45,7 @@ from interface.routers import (
     lesoes,
     braden,
     push,
+    atribuicoes,
 )
 from interface import endpoints_agenda
 
@@ -112,6 +113,7 @@ _rotas.include_router(usuarios.router)
 _rotas.include_router(auditoria.router)
 _rotas.include_router(lesoes.router)
 _rotas.include_router(push.router)
+_rotas.include_router(atribuicoes.router)
 _rotas.include_router(braden.router)
 _rotas.include_router(endpoints_agenda.router)
 

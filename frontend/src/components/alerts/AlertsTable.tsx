@@ -24,7 +24,7 @@ import {
   TableHeader,
   TableRow,
 } from '../ui/table';
-import { CheckCircle2, AlertTriangle, Clock, Eye } from 'lucide-react';
+import { CheckCircle2, AlertTriangle, Clock, Eye , UserCheck, UserPlus} from 'lucide-react';
 import { EmptyState } from '../shared/EmptyState';
 import { Skeleton } from '../ui/skeleton';
 import { BulkActionBar } from './BulkActionBar';
@@ -48,6 +48,14 @@ interface AlertsTableProps {
   onBulkAcknowledge: (alertIds: string[]) => Promise<BatchResult>;
   onBulkComplete: (alertIds: string[]) => Promise<BatchResult>;
   isLoading: boolean;
+  /**
+   * Leitos que a pessoa assumiu. Marcados MESMO com o filtro desligado: se a
+   * unica forma de saber quais sao seus fosse ligar o filtro, nao daria para
+   * ver o resto da ala e os seus leitos ao mesmo tempo — que e exatamente o
+   * que a coordenacao e quem cobre um colega precisam.
+   */
+  meus?: Set<string>;
+  onAlternarPosse?: (pacienteId: string) => void | Promise<void>;
 }
 
 export function AlertsTable({
@@ -57,6 +65,8 @@ export function AlertsTable({
   onBulkAcknowledge,
   onBulkComplete,
   isLoading,
+  meus,
+  onAlternarPosse,
 }: AlertsTableProps) {
   const telaEstreita = useTelaEstreita();
   const [confirmingComplete, setConfirmingComplete] = useState<string | null>(null);
@@ -305,6 +315,10 @@ export function AlertsTable({
                 restante: getTimeUntil(alert.nextRepositioning),
                 ultimo: formatTime(alert.lastRepositioning),
               }}
+              meu={meus?.has(alert.patientId) ?? false}
+              onAlternarPosse={
+                onAlternarPosse ? () => void onAlternarPosse(alert.patientId) : undefined
+              }
               onSelecionar={() => toggleAlert(alert.id)}
               onReconhecer={() => handleAcknowledgeClick(alert.id)}
               onReposicionar={() => setConfirmingComplete(alert.id)}
@@ -359,6 +373,33 @@ export function AlertsTable({
                         <AlertTriangle className="w-4 h-4 text-danger flex-shrink-0" />
                       )}
                       <span className="truncate">{alert.patientName}</span>
+                      {onAlternarPosse && (
+                        <button
+                          type="button"
+                          onClick={() => void onAlternarPosse(alert.patientId)}
+                          aria-pressed={meus?.has(alert.patientId) ?? false}
+                          // O rótulo diz o que o clique FAZ, e não o estado —
+                          // um leitor de tela anunciando "meu leito" num botão
+                          // deixa ambíguo se ele assume ou libera.
+                          aria-label={
+                            meus?.has(alert.patientId)
+                              ? `Liberar ${alert.patientName}`
+                              : `Assumir ${alert.patientName}`
+                          }
+                          title={
+                            meus?.has(alert.patientId)
+                              ? 'Você respondendo por este leito — clique para liberar'
+                              : 'Assumir este leito'
+                          }
+                          className="flex-shrink-0 p-1 -m-1 text-muted-foreground hover:text-foreground"
+                        >
+                          {meus?.has(alert.patientId) ? (
+                            <UserCheck className="w-4 h-4 text-primary" aria-hidden="true" />
+                          ) : (
+                            <UserPlus className="w-4 h-4 opacity-40" aria-hidden="true" />
+                          )}
+                        </button>
+                      )}
                     </div>
                     {/*
                       O sítio sob carga, abaixo do nome.

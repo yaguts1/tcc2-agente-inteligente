@@ -24,7 +24,7 @@
  *    a rolar para alcançar a segunda; encolhê-las traria de volta o alvo
  *    pequeno. Metade da largura de um celular ainda é muito mais que 44px.
  */
-import { AlertTriangle, CheckCircle2, Clock, Eye } from 'lucide-react';
+import { AlertTriangle, CheckCircle2, Clock, Eye, UserCheck, UserPlus } from 'lucide-react';
 import { Button } from '../ui/button';
 import { Card, CardContent } from '../ui/card';
 import { Checkbox } from '../ui/checkbox';
@@ -51,6 +51,9 @@ interface Props {
   rotuloDeSitio: (site: string | null) => string | null;
   selo: { risco: React.ReactNode; status: React.ReactNode };
   tempo: { proximo: string; restante: string; ultimo: string };
+  /** Este leito e meu. Marcado mesmo com o filtro de triagem desligado. */
+  meu?: boolean;
+  onAlternarPosse?: () => void;
   onSelecionar: () => void;
   onReconhecer: () => void;
   onReposicionar: () => void;
@@ -64,6 +67,8 @@ export function CartaoDeAlerta({
   rotuloDeSitio,
   selo,
   tempo,
+  meu = false,
+  onAlternarPosse,
   onSelecionar,
   onReconhecer,
   onReposicionar,
@@ -109,6 +114,26 @@ export function CartaoDeAlerta({
               )}
               {/* O leito é o que se procura andando pela ala. */}
               <span className="font-semibold text-lg truncate">{leito}</span>
+              {onAlternarPosse && (
+                <button
+                  type="button"
+                  onClick={onAlternarPosse}
+                  aria-pressed={meu}
+                  // O rótulo diz o que o clique FAZ, e não o estado: "meu
+                  // leito" num botão deixa ambíguo se ele assume ou libera.
+                  aria-label={meu ? 'Liberar este leito' : 'Assumir este leito'}
+                  // Área de toque própria: o alvo desenhado tem 16px, e este
+                  // botão fica ao lado do texto do leito, num cartão operado
+                  // de luva.
+                  className="flex-shrink-0 p-2 -m-2"
+                >
+                  {meu ? (
+                    <UserCheck className="w-5 h-5 text-primary" aria-hidden="true" />
+                  ) : (
+                    <UserPlus className="w-5 h-5 opacity-40" aria-hidden="true" />
+                  )}
+                </button>
+              )}
             </div>
             <p className="text-sm text-muted-foreground truncate">
               {alerta.patientName}

@@ -194,6 +194,118 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/api/meus-pacientes": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Meus Pacientes
+         * @description Os ids atribuidos a quem pediu. A tela usa para marcar as linhas.
+         */
+        get: operations["meus_pacientes_api_api_meus_pacientes_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/api/meus-pacientes/liberar-todos": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Liberar Todos
+         * @description Fim de plantao: solta todos os leitos de uma vez.
+         *
+         *     Sem isto, quem sai do turno teria de liberar leito a leito — e nao faria,
+         *     porque ninguem faz. As atribuicoes ficariam vivas indefinidamente e "meus
+         *     pacientes" acumularia o hospital inteiro ao longo de semanas, ate deixar de
+         *     significar qualquer coisa.
+         */
+        post: operations["liberar_todos_api_api_meus_pacientes_liberar_todos_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/api/pacientes/{paciente_id}/assumir": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Assumir
+         * @description Assume o leito para o usuario da SESSAO.
+         *
+         *     Sem parametro de usuario: aceita-lo permitiria atribuir pacientes a
+         *     terceiros sem que eles soubessem, e a lista de trabalho de alguem passaria
+         *     a ser escrita por outra pessoa.
+         */
+        post: operations["assumir_api_api_pacientes__paciente_id__assumir_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/api/pacientes/{paciente_id}/liberar": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        get?: never;
+        put?: never;
+        /**
+         * Liberar
+         * @description Libera o leito. Idempotente: liberar o que nao era seu e sucesso.
+         */
+        post: operations["liberar_api_api_pacientes__paciente_id__liberar_post"];
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
+    "/api/api/pacientes/{paciente_id}/responsaveis": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Listar Responsaveis
+         * @description Quem responde por este paciente agora.
+         *
+         *     Lista, e nao um so: numa transicao de plantao e legitimo que dois vejam o
+         *     mesmo leito por alguns minutos, e mostrar apenas um esconderia a passagem.
+         */
+        get: operations["listar_responsaveis_api_api_pacientes__paciente_id__responsaveis_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/api/push/chave-publica": {
         parameters: {
             query?: never;
@@ -710,6 +822,12 @@ export interface paths {
          *     - room: str - Filter by room number (fuzzy match)
          *     - limit: int (default 100) - Pagination limit
          *     - offset: int (default 0) - Pagination offset
+         *     - apenas_meus: bool - so os pacientes atribuidos a quem pediu
+         *
+         *     `apenas_meus` usa o usuario da SESSAO, nunca um parametro. Aceitar um nome
+         *     aqui permitiria olhar a lista de trabalho de outra pessoa — e, num sistema
+         *     onde a lista revela leito e risco, isso e leitura de dado clinico por uma
+         *     porta lateral.
          *
          *     Each alert contains: id, patientName, room, bed, lastRepositioning (ISO),
          *     nextRepositioning (ISO), riskLevel (high|medium|low), status (pending|acknowledged|completed)
@@ -1663,6 +1781,13 @@ export interface paths {
 export type webhooks = Record<string, never>;
 export interface components {
     schemas: {
+        /** AcaoResponse */
+        AcaoResponse: {
+            /** Mudou */
+            mudou: boolean;
+            /** Ok */
+            ok: boolean;
+        };
         /**
          * AgendaCreate
          * @description Criação de agenda.
@@ -2200,6 +2325,21 @@ export interface components {
             /** Coren */
             coren?: string | null;
         };
+        /** ResponsavelResponse */
+        ResponsavelResponse: {
+            /** Atribuido Em */
+            atribuido_em: string;
+            /** Atribuido Por */
+            atribuido_por: string;
+            /** Categoria */
+            categoria: string | null;
+            /** Coren */
+            coren: string | null;
+            /** Display Name */
+            display_name: string | null;
+            /** Usuario */
+            usuario: string;
+        };
         /** RotinaConfig */
         RotinaConfig: {
             /** Ativo */
@@ -2586,6 +2726,139 @@ export interface operations {
                 };
                 content: {
                     "application/json": unknown;
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    meus_pacientes_api_api_meus_pacientes_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": string[];
+                };
+            };
+        };
+    };
+    liberar_todos_api_api_meus_pacientes_liberar_todos_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcaoResponse"];
+                };
+            };
+        };
+    };
+    assumir_api_api_pacientes__paciente_id__assumir_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paciente_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcaoResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    liberar_api_api_pacientes__paciente_id__liberar_post: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paciente_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["AcaoResponse"];
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
+                };
+            };
+        };
+    };
+    listar_responsaveis_api_api_pacientes__paciente_id__responsaveis_get: {
+        parameters: {
+            query?: never;
+            header?: never;
+            path: {
+                paciente_id: string;
+            };
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["ResponsavelResponse"][];
                 };
             };
             /** @description Validation Error */
@@ -3267,6 +3540,7 @@ export interface operations {
                 room?: string | null;
                 limit?: number;
                 offset?: number;
+                apenas_meus?: boolean;
             };
             header?: never;
             path?: never;

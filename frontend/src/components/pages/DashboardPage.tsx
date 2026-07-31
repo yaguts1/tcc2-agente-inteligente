@@ -8,6 +8,8 @@ import { Card } from '../ui/card';
 import { ErrorBanner } from '../shared/ErrorBanner';
 import { PollIndicator } from '../shared/PollIndicator';
 import { AlertsTable } from '../alerts/AlertsTable';
+import { BarraDeTriagem } from '../alerts/BarraDeTriagem';
+import { useMeusPacientes } from '../../hooks/useMeusPacientes';
 import { Skeleton } from '../ui/skeleton';
 
 const POLL_INTERVAL = 30000;
@@ -53,8 +55,24 @@ export function DashboardPage() {
     setActiveFilterCount(count);
   }, [filters]);
 
+  // TRIAGEM. `meus` vem do servidor e diz quais leitos sao de quem esta olhando.
+  //
+  // O filtro roda EM MEMORIA, sobre a pagina ja carregada, e nao pela rota
+  // `apenas_meus`: a lista e limitada a 100 e a alternancia precisa ser
+  // instantanea — quem esta escolhendo entre "so os meus" e "a ala inteira"
+  // esta comparando as duas visoes, e um round-trip por toque tornaria a
+  // comparacao inutil. A rota existe e continua valendo para consumidores da
+  // API e para quando a lista passar de uma pagina.
+  const { meus, alternar, liberarTodos } = useMeusPacientes();
+  const [soMeus, setSoMeus] = useState(false);
+
   // Filter alerts based on current filters
   const filteredAlerts = alerts.filter((alert) => {
+    // A triagem esconde o que a pessoa PODE ver e nao precisa agora — diferente
+    // do escopo por unidade, que fecha o que ela nao pode ver. Por isso e um
+    // toggle e nao uma permissao.
+    if (soMeus && !meus.has(alert.patientId)) return false;
+
     // Filter by severity (riskLevel)
     if (filters.severity) {
       const alertSeverity = alert.riskLevel === 'high' ? 'HIGH' : 
@@ -411,9 +429,24 @@ export function DashboardPage() {
         </div>
       )}
 
+      {/*
+        O controle de triagem fica JUNTO da tabela, e nao dentro do painel de
+        filtros recolhivel: nao e um filtro entre outros, e a decisao de "estou
+        olhando meu trabalho ou o da ala" — feita varias vezes por plantao, e
+        cara demais para custar dois cliques.
+      */}
+      <BarraDeTriagem
+        soMeus={soMeus}
+        onAlternar={() => setSoMeus((v) => !v)}
+        quantidade={meus.size}
+        onLiberarTodos={liberarTodos}
+      />
+
       {/* Alerts Table */}
       <Card>
         <AlertsTable
+          meus={meus}
+          onAlternarPosse={alternar}
           alerts={filteredAlerts.filter(a => {
             // If user explicitly filtered by status, show what they asked for
             if (filters.status) return true;
