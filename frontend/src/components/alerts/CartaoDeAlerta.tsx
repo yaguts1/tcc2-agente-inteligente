@@ -29,6 +29,7 @@ import { Button } from '../ui/button';
 import { Card, CardContent } from '../ui/card';
 import { Checkbox } from '../ui/checkbox';
 import { Spinner } from '../shared/Spinner';
+import { APARENCIA, tempoEmAberto } from '../../lib/escalonamento';
 
 interface Props {
   alerta: {
@@ -38,6 +39,8 @@ interface Props {
     bed: string | null;
     riskLevel: string;
     status: string;
+    minutesOpen: number;
+    escalationLevel: 'normal' | 'atencao' | 'critico' | 'violacao';
     lastRepositioning: string;
     nextRepositioning: string;
     site: string | null;
@@ -67,16 +70,19 @@ export function CartaoDeAlerta({
 }: Props) {
   const sitio = rotuloDeSitio(alerta.site);
   const leito = [alerta.room, alerta.bed].filter(Boolean).join(' / ') || '—';
+  const escalada = APARENCIA[alerta.escalationLevel];
 
   return (
     <Card
-      className={
-        atrasado
-          ? 'border-danger/60 bg-danger-light/20'
-          : selecionado
-            ? 'bg-blue-50 dark:bg-blue-950'
-            : ''
-      }
+      className={[
+        // A barra lateral e o sinal mais barato de ler numa lista rolando: nao
+        // consome largura (escassa no celular) e e percebida sem foco.
+        escalada?.destaque ?? '',
+        atrasado ? 'border-danger/60 bg-danger-light/20' : '',
+        selecionado ? 'bg-blue-50 dark:bg-blue-950' : '',
+      ]
+        .filter(Boolean)
+        .join(' ')}
     >
       <CardContent className="p-4 space-y-3">
         <div className="flex items-start gap-3">
@@ -115,6 +121,14 @@ export function CartaoDeAlerta({
           <div className="flex flex-col items-end gap-1 flex-shrink-0">
             {selo.risco}
             {selo.status}
+            {escalada && (
+              <span
+                className={`text-xs px-2 py-0.5 rounded ${escalada.selo}`}
+                title={escalada.descricao}
+              >
+                {escalada.rotulo}
+              </span>
+            )}
           </div>
         </div>
 
@@ -123,8 +137,13 @@ export function CartaoDeAlerta({
           <span className={atrasado ? 'text-danger font-medium' : ''}>
             {tempo.proximo} · {tempo.restante}
           </span>
-          <span className="text-muted-foreground ml-auto text-xs">
-            último {tempo.ultimo}
+          {/*
+            "ha 4h20" e nao "260 min": minutos crus obrigam a fazer a conta, e a
+            conta nao e feita — o numero vira ruido. E era a unica pista que
+            existia de que um alerta estava aberto ha muito tempo.
+          */}
+          <span className="ml-auto text-xs font-medium">
+            {tempoEmAberto(alerta.minutesOpen)}
           </span>
         </div>
 

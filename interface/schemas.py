@@ -182,6 +182,15 @@ class FrontendAlert(BaseModel):
     # Sitio anatomico que estourou a janela. `None` em alertas anteriores ao
     # modelo de carga por sitio — nao ha o que inferir para eles.
     site: str | None
+    # Ha quanto tempo o alerta esta aberto, e o que isso significa.
+    #
+    # `minutesOpen` e o dado bruto; `escalationLevel` e a leitura clinica dele,
+    # calculada em `nucleo/escalonamento.py` como multiplo da JANELA do
+    # paciente. Vem do servidor, e nao da tela, porque o backend usa o mesmo
+    # valor para decidir renotificar — duas implementacoes divergiriam, e a
+    # divergencia apareceria como "a tela diz critico e o aviso nao toca".
+    minutesOpen: float
+    escalationLevel: Literal["normal", "atencao", "critico", "violacao"]
 
 
 class DeviceRegisterRequest(BaseModel):

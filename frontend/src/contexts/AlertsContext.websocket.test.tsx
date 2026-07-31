@@ -61,7 +61,7 @@ const alerta = (id: string) => ({
   status: 'pending' as const,
   closureOrigin: null,
   closedBy: null,
-  site: null,
+  site: null, minutesOpen: 0, escalationLevel: 'normal' as const,
 });
 
 function Sonda() {

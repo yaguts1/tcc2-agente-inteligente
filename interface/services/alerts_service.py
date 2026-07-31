@@ -29,6 +29,7 @@ from interface.repositories.timeline import ultimo_evento_por_paciente
 from interface.services.paciente_service import dividir_cama
 from interface.tempo import agora_utc_naive, para_iso_utc
 from interface.ws_manager_optimized import ws_manager_optimized
+from nucleo import escalonamento
 from servicos import metricas
 
 logger = structlog.get_logger(__name__)
@@ -217,6 +218,18 @@ async def listar_alertas_frontend_paginado(
         #   pendente/reconhecido -> vence em `inicio` (ja vencido);
         #   concluido            -> paciente virado em `fim`, proximo em
         #                           `fim + janela`.
+        # Minutos em aberto. `inicio` e o instante em que a janela ESTOUROU
+        # (ver o comentario acima), entao o paciente ja esta atrasado desde ali
+        # — o tempo contado aqui e tempo de ATRASO, nao de imobilidade.
+        try:
+            aberto_desde = datetime.fromisoformat(str(inicio)[:19])
+            minutos_aberto = max(
+                (agora_utc_naive() - aberto_desde).total_seconds() / 60.0, 0.0
+            )
+        except (ValueError, TypeError):
+            # Alerta com `inicio` ilegivel nao pode derrubar a listagem inteira.
+            minutos_aberto = 0.0
+
         fim = a.get("fim")
         if status_val == "completed" and fim:
             try:
@@ -256,6 +269,23 @@ async def listar_alertas_frontend_paginado(
                 # informacao diz PARA QUAL LADO virar. `null` nos alertas
                 # abertos antes de o motor distinguir sitio.
                 "site": a.get("sitio"),
+                # HA QUANTO TEMPO este alerta esta aberto, e o que isso significa.
+                #
+                # Antes, um alerta das 03:00 chegava as 07:00 identico ao das
+                # 06:55 — mesma cor, mesmo peso, mesma posicao. A unica pista era
+                # um numero maior no meio de uma linha de texto.
+                #
+                # O nivel e calculado AQUI e nao na tela, por duas razoes: o
+                # backend precisa do mesmo valor para decidir renotificar (uma
+                # segunda implementacao divergiria), e a regra e clinica — a
+                # escada e em multiplos da JANELA do paciente, porque a mesma
+                # duracao significa coisas diferentes em Braden 10 e Braden 18.
+                "minutesOpen": round(minutos_aberto, 1),
+                "escalationLevel": escalonamento.nivel(
+                    janela_min=janela_min,
+                    minutos_aberto=minutos_aberto,
+                    status=status_val,
+                ),
             }
         )
 

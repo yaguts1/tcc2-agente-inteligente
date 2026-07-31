@@ -9,6 +9,11 @@ import {
 import { Badge } from '../ui/badge';
 import { Button } from '../ui/button';
 import { CartaoDeAlerta } from './CartaoDeAlerta';
+import {
+  APARENCIA,
+  compararPorEscalonamento,
+  tempoEmAberto,
+} from '../../lib/escalonamento';
 import { useTelaEstreita } from '../../hooks/useTelaEstreita';
 import { Checkbox } from '../ui/checkbox';
 import {
@@ -227,18 +232,14 @@ export function AlertsTable({
   const handleBulkAcknowledge = () => executarEmLote(onBulkAcknowledge);
   const handleBulkComplete = () => executarEmLote(onBulkComplete);
 
-  const sortedAlerts = [...alerts].sort((a, b) => {
-    const aOverdue = isOverdue(a.nextRepositioning);
-    const bOverdue = isOverdue(b.nextRepositioning);
-
-    if (aOverdue && !bOverdue) return -1;
-    if (!aOverdue && bOverdue) return 1;
-
-    return (
-      new Date(a.nextRepositioning).getTime() -
-      new Date(b.nextRepositioning).getTime()
-    );
-  });
+  // Gravidade primeiro, depois o mais antigo dentro do mesmo nivel.
+  //
+  // A ordenacao anterior era so por atraso. Ela ja era certa em espirito, mas
+  // tratava todos os atrasos como comparaveis — e nao sao: um alerta em
+  // VIOLACAO num paciente de baixo risco precisa vir antes de um recem-aberto
+  // em alto risco, porque o primeiro nao diz "este paciente esta em risco", diz
+  // "ninguem esta respondendo nesta ala".
+  const sortedAlerts = [...alerts].sort(compararPorEscalonamento);
 
   if (isLoading) {
     return (
@@ -341,9 +342,9 @@ export function AlertsTable({
               return (
                 <TableRow
                   key={alert.id}
-                  className={`${overdue ? 'bg-danger-light/20' : ''} ${
-                    isSelected ? 'bg-blue-50 dark:bg-blue-950' : ''
-                  }`}
+                  className={`${APARENCIA[alert.escalationLevel]?.destaque ?? ''} ${
+                    overdue ? 'bg-danger-light/20' : ''
+                  } ${isSelected ? 'bg-blue-50 dark:bg-blue-950' : ''}`}
                 >
                   <TableCell>
                     <Checkbox
@@ -370,6 +371,16 @@ export function AlertsTable({
                         {rotuloDeSitio(alert.site)}
                       </span>
                     )}
+                    {/*
+                      Ha quanto tempo, por extenso. Antes so existia o horario
+                      do proximo reposicionamento — a informacao "isto esta
+                      aberto ha quatro horas" nao estava em lugar nenhum.
+                    */}
+                    {APARENCIA[alert.escalationLevel] && (
+                      <span className="block text-xs pl-6 font-medium">
+                        {tempoEmAberto(alert.minutesOpen)}
+                      </span>
+                    )}
                   </TableCell>
                   <TableCell className="whitespace-nowrap">
                     {alert.room} / {alert.bed}
@@ -394,7 +405,21 @@ export function AlertsTable({
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell>{getStatusBadge(alert.status)}</TableCell>
+                  <TableCell>
+                    <div className="flex flex-col gap-1 items-start">
+                      {getStatusBadge(alert.status)}
+                      {APARENCIA[alert.escalationLevel] && (
+                        <span
+                          className={`text-xs px-2 py-0.5 rounded ${APARENCIA[alert.escalationLevel]!.selo}`}
+                          // Cor sozinha e inacessivel, e a tela e usada sob
+                          // iluminacao ruim de madrugada.
+                          title={APARENCIA[alert.escalationLevel]!.descricao}
+                        >
+                          {APARENCIA[alert.escalationLevel]!.rotulo}
+                        </span>
+                      )}
+                    </div>
+                  </TableCell>
                   <TableCell>
                     <div className="flex gap-2">
                       <Button

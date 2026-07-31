@@ -24,6 +24,8 @@ const ALERTA: React.ComponentProps<typeof CartaoDeAlerta>['alerta'] = {
   lastRepositioning: '2026-06-01T07:00:00',
   nextRepositioning: '2026-06-01T08:00:00',
   site: 'trocanter_direito',
+  minutesOpen: 0,
+  escalationLevel: 'normal',
 };
 
 function montar(sobrescreve: Partial<typeof ALERTA> = {}, props = {}) {

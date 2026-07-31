@@ -1909,10 +1909,17 @@ export interface components {
             closedBy: string | null;
             /** Closureorigin */
             closureOrigin: ("equipe" | "sensor" | "sistema") | null;
+            /**
+             * Escalationlevel
+             * @enum {string}
+             */
+            escalationLevel: "normal" | "atencao" | "critico" | "violacao";
             /** Id */
             id: string;
             /** Lastrepositioning */
             lastRepositioning: string | null;
+            /** Minutesopen */
+            minutesOpen: number;
             /** Nextrepositioning */
             nextRepositioning: string | null;
             /** Patientid */

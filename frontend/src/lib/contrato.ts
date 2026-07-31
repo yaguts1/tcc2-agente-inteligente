@@ -40,11 +40,32 @@ type Identico<T, U> = [T] extends [U] ? ([U] extends [T] ? true : never) : never
 // de opcionalidade no servidor, a linha correspondente para de compilar.
 type AlertDoBackend = Pick<
   DoBackend['FrontendAlert'],
-  'id' | 'patientId' | 'patientName' | 'room' | 'bed' | 'riskLevel' | 'status'
+  | 'id'
+  | 'patientId'
+  | 'patientName'
+  | 'room'
+  | 'bed'
+  | 'riskLevel'
+  | 'status'
+  // A escada de escalonamento. Ancorada porque é a única informação da tela
+  // cujo VALOR é decidido no servidor e cujo significado é clínico: se o
+  // conjunto de níveis divergir entre os dois lados, a tela renderiza um nível
+  // que não existe e cai no caso default — silenciosamente de volta ao estado
+  // anterior, em que o alerta das 03:00 parecia igual ao das 06:55.
+  | 'minutesOpen'
+  | 'escalationLevel'
 >;
 type AlertDaTela = Pick<
   Alert,
-  'id' | 'patientId' | 'patientName' | 'room' | 'bed' | 'riskLevel' | 'status'
+  | 'id'
+  | 'patientId'
+  | 'patientName'
+  | 'room'
+  | 'bed'
+  | 'riskLevel'
+  | 'status'
+  | 'minutesOpen'
+  | 'escalationLevel'
 >;
 
 type PatientDoBackend = Pick<

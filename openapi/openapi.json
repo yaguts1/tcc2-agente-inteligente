@@ -854,6 +854,16 @@
             ],
             "title": "Closureorigin"
           },
+          "escalationLevel": {
+            "enum": [
+              "normal",
+              "atencao",
+              "critico",
+              "violacao"
+            ],
+            "title": "Escalationlevel",
+            "type": "string"
+          },
           "id": {
             "title": "Id",
             "type": "string"
@@ -868,6 +878,10 @@
               }
             ],
             "title": "Lastrepositioning"
+          },
+          "minutesOpen": {
+            "title": "Minutesopen",
+            "type": "number"
           },
           "nextRepositioning": {
             "anyOf": [
@@ -934,7 +948,9 @@
           "status",
           "closureOrigin",
           "closedBy",
-          "site"
+          "site",
+          "minutesOpen",
+          "escalationLevel"
         ],
         "title": "FrontendAlert",
         "type": "object"

@@ -1,5 +1,6 @@
 import { useState, useCallback, useEffect, useRef } from 'react';
 import { Alert } from '../lib/api';
+import { ORDEM_ESCALONAMENTO } from '../lib/escalonamento';
 
 export interface CriticalAlert extends Alert {
   isNew: boolean;
@@ -165,10 +166,29 @@ export function useCriticalAlerts(
     const newCritical = getCriticalAlerts();
     const previousCritical = criticalAlertsRef.current;
 
-    // Detect new critical alerts
-    const newAlerts = newCritical.filter(
-      (alert) => !previousCritical.some((prev) => prev.id === alert.id)
-    );
+    // Alerta NOVO, ou alerta que ESCALOU desde a ultima vez.
+    //
+    // Antes, so a primeira condicao existia: o aviso disparava uma vez por
+    // alerta e nunca mais. Um alerta aberto as 03:00 avisava uma vez, na hora
+    // em que abriu, e depois se dissolvia no ruido ate o turno seguinte — mesmo
+    // atravessando duas e tres janelas sem ninguem responder.
+    //
+    // Renotificar por MUDANCA DE NIVEL, e nao por intervalo fixo, evita as duas
+    // falhas opostas: repetir a cada N minutos treina a equipe a ignorar, e
+    // nunca repetir e o que havia. Aqui o aviso volta exatamente quando algo
+    // mudou — no maximo tres vezes na vida de um alerta, e so se ninguem agir.
+    //
+    // Reconhecer trava a escada em `atencao` no servidor
+    // (`nucleo/escalonamento.py`), entao assumir o alerta ja silencia a
+    // repeticao sem precisar de nada aqui.
+    const newAlerts = newCritical.filter((alert) => {
+      const anterior = previousCritical.find((prev) => prev.id === alert.id);
+      if (!anterior) return true;
+      return (
+        ORDEM_ESCALONAMENTO[alert.escalationLevel] >
+        ORDEM_ESCALONAMENTO[anterior.escalationLevel]
+      );
+    });
 
     if (newAlerts.length > 0) {
       setHasNewCritical(true);

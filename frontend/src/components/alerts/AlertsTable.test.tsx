@@ -28,7 +28,7 @@ function alerta(over: Partial<Alert> = {}): Alert {
     status: 'pending',
     closureOrigin: null,
     closedBy: null,
-    site: null,
+    site: null, minutesOpen: 0, escalationLevel: 'normal' as const,
     ...over,
   };
 }
@@ -277,7 +277,7 @@ describe('sitio sob carga', () => {
   });
 
   it('nao mostra nada quando o alerta nao tem sitio', async () => {
-    renderizar({ alerts: [alerta({ site: null })] });
+    renderizar({ alerts: [alerta({ site: null, minutesOpen: 0, escalationLevel: 'normal' as const, })] });
     await screen.findByText('Maria Silva');
 
     expect(screen.queryByText(/Trocânter/)).not.toBeInTheDocument();

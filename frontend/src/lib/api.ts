@@ -342,6 +342,20 @@ export interface Alert {
    * abertos antes do modelo de carga por sítio.
    */
   site: string | null;
+  /**
+   * Há quanto tempo o alerta está aberto, em minutos, e a leitura clínica
+   * disso.
+   *
+   * Vem do SERVIDOR, e não é calculado aqui. O backend usa o mesmo valor para
+   * decidir renotificar, e duas implementações divergiriam — a divergência
+   * apareceria como "a tela diz crítico e o aviso não toca".
+   *
+   * A escada é em múltiplos da JANELA do paciente, não em horas fixas: 2h de
+   * atraso em quem tem Braden 10 não é a mesma coisa que 2h em quem tem
+   * Braden 18. Ver `nucleo/escalonamento.py`.
+   */
+  minutesOpen: number;
+  escalationLevel: 'normal' | 'atencao' | 'critico' | 'violacao';
 }
 
 export interface AlertsResponse {
