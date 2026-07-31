@@ -4,6 +4,8 @@ import { useWebSocketContext } from './WebSocketContext';
 import { usePolling } from '../hooks/usePolling';
 import { useCriticalAlerts, CriticalAlert } from '../hooks/useCriticalAlerts';
 import { toast } from 'sonner';
+import { enfileirar, type AcaoPendente } from '../lib/filaOffline';
+import { useFilaOffline } from '../hooks/useFilaOffline';
 
 interface CriticalAlertsData {
   criticalAlerts: CriticalAlert[];
@@ -18,6 +20,15 @@ interface AlertsContextType {
   isLoading: boolean;
   error: string | null;
   isOffline: boolean;
+  /**
+   * Ações que a rede engoliu e ainda não subiram.
+   *
+   * Precisa estar VISÍVEL na tela. Uma fila que reenvia em silêncio resolve
+   * metade do problema — a ação não se perde — e deixa a outra metade: a
+   * pessoa não sabe se o que ela fez chegou, e na dúvida faz de novo ou anota
+   * no papel. O indicador é o que fecha isso.
+   */
+  acoesPendentes: AcaoPendente[];
   /**
    * Quantos alertas o servidor tinha, quando isso é maior do que coube na
    * resposta. `null` quando a lista está completa. Existe para a tela poder
@@ -46,6 +57,32 @@ const POLL_INTERVAL = 30000;
 // pode significar tela congelada sem ninguém perceber: o segundo canal existe
 // para que o defeito de um vire atraso, e não ausência.
 const POLL_INTERVAL_COM_WS = 120000;
+
+
+/**
+ * Enfileira a acao se — e somente se — a falha foi de REDE.
+ *
+ * Falha do servidor (4xx/5xx) significa que o pedido chegou e foi recusado:
+ * enfileirar produziria uma pendencia imortal, porque repetir nao muda a
+ * resposta. Perda de conexao significa que o pedido NAO chegou, e e essa que se
+ * perdia em silencio no corredor.
+ *
+ * `err instanceof TypeError` e a assinatura de falha de rede do `fetch`. A
+ * verificacao de `ApiException` vem primeiro porque uma `ApiException` tambem
+ * nao e `TypeError`, mas ser explicito aqui evita que a ordem importe se
+ * alguem mexer na hierarquia.
+ */
+async function enfileirarSeForRede(
+  err: unknown,
+  acao: { tipo: 'acknowledge' | 'complete'; alertId: string; motivo?: string },
+): Promise<boolean> {
+  if (err instanceof ApiException) return false;
+  const falhaDeRede = err instanceof TypeError || !navigator.onLine;
+  if (!falhaDeRede) return false;
+  await enfileirar(acao);
+  return true;
+}
+
 
 export function AlertsProvider({ children }: { children: ReactNode }) {
   const [alerts, setAlerts] = useState<Alert[]>([]);
@@ -139,6 +176,12 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
   });
 
   // Global Critical Alerts Monitoring
+  // A fila drena sozinha ao voltar a rede. `fetchAlerts` como callback:
+  // depois de sincronizar, a lista precisa refletir o servidor — senao a
+  // tela fica com o estado otimista e a divergencia so aparece no proximo
+  // polling.
+  const filaOffline = useFilaOffline(fetchAlerts);
+
   const criticalAlertsData = useCriticalAlerts(alerts, {
     enabled: true,
     soundEnabled: true,
@@ -163,6 +206,18 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
       // Refresh to ensure sync
       setTimeout(() => fetchAlerts(), 800);
     } catch (err) {
+      // FALHA DE REDE ENFILEIRA; falha do servidor reverte.
+      //
+      // A diferenca importa: 409 significa que a acao nao vale (outra pessoa ja
+      // agiu), e enfileirar produziria uma pendencia imortal. Perda de conexao
+      // significa que a acao vale e nao chegou — e era exatamente ela que se
+      // perdia em silencio no corredor.
+      if (await enfileirarSeForRede(err, { tipo: 'acknowledge', alertId })) {
+        // O update otimista JA foi aplicado acima e fica: a tela reflete o que
+        // a pessoa decidiu, e o aviso de pendencia explica que ainda nao subiu.
+        toast.info('Sem conexao — a acao sera enviada quando a rede voltar');
+        return;
+      }
       await fetchAlerts(); // Revert on error
       if (err instanceof ApiException) {
         toast.error(err.message);
@@ -199,6 +254,19 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
           : 'Paciente reposicionado com sucesso',
       );
     } catch (err) {
+      if (await enfileirarSeForRede(err, { tipo: 'complete', alertId, motivo })) {
+        // Aqui o update otimista NAO foi aplicado (ele vem depois do await),
+        // entao aplica agora: sem isso o alerta voltaria a aparecer como
+        // pendente e a pessoa o fecharia de novo, achando que o primeiro toque
+        // nao pegou.
+        setAlerts((prev) =>
+          prev.map((alert) =>
+            alert.id === alertId ? { ...alert, status: 'completed' as const } : alert,
+          ),
+        );
+        toast.info('Sem conexao — a acao sera enviada quando a rede voltar');
+        return;
+      }
       await fetchAlerts(); // Revert on error
       if (err instanceof ApiException) {
         toast.error(err.message);
@@ -282,6 +350,7 @@ export function AlertsProvider({ children }: { children: ReactNode }) {
         isLoading,
         error,
         isOffline,
+        acoesPendentes: filaOffline.pendentes,
         totalTruncadoEm,
         fetchAlerts,
         acknowledgeAlert,

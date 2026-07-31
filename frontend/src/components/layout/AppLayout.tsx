@@ -13,6 +13,7 @@ import {
 import { Button } from '../ui/button';
 import { SeletorDeTema } from './SeletorDeTema';
 import { BotaoDeNotificacao } from './BotaoDeNotificacao';
+import { AvisoDePendencias } from '../shared/AvisoDePendencias';
 import { CriticalAlertBadge } from '../alerts/CriticalAlertBadge';
 import { CriticalAlert } from '../../hooks/useCriticalAlerts';
 import { NavLink } from 'react-router-dom';
@@ -223,7 +224,14 @@ export function AppLayout({
 
       {/* Main Content */}
       <main className="lg:pl-64">
-        <div className="px-4 py-6 lg:px-8">{children}</div>
+        <div className="px-4 py-6 lg:px-8 space-y-4">
+          {/*
+            Fica no LAYOUT e nao numa pagina: a rede cai enquanto se anda pela
+            ala, e a pessoa pode estar em Pacientes quando a fila esvazia.
+          */}
+          <AvisoDePendencias />
+          {children}
+        </div>
       </main>
 
       {/* Trocar a própria senha encerra a sessão no servidor, então o diálogo

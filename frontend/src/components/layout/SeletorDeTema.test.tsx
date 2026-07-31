@@ -105,8 +105,14 @@ describe('cores fixas', () => {
    * pede que a cor suma — ela carrega informação — e sim que exista o par
    * escuro, que preserva o significado e inverte a luminosidade.
    */
+  // `(?<!dark:)` é essencial, e faltou na primeira versão: sem ele o guarda
+  // casa o tom claro DENTRO do próprio par escuro. `dark:text-amber-100` é a
+  // companheira correta de `text-amber-900`, e o guarda passava a exigir uma
+  // `dark:text-amber-900` que não faz sentido — reprovando código certo, que é
+  // o modo de falha que o cabeçalho deste arquivo descreve como o mais caro,
+  // porque o que ele ensina é a desabilitar o teste.
   const TOM_CLARO =
-    /\b(?:bg|text|border)-(?:blue|red|green|yellow|amber|indigo|purple)-(?:50|100)\b/g;
+    /(?<!dark:)\b(?:bg|text|border)-(?:blue|red|green|yellow|amber|indigo|purple)-(?:50|100)\b/g;
 
   it('todo tom claro tem par escuro', () => {
     const achados: string[] = [];
