@@ -58,7 +58,7 @@ Três defeitos que só apareceram porque as ferramentas foram ligadas:
 memória), `datetime.now()` medindo duração (salta uma hora no horário de verão),
 e `console.log` despejando a lista de pacientes no console do navegador.
 
-### Bloco 4 — parcial
+### Bloco 4 — completo
 
 | # | Entrega | Commit |
 |---|---|---|
@@ -67,6 +67,7 @@ e `console.log` despejando a lista de pacientes no console do navegador.
 | 4.2 | Escada de escalonamento em múltiplos da janela; renotificação por mudança de nível; ordenação por gravidade | `794134c` |
 | 4.3 | Cartões abaixo de `lg`, alvo de toque de 44px, uma árvore só (leitor de tela anunciava cada alerta duas vezes) | `068a1fb` |
 | 4.7 | Fila offline em IndexedDB; falha de rede enfileira, recusa do servidor reverte; pendências visíveis | `9618696` |
+| 4.5 | Atribuição de leito com histórico; filtro "meus pacientes"; encerrar plantão | `74e4edc` |
 | 4.6 | Lote audita um paciente por linha e marca-se como lote; teto de 100 e mínimo de 1 | `a3abc4e` |
 
 ### Bloco 2 — contratos
@@ -111,9 +112,6 @@ estiveram dentro de uma imagem distribuível.
   `interface/schemas.py`, `services/`, `repositories/`; não vale em
   `main.py`/`scripts/`. **M**
 
-### Bloco 4 — entrega e uso à beira do leito
-
-- **4.5** Sem triagem nem "meus pacientes" (depende de 1.2 e 1.3, já prontos). **M**
 
 ### Bloco 5 — relatório e interoperabilidade
 
