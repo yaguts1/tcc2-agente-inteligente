@@ -164,8 +164,22 @@ Abra o Serial Monitor (115200 baud) para ver os logs:
 
 Enquanto o ESP32 está rodando, você pode enviar comandos via Serial:
 
-- `CMD_START` - Iniciar replay
+- `CMD_START` - Iniciar replay (retoma do checkpoint, se houver)
 - `CMD_STOP` - Parar replay
+- `CMD_RESET` - Apagar o checkpoint; o próximo `CMD_START` recomeça do início
+
+### Por que `CMD_RESET` existe
+
+`CMD_START` **retoma de onde parou** — é o comportamento correto depois de um
+reboot ou de uma queda de rede, e é o que impede a perda de amostra. Mas quando
+o replay chega ao fim do arquivo, o checkpoint gravado aponta para o EOF: um
+segundo `CMD_START` reabria, dava `seek` para o fim e não enviava nada. Sem
+erro, sem log, sem evento — parecia o dispositivo travado.
+
+Zerar é uma decisão de quem opera, não um efeito colateral de dar START (senão
+todo reboot recomeçaria o arquivo e duplicaria o que já foi entregue). Por isso
+é um comando à parte. É também o que torna o E2E de hardware repetível — ver
+`tests/test_e2e_esp32.py`.
 
 ## ⚙️ Configurações Avançadas
 

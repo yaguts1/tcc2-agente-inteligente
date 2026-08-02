@@ -157,6 +157,11 @@ inline void atualizarEstado(ReplayState novo) {
 // ---------------------------------------------------------------------------
 // Armazenamento e leitura
 // ---------------------------------------------------------------------------
+// Caminho do checkpoint. Estava escrito à mão em dois lugares (aqui e em
+// `salvarCheckpoint`); com um terceiro ponto de uso — `limparCheckpoint` — a
+// chance de os literais divergirem deixou de ser aceitável.
+constexpr const char *CAMINHO_CHECKPOINT = "/eventos.offset";
+
 inline bool inicializarArmazenamento() {
   if (g_config.usarSd) return false;  // TODO: SD.begin e pinos
   return SPIFFS.begin(true);
@@ -167,7 +172,7 @@ inline bool abrirArquivoEventos() {
   if (!g_config.usarSd) g_arquivoEventos = SPIFFS.open(g_config.arquivoEventos, "r");
   if (!g_arquivoEventos) { registrarLog("[ERRO] Nao foi possivel abrir " + g_config.arquivoEventos); return false; }
 
-  const char *ckpt = "/eventos.offset";
+  const char *ckpt = CAMINHO_CHECKPOINT;
   if (SPIFFS.exists(ckpt)) {
     File f = SPIFFS.open(ckpt, "r");
     if (f) {
@@ -188,8 +193,29 @@ inline bool abrirArquivoEventos() {
 // lido mas não entregue precisa ser reenviado depois de um reboot.
 inline void salvarCheckpoint() {
   if (!g_arquivoEventos) return;
-  File f = SPIFFS.open("/eventos.offset", "w");
+  File f = SPIFFS.open(CAMINHO_CHECKPOINT, "w");
   if (f) { f.print(String(g_offsetConfirmado)); f.close(); }
+}
+
+// Apaga o ponto de retomada, para o próximo CMD_START recomeçar do início do
+// arquivo.
+//
+// Por que existe: `resetarReplay()` zera a RAM, mas o checkpoint vive no
+// SPIFFS. Ao chegar em FINALIZADO o offset gravado aponta para o fim do
+// arquivo, então um segundo CMD_START reabria, dava `seek` para o EOF e não
+// enviava NADA — sem erro, sem log, sem evento. Numa bancada isso parece o
+// dispositivo travado; num teste automatizado, só a primeira execução passa e
+// as seguintes falham sem explicação.
+//
+// Deliberadamente NÃO é chamado por `iniciarReplay()`: retomar de onde parou é
+// o comportamento correto depois de um reboot ou de uma queda de rede, e é
+// justamente o que os testes de resiliência verificam. Zerar é uma decisão de
+// quem opera, então é um comando à parte.
+inline void limparCheckpoint() {
+  if (!inicializarArmazenamento()) { registrarLog("[ERRO] Falha ao iniciar armazenamento"); return; }
+  if (SPIFFS.exists(CAMINHO_CHECKPOINT)) SPIFFS.remove(CAMINHO_CHECKPOINT);
+  g_offsetConfirmado = 0;
+  registrarLog("[INFO] Checkpoint zerado");
 }
 
 // Marca o evento corrente como resolvido (entregue ou recusado em definitivo) e

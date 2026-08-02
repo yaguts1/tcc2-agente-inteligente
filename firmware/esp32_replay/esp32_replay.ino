@@ -55,20 +55,29 @@ void interromperReplay() {
   resetarReplay();
 }
 
+// Reconhece um comando pelo nome. Existia a mesma cadeia de `if` duplicada em
+// `tratarComandoSerial` e `tratarComandoOta` — ao acrescentar CMD_RESET, uma
+// das duas cópias ficaria para trás, que é exatamente a história deste
+// firmware.
+static bool interpretarComando(const String &texto, ReplayCommand &destino) {
+  if (texto.equalsIgnoreCase("CMD_START"))      destino = ReplayCommand::CMD_START;
+  else if (texto.equalsIgnoreCase("CMD_STOP"))  destino = ReplayCommand::CMD_STOP;
+  else if (texto.equalsIgnoreCase("CMD_RESET")) destino = ReplayCommand::CMD_RESET;
+  else return false;
+  return true;
+}
+
 void tratarComandoSerial() {
   while (Serial.available()) {
     String linha = Serial.readStringUntil('\n');
     linha.trim();
-    if (linha.equalsIgnoreCase("CMD_START")) g_comandoPendente = ReplayCommand::CMD_START;
-    else if (linha.equalsIgnoreCase("CMD_STOP")) g_comandoPendente = ReplayCommand::CMD_STOP;
-    else if (!linha.isEmpty()) registrarLog("[WARN] Comando desconhecido: " + linha);
+    if (linha.isEmpty()) continue;
+    if (!interpretarComando(linha, g_comandoPendente)) registrarLog("[WARN] Comando desconhecido: " + linha);
   }
 }
 
 void tratarComandoOta(const String &comando) {
-  if (comando.equalsIgnoreCase("CMD_START")) g_comandoPendente = ReplayCommand::CMD_START;
-  else if (comando.equalsIgnoreCase("CMD_STOP")) g_comandoPendente = ReplayCommand::CMD_STOP;
-  else registrarLog("[WARN] OTA comando desconhecido: " + comando);
+  if (!interpretarComando(comando, g_comandoPendente)) registrarLog("[WARN] OTA comando desconhecido: " + comando);
 }
 
 // ---------------------------------------------------------------------------
@@ -80,6 +89,14 @@ void processarReplay() {
   tratarComandoSerial();
   if (g_comandoPendente == ReplayCommand::CMD_START) { iniciarReplay(); g_comandoPendente = ReplayCommand::CMD_NONE; }
   else if (g_comandoPendente == ReplayCommand::CMD_STOP) { interromperReplay(); g_comandoPendente = ReplayCommand::CMD_NONE; }
+  else if (g_comandoPendente == ReplayCommand::CMD_RESET) {
+    // Parar primeiro: `interromperReplay` fecha o arquivo aberto, e apagar o
+    // checkpoint com um replay em curso deixaria o offset em RAM apontando
+    // para um ponto que não existe mais no disco.
+    if (g_status.replayAtivo) interromperReplay();
+    limparCheckpoint();
+    g_comandoPendente = ReplayCommand::CMD_NONE;
+  }
   if (!g_status.replayAtivo) return;
 
   switch (g_status.estadoAtual) {

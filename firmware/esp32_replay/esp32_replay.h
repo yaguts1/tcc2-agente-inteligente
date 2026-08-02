@@ -42,6 +42,10 @@ enum class ReplayCommand {
   CMD_NONE = 0,
   CMD_START,
   CMD_STOP,
+  // Apaga o checkpoint do SPIFFS: o próximo CMD_START recomeça do início do
+  // arquivo. Sem isto não há como repetir um replay — depois do primeiro
+  // término o offset gravado aponta para o EOF e o dispositivo fica mudo.
+  CMD_RESET,
 };
 
 // -----------------------------------------
