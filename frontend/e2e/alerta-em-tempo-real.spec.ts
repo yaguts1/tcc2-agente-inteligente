@@ -1,10 +1,5 @@
 import { expect, test } from '@playwright/test';
-import {
-  BANCADA,
-  enviarAmostrasDeImobilidade,
-  esperarAnuncioDeAlerta,
-  observarWebSocketDeAlertas,
-} from './bancada';
+import { esperarQuadro, leito, observarWebSocketDeAlertas, provocarAlerta } from './bancada';
 
 /**
  * O alerta que manda virar o paciente precisa APARECER na tela sem recarregar.
@@ -19,27 +14,23 @@ import {
  * Este arquivo é o que reprova os dois últimos. Atravessa a jornada inteira numa
  * direção só: HTTP → ingestão → filtro → motor de alertas → broadcast →
  * WebSocket → React → DOM.
- *
- * É UM teste, e não três, de propósito: o alerta só nasce uma vez. Reenviar as
- * mesmas amostras não produz anúncio novo (o motor tem cooldown e não reabre o
- * que já está aberto), então testes separados ficariam acoplados à ordem de
- * execução — o segundo passaria só porque o primeiro rodou antes.
  */
 test('alerta novo chega na tela sem reload, e é de verdade', async ({ page, request }) => {
+  const alvo = leito('tempo_real');
+
   // O observador precisa existir antes da navegação: a conexão do WebSocket
   // abre na montagem da aplicação.
   const { quadros } = observarWebSocketDeAlertas(page);
 
   await page.goto('/');
 
-  // Ponto de partida honesto: se já houvesse alerta, a asserção final não
-  // provaria que ELE chegou agora.
-  await expect(page.getByText(/nenhum alerta ativo/i)).toBeVisible();
+  // Ponto de partida honesto: se este paciente já tivesse alerta, a asserção
+  // final não provaria que ELE chegou agora.
+  await expect(page.getByText(alvo.nome)).toHaveCount(0);
 
   // A partir daqui a página NÃO é tocada. Nada de reload, nada de clique: o
   // único caminho para a lista mudar é o servidor empurrar.
-  const enviadas = await enviarAmostrasDeImobilidade(request);
-  expect(enviadas).toBeGreaterThan(0);
+  expect(await provocarAlerta(request, 'tempo_real')).toBeGreaterThan(0);
 
   // 1) O anúncio chegou pelo WebSocket.
   //
@@ -47,15 +38,13 @@ test('alerta novo chega na tela sem reload, e é de verdade', async ({ page, req
   // também faz polling — o alerta apareceria alguns segundos depois pelo timer
   // e ninguém notaria a diferença. É exatamente esse encobrimento que deixou o
   // defeito original invisível.
-  const anuncio = await esperarAnuncioDeAlerta(quadros);
-  expect(anuncio).toContain(BANCADA.pacienteId);
+  expect(await esperarQuadro(quadros, 'alert_new')).toContain(alvo.paciente_id);
 
   // 2) E virou linha na tela, sem nenhuma navegação.
-  await expect(page.getByText(BANCADA.nomePaciente).first()).toBeVisible();
-  await expect(page.getByText(/nenhum alerta ativo/i)).toHaveCount(0);
+  await expect(page.getByText(alvo.nome).first()).toBeVisible();
 
   // 3) O alerta existe no servidor, não só no estado do React. Um alerta que
   //    vive apenas na memória do navegador some aqui.
   await page.reload();
-  await expect(page.getByText(BANCADA.nomePaciente).first()).toBeVisible();
+  await expect(page.getByText(alvo.nome).first()).toBeVisible();
 });

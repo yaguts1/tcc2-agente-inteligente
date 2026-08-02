@@ -1,5 +1,5 @@
 import { expect, test } from '@playwright/test';
-import { BANCADA, entrar } from './bancada';
+import { BANCADA, entrar, leito } from './bancada';
 
 /**
  * O básico que precisa valer antes de qualquer outra spec significar alguma
@@ -45,9 +45,12 @@ test.describe('sessão', () => {
     await expect(page.getByRole('link', { name: /pacientes/i })).toBeVisible();
   });
 
-  test('o paciente semeado aparece na lista', async ({ page }) => {
+  test('os pacientes semeados aparecem na lista', async ({ page }) => {
     await page.goto('/');
     await page.getByRole('link', { name: /pacientes/i }).click();
-    await expect(page.getByText(BANCADA.nomePaciente)).toBeVisible();
+    // Um leito por spec — ver `scripts/preparar_bancada_e2e.py`.
+    for (const apelido of ['tempo_real', 'reconhecer', 'offline'] as const) {
+      await expect(page.getByText(leito(apelido).nome)).toBeVisible();
+    }
   });
 });

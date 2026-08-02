@@ -47,6 +47,22 @@ exige derrubar a stack para rodar é um harness que ninguém roda. E
 `reuseExistingServer` está desligado de propósito: aproveitar um servidor já no
 ar faria a suíte semear paciente de teste dentro do banco de verdade.
 
+### Um leito por spec
+
+`scripts/preparar_bancada_e2e.py` cria três pacientes, um por spec que precisa
+fazer nascer um alerta. O motor não reabre alerta já aberto e respeita cooldown:
+specs disputando o mesmo paciente ficariam acopladas à ordem de execução — a
+segunda passaria só porque a primeira rodou antes.
+
+Cada leito tem o **próprio `device_id`**. O servidor resolve de quem é a amostra
+pelo dispositivo, não pelo `paciente_id` do payload; com um `device_id`
+compartilhado, as amostras dos outros leitos são atribuídas ao primeiro paciente
+e somem na PK da `grade` — **respondendo 2xx em todas as requisições**.
+
+E os nomes dos pacientes não contêm palavra que apareça em botão da interface:
+"Paciente Reconhecer" fazia o botão "Assumir Paciente Reconhecer" casar com o
+seletor do botão "Reconhecer".
+
 ### O teste que justifica tudo isso
 
 `e2e/alerta-em-tempo-real.spec.ts` percorre HTTP → ingestão → filtro → motor de
@@ -60,6 +76,23 @@ manteve o defeito original invisível (ver
 Verificado reintroduzindo o defeito histórico (`alert_new` tratado com
 `prev.map`, que atualiza e não insere): a spec reprova, com o WebSocket
 recebendo o quadro normalmente e a lista seguindo vazia.
+
+### A fila offline, com a rede cortada de verdade
+
+`e2e/fila-offline.spec.ts` é a outra spec que só existe por causa do navegador.
+`AlertsContext.offline.test.tsx` cobre a mesma feature em jsdom, mas lá o
+"offline" é um `fetch` dublado que rejeita — isso testa o tratamento do erro,
+não a condição. Aqui `context.setOffline(true)` corta a rede de verdade e a fila
+é a IndexedDB de verdade, a mesma que o tablet da ala usa.
+
+A asserção que dá sentido ao teste é a do meio: **enquanto a rede está cortada,
+o servidor não pode ter o reconhecimento**. Ela é possível porque o `request` do
+Playwright é um contexto HTTP à parte do navegador e continua alcançando o
+backend. Sem ela, um clique que passasse antes do corte produziria o mesmo
+desfecho final e o teste "passaria" sem nunca ter exercitado a fila.
+
+Verificado quebrando `enfileirar()` para descartar a ação: a spec reprova com
+"a ação registrada offline nunca chegou ao servidor".
 
 ### Rate limit de login
 

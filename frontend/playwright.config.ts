@@ -1,5 +1,6 @@
 import { defineConfig, devices } from '@playwright/test';
 import { execFileSync } from 'node:child_process';
+import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -55,30 +56,24 @@ const PORTA_WEB = Number(process.env.E2E_WEB_PORT || 3100);
  * configuração é lida. Um globalSetup rodaria depois de o uvicorn já ter subido
  * apontando para outro lugar.
  */
-function semearBancada(): Record<string, string> {
+function semearBancada(): { db: string; descricao: string } {
   const saida = execFileSync('python', ['-m', 'scripts.preparar_bancada_e2e'], {
     cwd: RAIZ,
     encoding: 'utf-8',
     env: { ...process.env, PYTHONIOENCODING: 'utf-8' },
   });
-  const dados: Record<string, string> = {};
-  for (const linha of saida.trim().split(/\r?\n/)) {
-    const [chave, ...resto] = linha.split('=');
-    dados[chave] = resto.join('=');
+  const descricao = saida.trim().split(/\r?\n/).pop() ?? '';
+  if (!descricao || !fs.existsSync(descricao)) {
+    throw new Error(`preparar_bancada_e2e não devolveu a descrição da bancada:\n${saida}`);
   }
-  if (!dados.db) throw new Error(`preparar_bancada_e2e não devolveu o banco:\n${saida}`);
-  return dados;
+  return { db: JSON.parse(fs.readFileSync(descricao, 'utf-8')).db, descricao };
 }
 
 const BANCADA = semearBancada();
 
-// Repassados aos testes por variável de ambiente: são o contrato entre o
-// preparador em Python e as specs em TypeScript, e ficam num lugar só.
-process.env.E2E_PACIENTE_ID = BANCADA.paciente_id;
-process.env.E2E_USUARIO = BANCADA.usuario;
-process.env.E2E_SENHA = BANCADA.senha;
-process.env.E2E_CAMA = BANCADA.cama;
-process.env.E2E_AMOSTRAS = BANCADA.amostras;
+// O caminho do JSON é o contrato entre o preparador em Python e as specs em
+// TypeScript. Uma variável só, e a estrutura mora no arquivo — ver `bancada.ts`.
+process.env.E2E_BANCADA = BANCADA.descricao;
 
 export default defineConfig({
   testDir: './e2e',
