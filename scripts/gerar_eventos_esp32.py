@@ -10,12 +10,31 @@ Gera eventos de postura simulados com:
 - Intervalos de 5 minutos
 - Padrão de posturas realista (principalmente supino, mudanças ocasionais)
 - Formato compatível com o backend
+
+O FORMATO É O DE `EventPayload`, E ISSO NÃO É NEGOCIÁVEL
+--------------------------------------------------------
+`interface/schemas.py` declara `EventPayload` com `extra="forbid"`: qualquer
+campo a mais derruba a requisição inteira em 422, e `postura` (string) é
+obrigatório.
+
+Este script gerava outra coisa — `{"seq", "tipo": "postura", "valor": 1}` —,
+que é o formato do `JORNADA_INFORMACAO_ESP32.md` e não o que o servidor aceita
+desde que `EventPayload` passou a proibir extras. O resultado era o pior
+possível: **todo** evento voltava 422, o firmware classifica 422 como
+PERMANENTE (`classificarResposta`), e então o dispositivo descartava o arquivo
+inteiro linha por linha, avançando o checkpoint, sem uma única falha aparente.
+Do lado do ESP32 o replay terminava "com sucesso"; do lado do banco não havia
+nada. `tests/test_e2e_esp32.py` afirma que nenhuma linha é descartada, que é
+como isso volta a aparecer se alguém reintroduzir o formato antigo.
+
+Os campos aceitos são: device_id, paciente_id, cama_id, postura, confianca,
+amostra_ms, ts_utc e pressao_pico (opcional). Mais nenhum.
 """
 
 import argparse
 import json
 import random
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
 
@@ -51,7 +70,12 @@ def gerar_eventos_esp32(
     }
     
     # Começar AGORA (não no passado!)
-    inicio = datetime.now().replace(second=0, microsecond=0)
+    #
+    # `utcnow`, não `now`: o campo se chama `ts_utc` e o servidor o interpreta
+    # como UTC (`EventPayload._normalizar_ts`). Gravar hora local aqui
+    # deslocava toda a série pelo fuso da máquina — em Brasília, três horas —
+    # sem nenhum erro, só um dashboard com os eventos no lugar errado.
+    inicio = datetime.now(UTC).replace(tzinfo=None, second=0, microsecond=0)
     total_eventos = (horas * 60) // intervalo_min
     
     eventos = []
@@ -74,17 +98,17 @@ def gerar_eventos_esp32(
         # Confiança alta (simulando sensor de qualidade)
         confianca = round(random.uniform(0.90, 0.99), 2)
         
-        # Formato compatível com backend
+        # `EventPayload` exatamente: nem um campo a menos, nem um a mais.
+        # `seq` saiu porque o firmware numera as amostras por conta própria
+        # (`evento.seq = ++g_status.seqAtual`) e o servidor recusa o extra.
         evento = {
-            "seq": i + 1,
             "device_id": device_id,
             "paciente_id": paciente_id,
             "cama_id": cama_id,
-            "ts_utc": timestamp.strftime("%Y-%m-%dT%H:%M:%S"),
-            "tipo": "postura",
-            "valor": postura_atual,
+            "postura": POSTURAS[postura_atual],
             "confianca": confianca,
-            "amostra_ms": intervalo_min * 60 * 1000  # Converter para ms
+            "amostra_ms": intervalo_min * 60 * 1000,  # Converter para ms
+            "ts_utc": timestamp.strftime("%Y-%m-%dT%H:%M:%SZ"),
         }
         
         eventos.append(evento)
@@ -105,9 +129,8 @@ def gerar_eventos_esp32(
     
     # Estatísticas
     from collections import Counter
-    contagem = Counter(e['valor'] for e in eventos)
-    for postura_id, count in sorted(contagem.items()):
-        nome = POSTURAS[postura_id]
+    contagem = Counter(e['postura'] for e in eventos)
+    for nome, count in sorted(contagem.items()):
         percentual = (count / len(eventos)) * 100
         print(f"   - {nome}: {count} eventos ({percentual:.1f}%)")
 

@@ -220,6 +220,57 @@ class TestContratoQueOFirmwareAssume:
 
 
 # ---------------------------------------------------------------------------
+# 1b) O que ALIMENTA o firmware precisa ser aceito pelo servidor
+# ---------------------------------------------------------------------------
+class TestOArquivoQueVaiParaOSpiffs:
+    """O contrato tem duas pontas, e a de entrada não tinha teste nenhum.
+
+    `scripts/gerar_eventos_esp32.py` produz o `.jsonl` que é gravado no SPIFFS,
+    e ele estava emitindo o formato do `JORNADA_INFORMACAO_ESP32.md`
+    (`{"tipo": "postura", "valor": 1, "seq": N}`) — não o de `EventPayload`,
+    que declara `extra="forbid"` e exige `postura`.
+
+    O modo de falha era silencioso e completo: cada linha voltava 422, o
+    firmware classifica 422 como PERMANENTE, e o dispositivo descartava o
+    arquivo inteiro avançando o checkpoint. O serial dizia "Fim do arquivo" e o
+    banco ficava vazio.
+    """
+
+    def _gerar(self, tmp_path) -> list[dict]:
+        import runpy
+        import sys
+
+        destino = tmp_path / "eventos.jsonl"
+        argv = sys.argv
+        sys.argv = ["gerar_eventos_esp32.py", "-o", str(destino), "--horas", "1"]
+        try:
+            runpy.run_module("scripts.gerar_eventos_esp32", run_name="__main__")
+        finally:
+            sys.argv = argv
+        return [json.loads(x) for x in destino.read_text(encoding="utf-8").splitlines() if x.strip()]
+
+    def test_toda_linha_gerada_e_um_EventPayload_valido(self, tmp_path):
+        from interface.schemas import EventPayload
+
+        linhas = self._gerar(tmp_path)
+        assert linhas, "o gerador não produziu nada"
+        for bruto in linhas:
+            EventPayload.model_validate(bruto)  # levanta se o formato divergir
+
+    @pytest.mark.asyncio
+    async def test_o_servidor_aceita_a_primeira_linha_gerada(self, tmp_path, dispositivo):
+        """Validar o schema não basta: quem responde 422 é a rota."""
+        criar_paciente(dispositivo["db_path"], "Proto", "alto", cama_id="C-01")
+        linha = self._gerar(tmp_path)[0]
+
+        resp = await dispositivo["http"].post("/api/eventos", json=linha)
+
+        assert 200 <= resp.status_code < 300, (
+            f"o arquivo que vai para o SPIFFS foi recusado com {resp.status_code}: {resp.text}"
+        )
+
+
+# ---------------------------------------------------------------------------
 # 2) Máquina de estados: nenhuma amostra se perde
 # ---------------------------------------------------------------------------
 class TestResilienciaDoReplay:

@@ -20,17 +20,32 @@ Sensor   /ws/eventos Quality     eventos          alertas          /ws/alerts
 ### 📤 O que envia
 ```json
 {
-  "seq": 1,
   "device_id": "DEV-001",
   "paciente_id": "PAC-001",
   "cama_id": "C-01",
-  "ts_utc": "2025-10-29T14:30:00Z",
-  "tipo": "postura",
-  "valor": 1,
+  "postura": "supino",
   "confianca": 0.95,
-  "amostra_ms": 300000
+  "amostra_ms": 300000,
+  "ts_utc": "2025-10-29T14:30:00Z"
 }
 ```
+
+> ⚠️ **Este documento já descreveu outro formato** — `{"tipo": "postura",
+> "valor": 1, "seq": N}` — e `scripts/gerar_eventos_esp32.py` foi escrito a
+> partir dele. Mas a fonte da verdade é `EventPayload`
+> (`interface/schemas.py`), que declara `extra="forbid"` e exige `postura` como
+> string: cada evento no formato antigo voltava **422**, o firmware classifica
+> 422 como PERMANENTE, e o dispositivo descartava o arquivo inteiro linha por
+> linha avançando o checkpoint. O serial dizia "Fim do arquivo" e o banco ficava
+> vazio.
+>
+> `tests/test_protocolo_firmware.py::TestOArquivoQueVaiParaOSpiffs` agora afirma
+> que o que o gerador produz é aceito pela rota — se este documento e o schema
+> divergirem de novo, o teste reprova antes de alguém gravar um ESP32.
+>
+> Campos aceitos: `device_id`, `paciente_id`, `cama_id`, `postura`, `confianca`,
+> `amostra_ms`, `ts_utc` e `pressao_pico` (opcional). Mais nenhum. O `seq` existe
+> só no WebSocket, como campo do quadro — o firmware o numera sozinho.
 
 ### 🔗 Protocolo
 - **WebSocket** para comunicação bidirecional
@@ -519,6 +534,25 @@ async def test():
 asyncio.run(test())
 "
 ```
+
+---
+
+## 🔌 **VERIFICAÇÃO COM O ESP32 FÍSICO**
+
+Tudo acima descreve a jornada; `tests/test_e2e_esp32.py` a **executa** com o
+aparelho na ponta — firmware compilado, Wi-Fi, SPIFFS e backend de verdade.
+
+```bash
+python scripts/gerar_eventos_esp32.py -o firmware/esp32_replay/data/eventos.jsonl --horas 2
+python -m platformio run -d firmware -e websocket -t upload -t uploadfs --upload-port COM3
+UPP_ESP32_PORT=COM3 pytest tests/test_e2e_esp32.py -v
+```
+
+Sem `UPP_ESP32_PORT` a suíte é pulada, então a CI segue verde sem placa. O que
+esses testes cobrem e o `test_protocolo_firmware.py` não: a máquina de estados
+compilada, o checkpoint sobrevivendo a queda de energia de verdade (linha EN
+via RTS) e a pilha de rede real. Os dois transportes — `http` e `websocket` —
+passam nos mesmos seis testes.
 
 ---
 
