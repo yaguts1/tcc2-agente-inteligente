@@ -25,6 +25,11 @@
 #define WIFI_SENHA  "SUA_SENHA_WIFI"
 
 // IP ou host do backend na sua LAN — sem esquema http:// e sem a porta.
+//
+// Para a BANCADA DE E2E, use 8010: a 8000 costuma estar ocupada pelo container
+// `upp_app`, e tanto `tests/test_e2e_esp32.py` quanto o Playwright sobem um
+// backend próprio, com banco descartável, na porta que estiver aqui. Rodar
+// contra o container faria a suíte semear paciente de teste no banco de verdade.
 #define SERVER_IP   "192.168.0.10"
 #define SERVER_PORT 8000
 

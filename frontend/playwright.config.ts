@@ -45,19 +45,39 @@ const RAIZ = path.resolve(AQUI, '..');
 // derrubar a stack para rodar é um harness que ninguém roda — e, pior, se
 // `reuseExistingServer` estivesse ligado, ele rodaria contra o container e o
 // banco DE VERDADE, semeando paciente de teste em cima de dado real.
-// A porta da API sai do `config.h` do FIRMWARE, que é onde ela está compilada
-// para dentro do ESP32. A spec de hardware faz o aparelho falar com este mesmo
-// backend; fixar o valor aqui também criaria dois lugares para a mesma decisão,
-// e o dia em que divergissem daria um replay parado sem explicação.
-function portaDoFirmware(): number | null {
+const PORTA_API = Number(process.env.E2E_API_PORT) || 8010;
+const PORTA_WEB = Number(process.env.E2E_WEB_PORT || 3100);
+
+/**
+ * A porta compilada para dentro do ESP32, se houver um `config.h`.
+ *
+ * NÃO serve de padrão para esta configuração, e a distinção importa: `config.h`
+ * é git-ignored e num clone novo nasce de `config.example.h`, com 8000 — que é
+ * a porta do container `upp_app`. Herdar esse valor faria a bancada tentar subir
+ * em cima da stack de quem clonou, e o erro apareceria como "uvicorn morreu na
+ * subida", sem dizer por quê.
+ *
+ * Serve para CONFERIR: quando a spec de hardware vai rodar, o aparelho e o
+ * backend precisam concordar sobre onde se encontram.
+ */
+function portaCompiladaNoAparelho(): number | null {
   const config = path.join(RAIZ, 'firmware', 'esp32_replay', 'config.h');
   if (!fs.existsSync(config)) return null;
   const m = fs.readFileSync(config, 'utf-8').match(/^\s*#define\s+SERVER_PORT\s+(\d+)/m);
   return m ? Number(m[1]) : null;
 }
 
-const PORTA_API = Number(process.env.E2E_API_PORT) || portaDoFirmware() || 8010;
-const PORTA_WEB = Number(process.env.E2E_WEB_PORT || 3100);
+if (process.env.UPP_ESP32_PORT) {
+  const noAparelho = portaCompiladaNoAparelho();
+  if (noAparelho && noAparelho !== PORTA_API) {
+    throw new Error(
+      `o firmware fala com a porta ${noAparelho} (SERVER_PORT em ` +
+        `firmware/esp32_replay/config.h), mas a bancada sobe o backend na ${PORTA_API}. ` +
+        `O ESP32 bateria no vazio e o replay ficaria parado em OCIOSO. ` +
+        `Ajuste o config.h e regrave, ou rode com E2E_API_PORT=${noAparelho}.`,
+    );
+  }
+}
 
 /**
  * Semeia o banco AGORA, no carregamento da configuração.
