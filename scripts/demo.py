@@ -31,6 +31,10 @@ o perfil de que precisa antes de começar.
     python -m scripts.demo checar           # preflight: recusa começar se algo estiver errado
     python -m scripts.demo preparar         # perfil-demo + dados frescos + SPIFFS + paciente
     python -m scripts.demo ato1             # o dado é real: replay -> alerta na tela
+    python -m scripts.demo ato2             # cai a energia -> retoma do checkpoint
+    python -m scripts.demo ato3             # cai o servidor -> insiste, nada se perde
+    python -m scripts.demo ato4             # fila offline (guiado, com celular)
+    python -m scripts.demo ato5             # token errado -> insiste, nao descarta
     python -m scripts.demo roteiro          # o que falar, na ordem
 """
 
@@ -456,6 +460,62 @@ def alertas_do_leito() -> list[dict]:
         return []
 
 
+def grade_do_leito() -> int:
+    """Quantas amostras o paciente da demo tem no banco."""
+    pid = paciente_do_leito()
+    if not pid:
+        return 0
+    codigo = "\n".join([
+        "import os,sqlite3",
+        "c=sqlite3.connect(os.getenv('UPP_DB_PATH','/data/dados.db'))",
+        f"p={pid!r}",
+        "print(c.execute('SELECT COUNT(*) FROM grade WHERE paciente_id=?',(p,)).fetchone()[0])",
+    ])
+    rc, saida = no_container(codigo)
+    try:
+        return int(saida.splitlines()[-1]) if rc == 0 else 0
+    except ValueError:
+        return 0
+
+
+def amostras_no_arquivo() -> int:
+    return len([x for x in DADOS.read_text(encoding="utf-8").splitlines() if x.strip()])
+
+
+def abrir_aparelho(porta_serial: str):
+    """Envelope da serial com eco na tela — o log do ESP32 É parte da demo."""
+    from scripts.esp32_bancada import Esp32
+
+    aparelho = Esp32(porta_serial)
+    original = aparelho._ler_linha
+
+    def espelhar():
+        linha = original()
+        if linha:
+            print(f"  \033[90m[esp32]\033[0m {linha}", flush=True)
+        return linha
+
+    aparelho._ler_linha = espelhar  # type: ignore[method-assign]
+    return aparelho
+
+
+def acordar(aparelho, zerar: bool = True) -> None:
+    """Reinicia o aparelho e (opcionalmente) apaga o checkpoint.
+
+    `zerar=False` é o que faz os atos de resiliência valerem: sem apagar o
+    checkpoint, o CMD_START seguinte tem que RETOMAR de onde parou — que é
+    justamente o comportamento em julgamento.
+    """
+    from scripts.esp32_bancada import CHECKPOINT_ZERADO, NA_REDE, PRONTO
+
+    aparelho.reiniciar()
+    aparelho.esperar(PRONTO, timeout=30)
+    aparelho.esperar(NA_REDE, timeout=90)
+    if zerar:
+        aparelho.comandar("CMD_RESET")
+        aparelho.esperar(CHECKPOINT_ZERADO, timeout=20)
+
+
 def ato1(porta_serial: str, manual: bool) -> int:
     titulo("ATO 1 — O DADO É REAL")
     print(f"  Projete: {base_url()}/  e este terminal, lado a lado.\n")
@@ -505,26 +565,270 @@ def ato1(porta_serial: str, manual: bool) -> int:
     return 1
 
 
+def ato2(porta_serial: str, manual: bool) -> int:
+    """Queda de energia no meio do envio.
+
+    É o ato com mais densidade de engenharia: reproduz, ao vivo, o defeito que
+    este projeto corrigiu — o checkpoint gravava a posição LIDA em vez da
+    ENTREGUE, e o replay retomava DEPOIS do evento que nunca chegou, perdendo em
+    silêncio justamente a amostra que falhou.
+    """
+    from scripts.esp32_bancada import CHECKPOINT_GRAVADO, FIM, RETOMANDO, Esp32
+
+    titulo("ATO 2 — CAI A ENERGIA")
+    esperadas = amostras_no_arquivo()
+    limpar_leito()
+
+    aparelho = abrir_aparelho(porta_serial)
+    try:
+        acordar(aparelho)
+        aparelho.comandar("CMD_START")
+        aparelho.esperar(r"\[PACIENTE\] Vinculado a", timeout=90)
+        print("\n  \033[1mDiga:\033[0m ele está enviando. Vou cortar a energia no meio.\n")
+        aparelho.esperar(r"\[ACK\] seq=5", timeout=180)
+
+        # `[ACK]` não significa "checkpoint gravado": sobre WebSocket quem
+        # imprime é o callback do socket, e a gravação vem uma volta de loop
+        # depois. Cortar a energia dentro dessa janela pega o SPIFFS no meio da
+        # escrita — o aparelho religa e recomeça do zero, o que é correto mas
+        # arruinaria a cena.
+        aparelho.esperar(CHECKPOINT_GRAVADO, timeout=30)
+        parciais = len(Esp32.acks(aparelho.log))
+        entregues = grade_do_leito()
+        ok(f"{parciais} amostras confirmadas, {entregues} já no banco")
+
+        if manual:
+            input("\n  >> ARRANQUE O CABO do ESP32 agora, recoloque, e tecle ENTER... ")
+            aparelho.serial.reset_input_buffer()
+            from scripts.esp32_bancada import NA_REDE, PRONTO
+
+            aparelho.esperar(PRONTO, timeout=60)
+            aparelho.esperar(NA_REDE, timeout=90)
+        else:
+            print("\n  >> cortando a energia (linha EN)...\n")
+            acordar(aparelho, zerar=False)
+
+        # Sem CMD_RESET: tem que RETOMAR.
+        aparelho.comandar("CMD_START")
+        aparelho.esperar(RETOMANDO, timeout=90)
+        ok("o aparelho retomou do checkpoint, não do início")
+        aparelho.coletar_ate(FIM, timeout=300)
+    finally:
+        aparelho.fechar()
+
+    time.sleep(3)
+    total = grade_do_leito()
+    if total == esperadas:
+        ok(f"{total} de {esperadas} amostras no banco — nenhuma perdida, nenhuma duplicada")
+        print("\n  \033[1mDiga:\033[0m o checkpoint guarda o que foi ENTREGUE, não o que foi lido.")
+        print("  Por isso a amostra que estava em voo quando a energia caiu foi reenviada,")
+        print("  e a chave primária da grade recusou a duplicata.")
+        return 0
+    erro(f"{total} de {esperadas} amostras no banco")
+    return 1
+
+
+def ato3(porta_serial: str) -> int:
+    """O servidor cai e volta. O aparelho insiste; nada se perde."""
+    from scripts.esp32_bancada import FIM, Esp32
+
+    titulo("ATO 3 — CAI O SERVIDOR")
+    esperadas = amostras_no_arquivo()
+    limpar_leito()
+
+    aparelho = abrir_aparelho(porta_serial)
+    try:
+        acordar(aparelho)
+        aparelho.comandar("CMD_START")
+        aparelho.esperar(r"\[PACIENTE\] Vinculado a", timeout=90)
+        aparelho.esperar(r"\[ACK\] seq=3", timeout=180)
+
+        print("\n  \033[1mDiga:\033[0m agora eu derrubo o servidor, com o sensor transmitindo.\n")
+        subprocess.run(["docker", "stop", CONTAINER], capture_output=True, text=True)
+        ok("container parado")
+
+        # O firmware usa `tentativasMax = 0` (infinito) com backoff limitado:
+        # numa ala ninguém está olhando o serial do ESP32 para religá-lo na mão.
+        aparelho.esperar(r"\[FALHA\]|\[WS\] Desconectado|\[INFO\] Reenviando", timeout=120)
+        ok("o aparelho detectou a queda e começou a insistir")
+        aparelho.drenar(8)
+
+        print("\n  >> religando o servidor...\n")
+        subprocess.run(["docker", "start", CONTAINER], capture_output=True, text=True)
+        limite = time.time() + 120
+        while time.time() < limite:
+            r = subprocess.run(["docker", "inspect", "-f", "{{.State.Health.Status}}", CONTAINER],
+                               capture_output=True, text=True)
+            if r.stdout.strip() == "healthy":
+                break
+            aparelho.drenar(2)
+        ok("container de volta")
+
+        aparelho.coletar_ate(FIM, timeout=420)
+    finally:
+        aparelho.fechar()
+
+    time.sleep(3)
+    total = grade_do_leito()
+    if total == esperadas:
+        ok(f"{total} de {esperadas} amostras no banco — a indisponibilidade só atrasou")
+        print("\n  \033[1mDiga:\033[0m o dispositivo não desiste. O backoff tem teto, então ele")
+        print("  bate no servidor uma vez por minuto até ele voltar — em vez de parar")
+        print("  de vez e esperar alguém ir até o leito apertar um botão.")
+        return 0
+    erro(f"{total} de {esperadas} amostras no banco")
+    return 1
+
+
+def ato4() -> int:
+    """A enfermeira está no elevador. Guiado: modo avião é no aparelho dela.
+
+    Único ato que não dá para automatizar de ponta a ponta — e nem deveria: o
+    ponto é justamente uma pessoa agindo com a rede fora. O runner verifica o
+    desfecho.
+    """
+    titulo("ATO 4 — A ENFERMEIRA ESTÁ NO ELEVADOR")
+
+    abertos = [a for a in alertas_do_leito() if a.get("status") in (None, "aberto")]
+    if not abertos:
+        erro("não há alerta aberto para reconhecer")
+        aviso("rode antes: python -m scripts.demo ato1 --porta COM3")
+        return 1
+    ok(f"alerta aberto desde {abertos[0].get('inicio')}")
+
+    print(f"""
+  \033[1mNo celular/tablet\033[0m, com a sessão aberta em {base_url()}/ :
+
+    1. ative o MODO AVIÃO
+    2. toque em "Reconhecer" no alerta de {PACIENTE_DEMO}
+    3. mostre que a tela aceitou — a ação foi para a fila local
+    4. desative o modo avião
+
+  \033[1mDiga:\033[0m Wi-Fi hospitalar cai em corredor, escada e elevador. Não é caso
+  de borda, é a topologia. Sem a fila, quem marcou quatro pacientes numa zona
+  morta perdia os quatro — e sem saber quais.
+""")
+    input("  >> tecle ENTER depois de tirar do modo avião... ")
+
+    print("\n  aguardando a fila drenar...")
+    limite = time.time() + 90
+    while time.time() < limite:
+        reconhecidos = [a for a in alertas_do_leito() if a.get("status") == "reconhecido"]
+        if reconhecidos:
+            ok("a ação registrada offline chegou ao servidor")
+            print("\n  \033[1mDiga:\033[0m o reenvio é seguro porque o `alert_id` é chave natural")
+            print("  (paciente, início) e o servidor é idempotente — reconhecer duas vezes")
+            print("  é um no-op, não um registro clínico duplicado.")
+            return 0
+        time.sleep(3)
+    erro("a ação não chegou ao servidor em 90s")
+    aviso("estados vistos: " + ", ".join(sorted({str(a.get('status')) for a in alertas_do_leito()})))
+    return 1
+
+
+def _recriar_com_token(token: str) -> None:
+    subprocess.run(
+        ["docker", "compose", "up", "-d", "--force-recreate", "app"],
+        cwd=RAIZ, capture_output=True, text=True,
+        env={**os.environ, "UPP_DEVICE_TOKEN": token},
+    )
+    limite = time.time() + 120
+    while time.time() < limite:
+        r = subprocess.run(["docker", "inspect", "-f", "{{.State.Health.Status}}", CONTAINER],
+                           capture_output=True, text=True)
+        if r.stdout.strip() == "healthy":
+            return
+        time.sleep(2)
+    raise SystemExit("o container não voltou a ficar saudável")
+
+
+def ato5(porta_serial: str) -> int:
+    """Alguém errou o token. O aparelho insiste em vez de descartar."""
+    from scripts.esp32_bancada import FIM, Esp32
+
+    titulo("ATO 5 — ALGUÉM ERROU A CREDENCIAL")
+    esperadas = amostras_no_arquivo()
+    limpar_leito()
+
+    print("\n  >> configurando o servidor para exigir um token que o aparelho não tem...\n")
+    _recriar_com_token("segredo-que-o-aparelho-nao-conhece")
+    ok("servidor exigindo credencial")
+
+    aparelho = abrir_aparelho(porta_serial)
+    try:
+        acordar(aparelho)
+        aparelho.comandar("CMD_START")
+        aparelho.esperar(r"ws error=invalid_device_token|HTTP=401|status=401", timeout=120)
+        recusas = aparelho.drenar(15)
+        if Esp32.acks(recusas) or Esp32.descartes(recusas):
+            erro("houve ACK ou DESCARTE com credencial inválida")
+            return 1
+        contas = aparelho.status()
+        ok(f"recusado: {contas['falhas']} falhas, {contas['descartados']} descartes, "
+           f"{contas['enviados']} enviados")
+        print("\n  \033[1mDiga:\033[0m ele NÃO descarta. 401 é erro de configuração, não amostra")
+        print("  ruim — descartar aqui jogaria fora dado clínico por engano de operação.\n")
+
+        print("  >> alguém corrige o .env e reinicia...\n")
+        _recriar_com_token("")
+        aparelho.coletar_ate(FIM, timeout=420)
+    finally:
+        aparelho.fechar()
+
+    time.sleep(3)
+    total = grade_do_leito()
+    if total == esperadas:
+        ok(f"{total} de {esperadas} amostras no banco — a recusa só atrasou")
+        print("\n  \033[1mDiga:\033[0m o aparelho se recuperou sozinho. Sem visita ao leito,")
+        print("  sem reflash, sem ninguém perceber que ficou parado.")
+        return 0
+    erro(f"{total} de {esperadas} amostras no banco")
+    return 1
+
+
 def roteiro() -> None:
     titulo("ROTEIRO")
     print(f"""
   Antes  : python -m scripts.demo preparar --porta COM3
            python -m scripts.demo checar   --porta COM3
-  Tela   : {base_url()}/   (Ctrl+Shift+R antes de começar)
+  Tela   : {base_url()}/   (Ctrl+Shift+R antes de comecar)
+  Depois : python -m scripts.demo perfil-bancada --porta COM3
 
-  ATO 1  O dado é real
+  Cada ato cronometra a si mesmo e imprime a duracao no fim — ensaie uma vez e
+  use os numeros reais para pedir tempo na banca, em vez de estimar.
+
+  Cada ato limpa o leito e reinicia o container antes de comecar, entao pode
+  ser repetido a vontade e rodado em qualquer ordem — menos o ato 4, que
+  precisa de um alerta aberto (rode o ato 1 antes).
+
+  ATO 1  O dado e real
          python -m scripts.demo ato1 --porta COM3
-         O alerta nasce num sensor físico e aparece sem ninguém tocar na tela.
+         Alerta nasce num sensor fisico e aparece sem ninguem tocar na tela.
 
-  Os atos 2 a 5 (queda de energia, servidor fora do ar, fila offline e token
-  errado) ainda não estão implementados neste runner.
+  ATO 2  Cai a energia
+         python -m scripts.demo ato2 --porta COM3 [--manual]
+         Religa e retoma da amostra exata. Com --manual, voce arranca o cabo.
+
+  ATO 3  Cai o servidor
+         python -m scripts.demo ato3 --porta COM3
+         O aparelho insiste com backoff; nada se perde.
+
+  ATO 4  A enfermeira esta no elevador
+         python -m scripts.demo ato4
+         Modo aviao no celular, reconhece, volta a rede, sincroniza.
+
+  ATO 5  Alguem errou a credencial
+         python -m scripts.demo ato5 --porta COM3
+         401 nao e amostra ruim: ele insiste e se recupera sozinho.
+
+  Fechamento: rode a suite. Tudo que a banca viu, o CI verifica a cada push.
 """)
 
 
 def main(argv: list[str] | None = None) -> int:
     p = argparse.ArgumentParser(description="Demonstração ao vivo do sistema")
     p.add_argument("acao", choices=["checar", "preparar", "perfil-demo", "perfil-bancada",
-                                    "ato1", "roteiro"])
+                                    "ato1", "ato2", "ato3", "ato4", "ato5", "roteiro"])
     p.add_argument("--porta", default=os.getenv("UPP_ESP32_PORT"), help="serial do ESP32 (ex.: COM3)")
     p.add_argument("--manual", action="store_true",
                    help="espera você mexer no aparelho em vez de comandá-lo")
@@ -544,11 +848,23 @@ def main(argv: list[str] | None = None) -> int:
     if a.acao == "roteiro":
         roteiro()
         return 0
-    if a.acao == "ato1":
-        if not a.porta:
+    if a.acao.startswith("ato"):
+        if a.acao != "ato4" and not a.porta:
             print("informe --porta (ou UPP_ESP32_PORT)", file=sys.stderr)
             return 2
-        return ato1(a.porta, a.manual)
+        comecou = time.time()
+        codigo = {
+            "ato1": lambda: ato1(a.porta, a.manual),
+            "ato2": lambda: ato2(a.porta, a.manual),
+            "ato3": lambda: ato3(a.porta),
+            "ato4": ato4,
+            "ato5": lambda: ato5(a.porta),
+        }[a.acao]()
+        # Cronometrado, e nao estimado: e este numero que diz quanto tempo pedir
+        # na banca. O ato 4 inclui o tempo em que alguem esteve mexendo no
+        # celular, entao so o dele nao serve para planejamento.
+        titulo(f"{a.acao} levou {time.time() - comecou:.0f}s")
+        return codigo
     return 2
 
 
