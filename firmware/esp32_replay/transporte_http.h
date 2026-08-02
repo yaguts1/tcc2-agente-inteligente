@@ -50,6 +50,14 @@ inline bool transporteObterPacienteImpl() {
   adicionarTokenDispositivo();
   int status = g_http.GET();
   if (status != 200) {
+    // Conta como falha, igual a uma recusa no envio.
+    //
+    // Só o caminho de ENVIO incrementava, então um aparelho preso aqui — que é
+    // onde ele fica com token errado, porque esta rota também exige o token —
+    // reportava `falhas=0 enviados=0`: indistinguível de um que acabou de ligar
+    // e nunca começou. É o estado que mais importa enxergar, porque é o da
+    // configuração errada, e era o único invisível.
+    g_status.totalFalhas++;
     registrarLog("[ERRO] Falha ao obter paciente da cama. HTTP=" + String(status));
     g_http.end();
     return false;

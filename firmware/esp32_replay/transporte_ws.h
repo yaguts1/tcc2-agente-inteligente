@@ -149,6 +149,9 @@ inline bool transporteObterPacienteImpl() {
 #endif
   int status = http.GET();
   if (status != 200) {
+    // Mesmo motivo do transporte HTTP: um aparelho preso na consulta do
+    // paciente precisa aparecer na contabilidade. Ver `transporte_http.h`.
+    g_status.totalFalhas++;
     registrarLog("[ERRO] Falha ao obter paciente da cama. HTTP=" + String(status));
     http.end();
     return false;

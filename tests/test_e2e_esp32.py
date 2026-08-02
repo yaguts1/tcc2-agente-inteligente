@@ -87,6 +87,19 @@ PRONTO = r"\[SETUP\] ESP32 Replay"
 NA_REDE = r"\[WIFI\] Connected IP="
 CHECKPOINT_ZERADO = r"\[INFO\] Checkpoint zerado"
 RETOMANDO = r"\[INFO\] Retomando offset \d+"
+# Único marcador que significa "o ponto de retomada está no disco". Ver a nota
+# em `salvarCheckpoint()`: `[ACK]` não serve para isso.
+CHECKPOINT_GRAVADO = r"\[CKPT\] offset=\d+"
+# A recusa por credencial cai em pontos DIFERENTES conforme o transporte, e as
+# duas contam:
+#   WebSocket — no handshake, antes de qualquer amostra sair
+#               (`[FALHA] ws error=invalid_device_token`);
+#   HTTP      — no primeiro GET autenticado, a consulta do paciente pela cama
+#               (`[ERRO] Falha ao obter paciente da cama. HTTP=401`), porque
+#               essa rota também exige o token.
+# Em ambos o dispositivo fica preso ANTES de enviar, que é o comportamento
+# desejado: sem saber de quem é a amostra, ele não envia.
+TOKEN_RECUSADO = r"ws error=invalid_device_token|HTTP=401|status=401"
 
 # O fim de verdade é "Replay finalizado", NÃO "Fim do arquivo".
 #
@@ -183,6 +196,11 @@ class BackendNaLan:
     db_path: str
     host: str
     porta: int
+    # Token exigido de quem envia amostra. Vazio = verificação desligada, que é
+    # o estado da bancada. Mutável entre `parar()` e `subir()`: é assim que o
+    # teste de credencial simula alguém corrigindo a configuração do servidor
+    # com o dispositivo já no ar.
+    token: str = ""
     _proc: subprocess.Popen | None = field(default=None, repr=False)
 
     @property
@@ -201,7 +219,7 @@ class BackendNaLan:
             # sobrasse do ambiente do shell, a ingestão passaria a exigir um
             # header que o firmware não manda, e o sintoma seria 401 tratado
             # como TRANSIENTE — o dispositivo tentando para sempre, em silêncio.
-            "UPP_DEVICE_TOKEN": "",
+            "UPP_DEVICE_TOKEN": self.token,
         }
         self._proc = subprocess.Popen(
             [sys.executable, "-m", "uvicorn", "interface.web:app",
@@ -365,6 +383,22 @@ class Esp32:
         self.log.append(linha)
         return linha
 
+    def status(self, timeout: float = 15.0) -> dict[str, int]:
+        """A contabilidade do próprio aparelho, via `CMD_STATUS`.
+
+        Contar linhas `[ACK]` no log mede o que o teste conseguiu ler da serial;
+        isto mede o que o dispositivo acha que fez. Quando os dois discordam, o
+        interessante é a diferença — um ACK perdido no buffer da serial não é a
+        mesma coisa que uma amostra não entregue.
+        """
+        self.comandar("CMD_STATUS")
+        linha = self.esperar(r"\[STATUS\] ", timeout=timeout)
+        campos: dict[str, int] = {}
+        for par in linha.split("[STATUS] ", 1)[1].split():
+            chave, _, valor = par.partition("=")
+            campos[chave] = int(valor)
+        return campos
+
     # -- leitura do log ----------------------------------------------------
     @staticmethod
     def acks(linhas: list[str]) -> list[int]:
@@ -445,6 +479,14 @@ def test_replay_completo_chega_ao_banco(backend, paciente, esp32_zerado):
     time.sleep(2)  # a ingestão termina de gravar depois do ACK
     assert backend.amostras_de(paciente) == len(esperadas)
 
+    # A contabilidade do próprio dispositivo tem que fechar com a do banco.
+    # Sem isto, um descarte silencioso passaria: o replay terminaria "com
+    # sucesso", com menos linhas na `grade` e ninguém somando as duas contas.
+    contas = esp32_zerado.status()
+    assert contas["enviados"] == len(esperadas)
+    assert contas["descartados"] == 0
+    assert contas["ativo"] == 0, "o replay tem que ter terminado"
+
 
 def test_checkpoint_zerado_permite_repetir_o_replay(backend, paciente, esp32_zerado):
     """O defeito que este trabalho corrigiu, verificado no aparelho.
@@ -497,15 +539,16 @@ def test_reboot_no_meio_do_replay_retoma_da_amostra_certa(backend, paciente, esp
     # Sobre WebSocket quem imprime essa linha é o callback do socket, assim que
     # o quadro chega (`transporte_ws.h`). Só na volta seguinte do loop a máquina
     # de estados trata o desfecho e chama `confirmarEventoAtual()` ->
-    # `salvarCheckpoint()`. Cortar a energia dentro dessa janela pegava o SPIFFS
-    # no meio da gravação e o arquivo de checkpoint não sobrevivia — o aparelho
-    # religava e recomeçava do zero.
+    # `salvarCheckpoint()`. Cortar a energia dentro dessa janela pega o SPIFFS
+    # no meio da gravação e o checkpoint não sobrevive — o aparelho religa e
+    # recomeça do zero.
     #
-    # Isso é comportamento correto do firmware (o dado não se perde: o servidor
-    # recusa a duplicata pela PK da `grade`), mas torna o instante do reboot uma
-    # corrida. Esperar a gravação assentar é o que faz este teste medir o que se
-    # propõe a medir — a RETOMADA — em vez de medir o relógio.
-    esp32_zerado.drenar(2.0)
+    # Isso é comportamento correto (o dado não se perde: a PK da `grade` recusa
+    # a duplicata), mas torna o instante do reboot uma corrida. Esperar `[CKPT]`
+    # — que só sai DEPOIS do `close()` do arquivo — é o que faz este teste medir
+    # a RETOMADA em vez de medir o relógio. A primeira versão dormia 2 s e
+    # torcia.
+    esp32_zerado.esperar(CHECKPOINT_GRAVADO, timeout=30)
 
     # Puxar o fio no meio do voo.
     esp32_zerado.reiniciar()
@@ -520,6 +563,53 @@ def test_reboot_no_meio_do_replay_retoma_da_amostra_certa(backend, paciente, esp
     assert len(instantes) == total, "o reboot não pode custar nem duplicar amostra"
     assert len(set(instantes)) == total, "e nenhuma pode chegar duas vezes"
     assert Esp32.acks(parciais), "o teste só vale se algo tinha sido entregue antes do reboot"
+
+
+def test_token_errado_faz_o_aparelho_insistir_ate_alguem_corrigir(backend, paciente, esp32_zerado):
+    """Credencial errada é erro de OPERAÇÃO, e o firmware trata como tal.
+
+    `classificarResposta` põe 401/403 em TRANSIENTE de propósito, e
+    `classificarErroWebSocket` faz o mesmo com `invalid_device_token`: um
+    dispositivo preso a um leito não pode descartar amostra clínica porque
+    alguém errou o token no `.env`. Ele insiste, e se recupera sozinho quando a
+    configuração for corrigida — sem visita ao leito, sem reflash.
+
+    O ROADMAP registrava este caminho como sem cobertura de hardware. É o único
+    teste daqui que exercita a ingestão autenticada de ponta a ponta.
+    """
+    total = len(_linhas_do_arquivo())
+
+    # O servidor passa a exigir um token que o aparelho não tem.
+    backend.parar()
+    backend.token = "segredo-que-o-aparelho-nao-conhece"
+    backend.subir()
+
+    esp32_zerado.comandar("CMD_START")
+    esp32_zerado.esperar(TOKEN_RECUSADO, timeout=90)
+    recusado = esp32_zerado.drenar(15)
+
+    assert not Esp32.acks(recusado), "sem credencial válida nada pode ser aceito"
+    assert not Esp32.descartes(recusado), (
+        "e nada pode ser DESCARTADO: token errado é configuração, não amostra ruim"
+    )
+    assert backend.amostras_de(paciente) == 0
+
+    contas = esp32_zerado.status()
+    assert contas["falhas"] > 0, "o aparelho tem que estar contando as recusas"
+    assert contas["descartados"] == 0
+    assert contas["enviados"] == 0
+
+    # Alguém corrige o `.env` e reinicia o servidor. O dispositivo, que ficou
+    # tentando esse tempo todo, tem que voltar sozinho.
+    backend.parar()
+    backend.token = ""
+    backend.subir()
+
+    esp32_zerado.coletar_ate(FIM, timeout=300)
+    time.sleep(2)
+    assert backend.amostras_de(paciente) == total, (
+        "corrigida a configuração, o arquivo inteiro tem que chegar — a recusa só atrasa"
+    )
 
 
 def test_queda_do_servidor_no_meio_do_replay_nao_perde_amostra(backend, paciente, esp32_zerado):

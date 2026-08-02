@@ -167,6 +167,26 @@ Enquanto o ESP32 está rodando, você pode enviar comandos via Serial:
 - `CMD_START` - Iniciar replay (retoma do checkpoint, se houver)
 - `CMD_STOP` - Parar replay
 - `CMD_RESET` - Apagar o checkpoint; o próximo `CMD_START` recomeça do início
+- `CMD_STATUS` - Imprimir a contabilidade do aparelho numa linha
+
+```
+[STATUS] estado=4 ativo=0 seq=24 enviados=24 falhas=0 descartados=0 offset=4017
+```
+
+Os totais **sobrevivem ao fim do replay** — é depois de terminar que alguém
+pergunta como foi. Só um `CMD_START` novo os zera. (Antes, `resetarReplay()`
+apagava estado e contabilidade juntos, e o estado FINALIZADO o chama: o aparelho
+esquecia o que tinha feito no instante em que terminava de fazer.)
+
+### Duas linhas de log que valem como contrato
+
+- `[CKPT] offset=N` — sai **depois** do `close()` do arquivo de checkpoint, e é
+  o único sinal de que o ponto de retomada está no disco. `[ACK] seq=N` não
+  serve para isso: sobre WebSocket quem a imprime é o callback do socket, e a
+  gravação acontece uma volta de loop depois.
+- `[INFO] Replay finalizado` — o fim de verdade. `[INFO] Fim do arquivo` sai
+  quando a última linha foi lida, com o replay ainda ativo; um `CMD_START`
+  enviado nessa janela é recusado com "Replay ja em execucao".
 
 ### Por que `CMD_RESET` existe
 

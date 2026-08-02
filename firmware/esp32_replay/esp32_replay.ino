@@ -44,6 +44,10 @@ void iniciarReplay() {
   if (g_status.replayAtivo) { registrarLog("[INFO] Replay ja em execucao"); return; }
   registrarLog("[INFO] Iniciando replay");
   resetarReplay();
+  // Execução nova, contabilidade nova. `resetarReplay()` preserva os totais
+  // (para CMD_STATUS poder responder depois do fim); zerar é decisão de quem
+  // começa outra rodada, não efeito colateral de terminar a anterior.
+  zerarContadores();
   g_status.replayAtivo = true;
   atualizarEstado(ReplayState::OCIOSO);
 }
@@ -60,11 +64,29 @@ void interromperReplay() {
 // das duas cópias ficaria para trás, que é exatamente a história deste
 // firmware.
 static bool interpretarComando(const String &texto, ReplayCommand &destino) {
-  if (texto.equalsIgnoreCase("CMD_START"))      destino = ReplayCommand::CMD_START;
-  else if (texto.equalsIgnoreCase("CMD_STOP"))  destino = ReplayCommand::CMD_STOP;
-  else if (texto.equalsIgnoreCase("CMD_RESET")) destino = ReplayCommand::CMD_RESET;
+  if (texto.equalsIgnoreCase("CMD_START"))       destino = ReplayCommand::CMD_START;
+  else if (texto.equalsIgnoreCase("CMD_STOP"))   destino = ReplayCommand::CMD_STOP;
+  else if (texto.equalsIgnoreCase("CMD_RESET"))  destino = ReplayCommand::CMD_RESET;
+  else if (texto.equalsIgnoreCase("CMD_STATUS")) destino = ReplayCommand::CMD_STATUS;
   else return false;
   return true;
+}
+
+// Uma linha, campos `chave=valor`, sempre os mesmos e sempre na mesma ordem.
+//
+// Formato feito para ser lido por gente numa bancada E por `str.split` do outro
+// lado da serial, sem JSON: o aparelho já gasta RAM demais com ArduinoJson no
+// caminho de envio, e um log que exige parser é um log que ninguém lê no
+// terminal às três da manhã.
+static void publicarStatus() {
+  registrarLog(
+      "[STATUS] estado=" + String(static_cast<int>(g_status.estadoAtual)) +
+      " ativo=" + String(g_status.replayAtivo ? 1 : 0) +
+      " seq=" + String(g_status.seqAtual) +
+      " enviados=" + String(g_status.totalEnviados) +
+      " falhas=" + String(g_status.totalFalhas) +
+      " descartados=" + String(g_status.totalDescartados) +
+      " offset=" + String(g_offsetConfirmado));
 }
 
 void tratarComandoSerial() {
@@ -89,6 +111,12 @@ void processarReplay() {
   tratarComandoSerial();
   if (g_comandoPendente == ReplayCommand::CMD_START) { iniciarReplay(); g_comandoPendente = ReplayCommand::CMD_NONE; }
   else if (g_comandoPendente == ReplayCommand::CMD_STOP) { interromperReplay(); g_comandoPendente = ReplayCommand::CMD_NONE; }
+  else if (g_comandoPendente == ReplayCommand::CMD_STATUS) {
+    // Antes do `return` de replay inativo: perguntar o estado de um aparelho
+    // parado é justamente o caso em que a resposta interessa.
+    publicarStatus();
+    g_comandoPendente = ReplayCommand::CMD_NONE;
+  }
   else if (g_comandoPendente == ReplayCommand::CMD_RESET) {
     // Parar primeiro: `interromperReplay` fecha o arquivo aberto, e apagar o
     // checkpoint com um replay em curso deixaria o offset em RAM apontando

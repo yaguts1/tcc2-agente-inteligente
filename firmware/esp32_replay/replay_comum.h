@@ -194,7 +194,21 @@ inline bool abrirArquivoEventos() {
 inline void salvarCheckpoint() {
   if (!g_arquivoEventos) return;
   File f = SPIFFS.open(CAMINHO_CHECKPOINT, "w");
-  if (f) { f.print(String(g_offsetConfirmado)); f.close(); }
+  if (!f) { registrarLog("[ERRO] Nao consegui gravar o checkpoint"); return; }
+  f.print(String(g_offsetConfirmado));
+  f.close();
+  // O ponto de retomada agora esta NO DISCO — e essa e a unica linha do log que
+  // diz isso.
+  //
+  // "[ACK] seq=N" nao serve para saber: sobre WebSocket quem a imprime e o
+  // callback do socket, no instante em que o quadro chega, e a gravacao so
+  // acontece uma volta de loop depois, quando a maquina de estados trata o
+  // desfecho. Quem corta a energia entre as duas pega o SPIFFS no meio da
+  // escrita, e o arquivo nao sobrevive.
+  //
+  // Sem este log, a unica forma de esperar a gravacao assentar era dormir um
+  // tempo arbitrario e torcer — foi o que deixou o teste de reboot instavel.
+  registrarLog("[CKPT] offset=" + String(g_offsetConfirmado));
 }
 
 // Apaga o ponto de retomada, para o próximo CMD_START recomeçar do início do
@@ -277,9 +291,33 @@ inline ResultadoEnvio classificarResposta(int status) {
   }
 }
 
+// Zera a contabilidade. Só uma execução NOVA faz isso — ver `resetarReplay`.
+inline void zerarContadores() {
+  g_status.totalEnviados = 0;
+  g_status.totalFalhas = 0;
+  g_status.totalDescartados = 0;
+  g_status.ultimaRespostaMs = 0;
+}
+
 inline void resetarReplay() {
   if (g_arquivoEventos) g_arquivoEventos.close();
+  // Os totais sobrevivem a isto de propósito.
+  //
+  // `g_status = ReplayStatus{}` zerava estado de execução e contabilidade
+  // juntos, e o estado FINALIZADO chama esta função — então os totais eram
+  // destruídos no exato instante em que o replay terminava. CMD_STATUS depois
+  // de uma execução respondia `enviados=0 descartados=0`, que é indistinguível
+  // de "não fiz nada" e de "descartei tudo em silêncio". O aparelho esquecia o
+  // que tinha acabado de fazer, que é justamente quando alguém pergunta.
+  const uint32_t enviados    = g_status.totalEnviados;
+  const uint32_t falhas      = g_status.totalFalhas;
+  const uint32_t descartados = g_status.totalDescartados;
+  const uint32_t ultima      = g_status.ultimaRespostaMs;
   g_status = ReplayStatus{};
+  g_status.totalEnviados    = enviados;
+  g_status.totalFalhas      = falhas;
+  g_status.totalDescartados = descartados;
+  g_status.ultimaRespostaMs = ultima;
   g_eventoAtual = EventoReplay{};
   g_eventoDisponivel = false;
   g_pacienteSincronizado = false;

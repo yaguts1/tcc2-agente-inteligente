@@ -46,6 +46,10 @@ enum class ReplayCommand {
   // arquivo. Sem isto não há como repetir um replay — depois do primeiro
   // término o offset gravado aponta para o EOF e o dispositivo fica mudo.
   CMD_RESET,
+  // Imprime `ReplayStatus` numa linha. O aparelho já contava envios, falhas e
+  // descartes; nada disso saía da RAM, então a única forma de saber o que ele
+  // achava que tinha feito era somar linhas de log à mão.
+  CMD_STATUS,
 };
 
 // -----------------------------------------
