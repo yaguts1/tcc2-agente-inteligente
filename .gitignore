@@ -236,3 +236,12 @@ tmp_*.py
 
 # Artefatos de build do firmware (PlatformIO)
 firmware/.pio/
+
+# Bancada de E2E de navegador (Playwright).
+# Banco descartavel recriado a cada rodada por scripts/preparar_bancada_e2e.py,
+# e os artefatos de falha (rastro, video, screenshot). Nada aqui e fonte.
+.e2e/
+frontend/test-results/
+frontend/playwright-report/
+frontend/blob-report/
+frontend/e2e/.auth/
