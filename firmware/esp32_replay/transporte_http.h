@@ -27,7 +27,7 @@ inline void adicionarTokenDispositivo() {
 }
 
 inline void configurarPadraoDoTransporte() {
-  if (g_config.endpoint.isEmpty()) g_config.endpoint = String("/api") + API_PREFIXO + "/eventos";
+  if (g_config.endpoint.isEmpty()) g_config.endpoint = rotaApi("/eventos");
 }
 
 inline bool transporteIniciarImpl() {
@@ -43,7 +43,7 @@ inline bool transporteObterPacienteImpl() {
     conectarWiFi();
     if (WiFi.status() != WL_CONNECTED) { registrarLog("[ERRO] Sem Wi-Fi para consultar paciente"); return false; }
   }
-  String url = montarUrl(String("/api") + API_PREFIXO + "/pacientes/cama/" + urlEncode(g_config.camaId));
+  String url = montarUrl(rotaApi("/pacientes/cama/" + urlEncode(g_config.camaId)));
   registrarLog("[PACIENTE] Consultando " + url);
   g_http.begin(g_clienteTcp, url);
   g_http.addHeader("Accept", "application/json");

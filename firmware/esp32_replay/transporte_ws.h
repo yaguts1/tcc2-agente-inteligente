@@ -35,7 +35,7 @@ unsigned long    g_enviadoEmMs = 0;
 static const unsigned long TIMEOUT_ACK_MS = 15000;
 
 inline void configurarPadraoDoTransporte() {
-  if (g_config.endpoint.isEmpty()) g_config.endpoint = String("/api") + API_PREFIXO + "/ws/eventos";
+  if (g_config.endpoint.isEmpty()) g_config.endpoint = rotaApi("/ws/eventos");
 }
 
 inline void aoEventoWebSocket(WStype_t tipo, uint8_t *payload, size_t length) {
@@ -140,7 +140,7 @@ inline bool transporteObterPacienteImpl() {
     if (WiFi.status() != WL_CONNECTED) { registrarLog("[ERRO] Sem Wi-Fi para consultar paciente"); return false; }
   }
   HTTPClient http;
-  String url = montarUrl("/api/pacientes/cama/" + urlEncode(g_config.camaId));
+  String url = montarUrl(rotaApi("/pacientes/cama/" + urlEncode(g_config.camaId)));
   registrarLog("[PACIENTE] Consultando " + url);
   http.begin(g_clienteTcp, url);
   http.addHeader("Accept", "application/json");

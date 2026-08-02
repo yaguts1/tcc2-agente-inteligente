@@ -29,6 +29,22 @@
 #define API_PREFIXO ""
 #endif
 
+// Prefixo de MONTAGEM da aplicacao, espelhando o `APP_PREFIX` do servidor.
+//
+// Sao coisas diferentes e ficam em posicoes diferentes da URL:
+//
+//     APP_PREFIXO   /api   API_PREFIXO   /eventos
+//        /TCC       /api      /v1        /eventos
+//
+// O firmware nao tinha o primeiro, entao montava sempre `/api/...` — e o
+// docker-compose deste projeto sobe a aplicacao com `APP_PREFIX=/TCC`. Ou seja:
+// o dispositivo NAO CONSEGUIA falar com a implantacao real, e todo POST voltava
+// 404. Passou despercebido porque os testes de hardware sempre rodaram contra
+// um uvicorn avulso, com prefixo vazio.
+#ifndef APP_PREFIXO
+#define APP_PREFIXO ""
+#endif
+
 #include "esp32_replay.h"
 #include "config.h"
 #include "logica_pura.h"
@@ -118,6 +134,17 @@ inline void conectarWiFi() {
   if (WiFi.status() == WL_CONNECTED) {
     Serial.printf("\n[WIFI] Connected IP=%s\n", WiFi.localIP().toString().c_str());
   }
+}
+
+// Caminho de uma rota da API, com os dois prefixos na ordem certa.
+//
+// Existe uma vez so porque estava escrito a mao em quatro lugares — e as quatro
+// copias ja tinham divergido: `transporteObterPacienteImpl` do WebSocket
+// montava "/api/pacientes/..." SEM o API_PREFIXO que a versao HTTP aplicava.
+// Fixar a versao da API funcionava por HTTP e nao funcionava por WebSocket, em
+// silencio, ate o servidor mudar de contrato.
+inline String rotaApi(const String &sufixo) {
+  return String(APP_PREFIXO) + "/api" + API_PREFIXO + sufixo;
 }
 
 inline String montarUrl(const String &rotaBruta) {

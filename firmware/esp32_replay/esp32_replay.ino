@@ -86,7 +86,16 @@ static void publicarStatus() {
       " enviados=" + String(g_status.totalEnviados) +
       " falhas=" + String(g_status.totalFalhas) +
       " descartados=" + String(g_status.totalDescartados) +
-      " offset=" + String(g_offsetConfirmado));
+      " offset=" + String(g_offsetConfirmado) +
+      // Para ONDE este aparelho acha que está falando.
+      //
+      // Sem isto não há como saber, de fora, qual firmware está gravado — e
+      // "gravei" não é o mesmo que "está lá". Um `pio run -t upload -t uploadfs`
+      // numa chamada só chegou a subir apenas o sistema de arquivos, deixando o
+      // binário antigo no aparelho: ele seguiu falando com a porta e o prefixo
+      // anteriores, e o sintoma foi um WebSocket reconectando em laço, sem uma
+      // linha dizendo o porquê.
+      " alvo=" + g_config.hostServidor + ":" + String(g_config.portaServidor) + g_config.endpoint);
 }
 
 void tratarComandoSerial() {

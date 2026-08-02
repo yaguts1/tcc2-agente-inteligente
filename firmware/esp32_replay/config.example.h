@@ -50,6 +50,22 @@
 // `GET /api/versoes` lista o que o servidor atende.
 #define API_PREFIXO ""
 
+// Prefixo de MONTAGEM da aplicacao — espelha o `APP_PREFIX` do servidor.
+//
+// Nao confundir com API_PREFIXO: sao posicoes diferentes da URL.
+//
+//     APP_PREFIXO   /api   API_PREFIXO   /eventos
+//        "/TCC"     /api      "/v1"      /eventos
+//
+// O docker-compose deste projeto sobe a aplicacao com APP_PREFIX=/TCC, entao
+// para falar com o CONTAINER este valor precisa ser "/TCC". Vazio ("") atende
+// um uvicorn avulso, que e como a bancada de teste roda.
+//
+// Errar aqui da 404 em tudo, e o firmware trata 404 como PERMANENTE: o
+// dispositivo descarta a amostra e segue, sem reclamar.
+#define APP_PREFIXO ""
+
+
 // Token que autentica ESTE dispositivo na ingestão.
 //
 // O X-Device-Id que o firmware envia é escolhido pelo próprio dispositivo —

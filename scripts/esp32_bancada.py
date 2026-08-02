@@ -133,7 +133,7 @@ class Esp32:
         self.log.append(linha)
         return linha
 
-    def status(self, timeout: float = 15.0) -> dict[str, int]:
+    def status(self, timeout: float = 15.0) -> dict[str, int | str]:
         """A contabilidade do próprio aparelho, via `CMD_STATUS`.
 
         Contar linhas `[ACK]` no log mede o que o teste conseguiu ler da serial;
@@ -143,10 +143,13 @@ class Esp32:
         """
         self.comandar("CMD_STATUS")
         linha = self.esperar(r"\[STATUS\] ", timeout=timeout)
-        campos: dict[str, int] = {}
+        campos: dict[str, int | str] = {}
         for par in linha.split("[STATUS] ", 1)[1].split():
             chave, _, valor = par.partition("=")
-            campos[chave] = int(valor)
+            # `alvo` e texto (host:porta/caminho); o resto e contador. Converter
+            # tudo em `int` quebrava assim que o aparelho passou a dizer para
+            # onde fala.
+            campos[chave] = int(valor) if valor.isdigit() else valor
         return campos
 
     # -- leitura do log ----------------------------------------------------
