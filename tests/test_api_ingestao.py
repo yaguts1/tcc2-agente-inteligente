@@ -116,3 +116,63 @@ async def test_grade_jsonl_ruido(api_client):
     assert resp.status_code == 200
     corpo = resp.json()
     assert corpo["ids"]["processados"] == 0
+
+
+class TestEventoOrfaoEPersistido:
+    """Dispositivo que envia ANTES de a cama ter paciente.
+
+    É o estado normal de uma instalação nova, de uma troca de leito, ou do
+    ESP32 energizado cedo demais na bancada. O evento não tem dono ainda, então
+    é guardado cru em `device_events` para a reconciliação resolver depois.
+
+    O defeito: `receber_evento` monta o dicionário com `model_dump(mode="python")`
+    — `ts_utc` continua sendo um `datetime` — e `inserir_device_event` fazia
+    `json.dumps` nele, que levanta `TypeError`. O caminho falhava SEMPRE, e o
+    comentário logo acima dele explica o custo: "Este é o ÚNICO lugar onde a
+    amostra é guardada. Se falhar, o dado do sensor está perdido".
+
+    A rota respondia 503, que o firmware classifica como TRANSIENTE, então o
+    aparelho reenviava para sempre sem nunca conseguir gravar. Silencioso do
+    lado de quem olha o dashboard: nenhum alerta, nenhum paciente, nenhuma
+    pista.
+
+    Só aparecia pela rota HTTP com um `EventPayload` de verdade — os testes que
+    chamavam `inserir_device_event` direto passavam um dicionário de strings, e
+    strings o `json` serializa sem reclamar.
+    """
+
+    @pytest.mark.asyncio
+    async def test_evento_sem_paciente_e_aceito_e_guardado(self, api_client):
+        resp = await api_client["client"].post(
+            "/api/eventos",
+            json={
+                "device_id": "ESP-ORFAO",
+                "cama_id": "C-SEM-DONO",
+                "postura": "supino",
+                "confianca": 0.9,
+                "amostra_ms": 300000,
+                "ts_utc": "2026-08-02T12:00:00Z",
+            },
+        )
+
+        assert resp.status_code == 200, (
+            f"o evento órfão precisa ser aceito, e veio {resp.status_code}: {resp.text}"
+        )
+        assert resp.json()["code"] == "accepted"
+
+        with sqlite3.connect(api_client["db_path"]) as conn:
+            linhas = conn.execute(
+                "SELECT payload FROM device_events WHERE device_id = ?", ("ESP-ORFAO",)
+            ).fetchall()
+
+        assert len(linhas) == 1, "a amostra sem dono precisa estar guardada, não perdida"
+
+        # E o que ficou guardado tem que ser relegível: é isso que a
+        # reconciliação lê depois (`json.loads` em `listar_device_events`).
+        import json as _json
+
+        guardado = _json.loads(linhas[0][0])
+        assert guardado["device_id"] == "ESP-ORFAO"
+        assert guardado["ts_utc"].startswith("2026-08-02T12:00:00"), (
+            "o timestamp precisa sobreviver em ISO-8601, não como repr de datetime"
+        )

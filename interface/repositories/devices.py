@@ -2,8 +2,31 @@
 from __future__ import annotations
 
 import json
+from datetime import date, datetime
 
 from interface.db_core import connect, utc_now_iso
+
+
+def _serializavel(valor: object) -> str:
+    """Converte o que o `json` não sabe converter sozinho.
+
+    Existe por causa de um caminho que falhava SEMPRE. `receber_evento` monta o
+    dicionário com `model_dump(mode="python")`, então `ts_utc` continua sendo um
+    `datetime` — e `json.dumps` levanta `TypeError` nele. Como a gravação do
+    evento órfão é o ÚNICO lugar onde essa amostra é guardada, a rota respondia
+    503 e a leitura do sensor se perdia; o firmware classifica 503 como
+    transiente e reenviava para sempre, sem nunca conseguir.
+
+    Era o caminho de todo dispositivo ligado ANTES de a cama ter paciente —
+    instalação nova, troca de leito, o ESP32 da bancada energizado cedo demais.
+
+    ISO-8601 e não `str()`: é o formato em que `ts_utc` chegou no corpo da
+    requisição, e é o que a reconciliação relê depois (`json.loads` em
+    `listar_device_events`).
+    """
+    if isinstance(valor, (datetime, date)):
+        return valor.isoformat()
+    return str(valor)
 
 
 def registrar_device(db_path: str, device_id: str, meta: dict | None = None) -> None:
@@ -44,7 +67,7 @@ def inserir_device_event(db_path: str, device_id: str, ts: str, ts_ms: int, payl
     """
     if not device_id:
         raise ValueError("device_id deve ser informado.")
-    meta_text = json.dumps(payload, ensure_ascii=False)
+    meta_text = json.dumps(payload, ensure_ascii=False, default=_serializavel)
     with connect(db_path) as conn:
         cursor = conn.execute(
             "INSERT INTO device_events (device_id, ts, ts_ms, payload) VALUES (?, ?, ?, ?)",
