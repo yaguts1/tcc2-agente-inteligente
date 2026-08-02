@@ -5,7 +5,7 @@ Uma página para ter na mão durante a apresentação. O runner é
 disto no terminal.
 
 **Tempos medidos nesta bancada**, não estimados: ato 1 **29s**, ato 2 **38s**,
-ato 3 **51s**, ato 5 **61s**. Somando os automatizados, ~3 min de máquina — o
+ato 3 **51s**, ato 5 **~150s** (inclui regravar o aparelho). Somando os automatizados, ~3 min de máquina — o
 resto é fala. O ato 4 depende de alguém mexer no celular.
 
 ---
@@ -95,17 +95,32 @@ tela aceitou → **desligar o modo avião**.
 > quatro — e sem saber quais. O reenvio é seguro porque o `alert_id` é chave
 > natural (paciente, início) e o servidor é idempotente.
 
-### Ato 5 — Alguém errou a credencial · 61s
+### Ato 5 — A credencial foi revogada · ~150s
 
 ```bash
 python -m scripts.demo ato5 --porta COM3
 ```
 
-Aponte o `0 descartes` na saída.
+Aponte o `0 descartes` na saída. O ato regrava o aparelho sozinho no fim.
 
-> Ele **não** descarta. 401 é erro de configuração, não amostra ruim —
-> descartar aqui jogaria fora dado clínico por engano de operação. Corrigido o
-> `.env`, ele se recupera sozinho: sem visita ao leito, sem reflash.
+> Este aparelho tem credencial **própria**. Alguém o levou — eu revogo daqui,
+> sem tocar nele: corte imediato. E ele **não** descarta a amostra; revogar não
+> o rebaixa para a credencial da frota, porque quem foi provisionado responde só
+> pela dele, mesmo revogado.
+>
+> Devolver o acesso exige **tocar no aparelho**. É essa a propriedade que se
+> quer: quem levou o dispositivo não o traz de volta remotamente. Com um segredo
+> único da frota, um aparelho arrancado da parede entregaria a credencial de
+> todos — e revogar exigiria reflashear a frota inteira, ou seja, nunca se
+> revogaria.
+
+Credencial fora da demo:
+
+```bash
+python -m scripts.provisionar_dispositivo estado  DEV-001
+python -m scripts.provisionar_dispositivo emitir  DEV-001 --gravar-config   # + regravar
+python -m scripts.provisionar_dispositivo revogar DEV-001
+```
 
 ---
 
@@ -136,7 +151,7 @@ cd frontend && npm run e2e                                        # navegador
 | 2 | `test_e2e_esp32.py::test_reboot_no_meio_do_replay_retoma_da_amostra_certa` |
 | 3 | `test_e2e_esp32.py::test_queda_do_servidor_no_meio_do_replay_nao_perde_amostra` |
 | 4 | `frontend/e2e/fila-offline.spec.ts` |
-| 5 | `test_e2e_esp32.py::test_token_errado_faz_o_aparelho_insistir_ate_alguem_corrigir` |
+| 5 | `test_e2e_esp32.py::test_token_errado_faz_o_aparelho_insistir_ate_alguem_corrigir` (recusa e recuperação; a revogação em si é exercitada pelo ato) |
 
 ---
 
@@ -156,6 +171,8 @@ primeiros **antes** de você subir no palco — por isso ele existe.
 | Alerta no banco, mas não na tela | Bundle antigo no cache do navegador | **Ctrl+Shift+R** |
 | Porta 8000 ocupada / bancada quer subir ali | O container é dono da 8000; os testes usam a 8010 | Não derrube o container: o perfil `bancada` já usa 8010 |
 | ESP32 não aparece na COM3 | Cabo de carga (sem dados), ou driver CP210x | Troque o cabo; `[System.IO.Ports.SerialPort]::getportnames()` lista as portas |
+| `[WS] Recusado na autenticacao` | Credencial do aparelho revogada ou dessincronizada do `config.h` | `python -m scripts.provisionar_dispositivo emitir DEV-001 --gravar-config` e regrave |
+| `checar` verde mas o aparelho não fala | (não deve mais acontecer) o preflight agora **pinga** o aparelho | se falhar aqui, host e ESP32 estão em redes diferentes ou o AP isola clientes |
 
 **Zerar um paciente são três coisas**, e duas não aparecem em lugar nenhum da
 interface: as linhas do banco, o `estado_incremental` do motor, e o cache de

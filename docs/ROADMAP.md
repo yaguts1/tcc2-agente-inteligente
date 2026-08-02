@@ -141,12 +141,16 @@ estiveram dentro de uma imagem distribuível.
   histórico dos alertas antigos.
 - 45 das 66 operações seguem sem `response_model`. O mecanismo de guarda está de
   pé, então cada rota migrada ganha a proteção de graça.
-- `UPP_DEVICE_TOKEN` não está definido no `.env` atual e nenhum ESP32 foi
-  provisionado: a ingestão aceita qualquer origem, e o startup avisa. A bancada
-  de E2E roda sem token dos dois lados, mas
-  `test_token_errado_faz_o_aparelho_insistir_ate_alguem_corrigir` exercita a
-  recusa e a recuperação com o aparelho de verdade — o que ainda falta é
-  provisionar um token *válido* por dispositivo.
+- ~~`UPP_DEVICE_TOKEN` não definido e nenhum ESP32 provisionado~~ — **fechado**.
+  `scripts/provisionar_dispositivo.py` emite, revoga e confere a credencial, e
+  grava o token no `config.h` que é compilado para dentro do aparelho. O ESP32
+  da bancada (`DEV-001`) está provisionado: ele não cai mais no regime frouxo,
+  mesmo com o `UPP_DEVICE_TOKEN` global vazio, porque dispositivo provisionado
+  responde só pela credencial própria. A demo exercita a revogação ao vivo
+  (`scripts.demo ato5`).
+
+  O que fica para a frota: emitir um token por aparelho ao instalar, e decidir
+  se o global continua existindo como ponte de migração ou some.
 - O `SERVER_IP` do firmware é compilado para dentro do aparelho e a bancada usa
   DHCP: quando a rede reatribui o endereço da máquina, é preciso regravar.
   `tests/test_e2e_esp32.py` falha explicando isso, mas fixar o IP no roteador

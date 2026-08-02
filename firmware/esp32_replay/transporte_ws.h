@@ -24,6 +24,17 @@ namespace replay {
 WebSocketsClient g_ws;
 WiFiClient       g_clienteTcp;
 bool             g_wsConectado = false;
+
+// Handshake aberto e ainda sem resposta de autenticacao.
+//
+// Existe porque uma credencial RECUSADA e um cabo ARRANCADO produziam a mesma
+// linha no log. O servidor responde `{"status":"error","error":
+// "invalid_device_token"}` e fecha a conexao em seguida; quando os dois quadros
+// chegam juntos, a biblioteca processa o fechamento primeiro e a mensagem de
+// erro se perde. O aparelho registrava so "[WS] Desconectado" — e para quem
+// opera, "troque a credencial" e "confira o cabo" sao acoes completamente
+// diferentes.
+bool             g_wsAutenticando = false;
 ResultadoEnvio   g_ultimoDesfecho = ResultadoEnvio::PENDENTE;
 unsigned long    g_enviadoEmMs = 0;
 
@@ -42,6 +53,7 @@ inline void aoEventoWebSocket(WStype_t tipo, uint8_t *payload, size_t length) {
   switch (tipo) {
     case WStype_CONNECTED: {
       registrarLog("[WS] Conectado ao servidor");
+      g_wsAutenticando = true;
       // O token vai no CORPO da mensagem de auth, e não como header: a lib de
       // WebSocket do ESP32 não permite definir headers no handshake. O backend
       // aceita os dois caminhos (ver interface/routers/ingestao.py).
@@ -64,6 +76,7 @@ inline void aoEventoWebSocket(WStype_t tipo, uint8_t *payload, size_t length) {
         // Só aqui a conexão está de fato utilizável: antes disso o servidor
         // ainda não validou o token, e um envio seria descartado.
         g_wsConectado = true;
+        g_wsAutenticando = false;
         registrarLog("[WS] Autenticado");
       } else if (status == "ok") {
         g_ultimoDesfecho = ResultadoEnvio::ACK;
@@ -87,7 +100,16 @@ inline void aoEventoWebSocket(WStype_t tipo, uint8_t *payload, size_t length) {
     }
 
     case WStype_DISCONNECTED:
-      registrarLog("[WS] Desconectado");
+      // Cair ANTES de autenticar quase sempre e credencial: o servidor aceita o
+      // handshake, recusa o `device_id`/token e fecha. Dizer isso explicitamente
+      // e a diferenca entre o operador ir conferir o `.env` e ir conferir o cabo.
+      if (g_wsAutenticando) {
+        registrarLog("[WS] Recusado na autenticacao (credencial do dispositivo?)");
+        g_status.totalFalhas++;
+      } else {
+        registrarLog("[WS] Desconectado");
+      }
+      g_wsAutenticando = false;
       g_wsConectado = false;
       // Uma queda entre o envio e o ACK não pode ser lida como entrega: o
       // evento volta para a fila de reenvio.
@@ -98,6 +120,7 @@ inline void aoEventoWebSocket(WStype_t tipo, uint8_t *payload, size_t length) {
 
     case WStype_ERROR:
       registrarLog("[WS] Erro no socket");
+      g_wsAutenticando = false;
       g_wsConectado = false;
       if (g_ultimoDesfecho == ResultadoEnvio::PENDENTE) {
         g_ultimoDesfecho = ResultadoEnvio::TRANSIENTE;

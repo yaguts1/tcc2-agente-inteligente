@@ -61,6 +61,9 @@ CONTAINER = "upp_app"
 # A cama é COMPILADA no firmware (`g_config.camaId`). Mudar aqui sem regravar o
 # aparelho só produz 404 em /pacientes/cama/... e um replay preso em OCIOSO.
 CAMA = "C-01"
+# Tambem compilado no firmware (`g_config.deviceId`), e e por ele que a
+# credencial do aparelho e emitida e revogada.
+DEVICE_ID = "DEV-001"
 PACIENTE_DEMO = "Sr. Antônio Nogueira"
 PERFIL_DEMO = "alto"  # janela de 60 min, a mais curta: o alerta nasce mais cedo
 
@@ -259,6 +262,31 @@ def checar(porta_serial: str | None) -> list[Achado]:
             else:
                 erro(f"o aparelho fala com {alvo}, mas o config.h pede {esperado}{prefixo}/api/...")
                 problemas.append(Achado(True, "o upload do firmware nao pegou: rode perfil-demo"))
+
+            # 8. O aparelho esta ALCANCAVEL — nao basta o IP dele existir.
+            #
+            # A checagem 4 pergunta "este IP e meu?", e isso NAO prova rede: o
+            # Wi-Fi do host caiu duas vezes durante o desenvolvimento e o Windows
+            # manteve o endereco antigo na interface, entao a verificacao seguia
+            # verde com a rede fora — e o sintoma aparecia como um WebSocket em
+            # laco, que parece defeito de firmware. Pingar o aparelho fecha o
+            # circuito.
+            ip_aparelho = str(estado.get("ip", ""))
+            if ip_aparelho in ("", "sem-rede"):
+                erro("o aparelho nao esta na rede Wi-Fi")
+                problemas.append(Achado(True, "confira o Wi-Fi/hotspot e o SSID no config.h"))
+            else:
+                alcancou = subprocess.run(
+                    ["ping", "-n", "2", "-w", "1500", ip_aparelho],
+                    capture_output=True, text=True,
+                ).returncode == 0
+                if alcancou:
+                    ok(f"aparelho alcancavel em {ip_aparelho}")
+                else:
+                    erro(f"o aparelho diz estar em {ip_aparelho}, mas nao responde daqui")
+                    problemas.append(Achado(
+                        True,
+                        "host e aparelho em redes diferentes, ou o AP isola clientes"))
         except Exception as e:
             erro(f"nao consegui falar com o ESP32 em {porta_serial}: {e}")
             problemas.append(Achado(True, "confira o cabo USB, a porta, e se o firmware esta gravado"))
@@ -407,6 +435,16 @@ def preparar(porta_serial: str | None) -> None:
     if r.returncode != 0:
         raise SystemExit(f"falha ao gerar dados: {r.stderr}")
     ok(f"{len(DADOS.read_text(encoding='utf-8').splitlines())} amostras, supino sustentado")
+
+    titulo("CREDENCIAL")
+    # Provisiona ANTES de gravar: o token vai para o `config.h`, que e compilado
+    # para dentro do aparelho. Emitir depois de gravar deixaria o dispositivo
+    # exigido a apresentar um token que ele ainda nao tem — e todo envio seria
+    # recusado ate o proximo upload.
+    from scripts.provisionar_dispositivo import emitir, gravar_no_config
+
+    gravar_no_config(emitir(DEVICE_ID, local=False))
+    ok(f"{DEVICE_ID}: credencial propria emitida e gravada no config.h")
 
     titulo("APARELHO")
     # Duas invocacoes, e nao `-t upload -t uploadfs` numa so.
@@ -743,34 +781,65 @@ def _recriar_com_token(token: str) -> None:
 
 
 def ato5(porta_serial: str) -> int:
-    """Alguém errou o token. O aparelho insiste em vez de descartar."""
-    from scripts.esp32_bancada import FIM, Esp32
+    """A credencial deste aparelho foi revogada.
 
-    titulo("ATO 5 — ALGUÉM ERROU A CREDENCIAL")
+    Esta é a cena que justifica token POR APARELHO em vez de um da frota. Com um
+    segredo único, um dispositivo arrancado da parede entrega a credencial de
+    todos — e revogar exigiria reflashear a frota inteira, ou seja, na prática
+    nunca se revogaria.
+
+    Aqui revogar é uma chamada, tem efeito imediato, e devolver o acesso exige
+    TOCAR no aparelho. É exatamente a propriedade que se quer: quem levou o
+    dispositivo não o traz de volta remotamente.
+    """
+    from scripts.esp32_bancada import FIM, Esp32
+    from scripts.provisionar_dispositivo import emitir, gravar_no_config, revogar
+
+    titulo("ATO 5 — A CREDENCIAL FOI REVOGADA")
     esperadas = amostras_no_arquivo()
     limpar_leito()
 
-    print("\n  >> configurando o servidor para exigir um token que o aparelho não tem...\n")
-    _recriar_com_token("segredo-que-o-aparelho-nao-conhece")
-    ok("servidor exigindo credencial")
+    print("\n  \033[1mDiga:\033[0m este aparelho tem credencial própria. Alguém o levou —")
+    print("  eu revogo daqui, sem tocar nele.\n")
+    revogar(DEVICE_ID, local=False)
+    ok(f"{DEVICE_ID} revogado")
 
     aparelho = abrir_aparelho(porta_serial)
     try:
         acordar(aparelho)
         aparelho.comandar("CMD_START")
-        aparelho.esperar(r"ws error=invalid_device_token|HTTP=401|status=401", timeout=120)
+        # A recusa cai em pontos diferentes conforme o transporte: no handshake
+        # sobre WebSocket, no primeiro GET autenticado sobre HTTP.
+        aparelho.esperar(
+            r"Recusado na autenticacao|ws error=invalid_device_token|HTTP=401|status=401",
+            timeout=150,
+        )
         recusas = aparelho.drenar(15)
         if Esp32.acks(recusas) or Esp32.descartes(recusas):
-            erro("houve ACK ou DESCARTE com credencial inválida")
+            erro("houve ACK ou DESCARTE com credencial revogada")
             return 1
         contas = aparelho.status()
         ok(f"recusado: {contas['falhas']} falhas, {contas['descartados']} descartes, "
            f"{contas['enviados']} enviados")
-        print("\n  \033[1mDiga:\033[0m ele NÃO descarta. 401 é erro de configuração, não amostra")
-        print("  ruim — descartar aqui jogaria fora dado clínico por engano de operação.\n")
+        print("\n  \033[1mDiga:\033[0m corte imediato, e ele NÃO descarta a amostra. Revogar")
+        print("  não rebaixa o aparelho para a credencial da frota — quem foi provisionado")
+        print("  responde só pela dele, mesmo revogado.\n")
 
-        print("  >> alguém corrige o .env e reinicia...\n")
-        _recriar_com_token("")
+        print("  >> reprovisionando (exige regravar o aparelho — de propósito)...\n")
+        gravar_no_config(emitir(DEVICE_ID, local=False))
+    finally:
+        aparelho.fechar()
+
+    if pio("run", "-d", "firmware", "-e", "websocket", "-t", "upload",
+           "--upload-port", porta_serial) != 0:
+        erro("falha ao regravar o aparelho")
+        return 1
+    ok("aparelho regravado com a credencial nova")
+
+    aparelho = abrir_aparelho(porta_serial)
+    try:
+        acordar(aparelho)
+        aparelho.comandar("CMD_START")
         aparelho.coletar_ate(FIM, timeout=420)
     finally:
         aparelho.fechar()
@@ -779,8 +848,8 @@ def ato5(porta_serial: str) -> int:
     total = grade_do_leito()
     if total == esperadas:
         ok(f"{total} de {esperadas} amostras no banco — a recusa só atrasou")
-        print("\n  \033[1mDiga:\033[0m o aparelho se recuperou sozinho. Sem visita ao leito,")
-        print("  sem reflash, sem ninguém perceber que ficou parado.")
+        print("\n  \033[1mDiga:\033[0m nada se perdeu no período em que ele esteve barrado.")
+        print("  O checkpoint segurou tudo, e o arquivo saiu inteiro quando a credencial voltou.")
         return 0
     erro(f"{total} de {esperadas} amostras no banco")
     return 1
@@ -817,9 +886,10 @@ def roteiro() -> None:
          python -m scripts.demo ato4
          Modo aviao no celular, reconhece, volta a rede, sincroniza.
 
-  ATO 5  Alguem errou a credencial
+  ATO 5  A credencial foi revogada
          python -m scripts.demo ato5 --porta COM3
-         401 nao e amostra ruim: ele insiste e se recupera sozinho.
+         Corte imediato, sem descarte. Devolver acesso exige TOCAR no aparelho
+         (o ato regrava sozinho) — que e o ponto do token por dispositivo.
 
   Fechamento: rode a suite. Tudo que a banca viu, o CI verifica a cada push.
 """)

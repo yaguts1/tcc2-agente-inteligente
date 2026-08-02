@@ -95,7 +95,13 @@ static void publicarStatus() {
       // binário antigo no aparelho: ele seguiu falando com a porta e o prefixo
       // anteriores, e o sintoma foi um WebSocket reconectando em laço, sem uma
       // linha dizendo o porquê.
-      " alvo=" + g_config.hostServidor + ":" + String(g_config.portaServidor) + g_config.endpoint);
+      " alvo=" + g_config.hostServidor + ":" + String(g_config.portaServidor) + g_config.endpoint +
+      // O IP que ELE tem agora. Sem isto nao da para provar alcance: o Wi-Fi
+      // do host caiu duas vezes durante o desenvolvimento e o Windows manteve o
+      // endereco antigo na interface, entao "este IP e meu" continuava
+      // respondendo `true` com a rede fora. Publicar o IP do aparelho permite
+      // ping-lo e transformar a suposicao em verificacao.
+      " ip=" + (WiFi.status() == WL_CONNECTED ? WiFi.localIP().toString() : String("sem-rede")));
 }
 
 void tratarComandoSerial() {
