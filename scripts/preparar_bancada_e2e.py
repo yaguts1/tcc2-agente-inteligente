@@ -57,10 +57,14 @@ PERFIL = "alto"
 # Reconhecer" passou a casar com o seletor do botão "Reconhecer" — dois
 # elementos para o mesmo locator, e uma falha que parecia da tela e era do dado
 # de teste.
+# `hardware` fica na C-01 porque essa e a cama COMPILADA no firmware
+# (`g_config.camaId`, em replay_comum.h). E por ela que o ESP32 descobre de quem
+# e a amostra; dar-lhe outra cama exigiria regravar o aparelho.
 LEITOS = [
-    ("tempo_real", "C-01", "Ana Ribeiro"),
-    ("reconhecer", "C-02", "Bruno Salles"),
-    ("offline", "C-03", "Carla Nunes"),
+    ("hardware", "C-01", "Diego Prado"),
+    ("tempo_real", "C-02", "Ana Ribeiro"),
+    ("reconhecer", "C-03", "Bruno Salles"),
+    ("offline", "C-04", "Carla Nunes"),
 ]
 
 

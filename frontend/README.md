@@ -47,6 +47,42 @@ exige derrubar a stack para rodar é um harness que ninguém roda. E
 `reuseExistingServer` está desligado de propósito: aproveitar um servidor já no
 ar faria a suíte semear paciente de teste dentro do banco de verdade.
 
+### Do ESP32 até a tela
+
+`e2e/esp32-ate-a-tela.spec.ts` é a jornada inteira sem simulação em ponta
+nenhuma: sensor físico → Wi-Fi → WebSocket → ingestão → filtro → motor →
+broadcast → WebSocket → React → DOM.
+
+Cada trecho já tinha teste; nenhum tinha o trecho inteiro.
+`tests/test_protocolo_firmware.py` reimplementa o dispositivo em Python;
+`tests/test_e2e_esp32.py` usa o aparelho de verdade mas termina no banco;
+`e2e/alerta-em-tempo-real.spec.ts` chega à tela mas as amostras saem de um
+`POST` do próprio teste.
+
+O Playwright dirige o navegador; o aparelho é comandado por
+`scripts/esp32_bancada.py`, chamado pela linha de comando — reescrever o
+envelope da serial em TypeScript daria duas definições de "como se fala com o
+dispositivo".
+
+```bash
+python scripts/gerar_eventos_esp32.py -o firmware/esp32_replay/data/eventos.jsonl \
+       --horas 2 --intervalo 5 --postura supino
+python -m platformio run -d firmware -e websocket -t upload -t uploadfs --upload-port COM3
+UPP_ESP32_PORT=COM3 npm run e2e
+```
+
+`--postura supino` não é detalhe: o alerta de imobilidade só nasce se a mesma
+postura se sustentar além da janela do perfil, e a série padrão troca de postura
+por sorteio. Um teste ponta a ponta que depende de `random.random()` não é um
+teste.
+
+Sem `UPP_ESP32_PORT` a spec é pulada e as outras oito rodam normalmente.
+
+**A porta do backend sai do `config.h` do firmware** (`SERVER_PORT`), que é onde
+ela está compilada para dentro do aparelho — tanto esta configuração quanto
+`tests/test_e2e_esp32.py` leem de lá. E o uvicorn da bancada escuta em `0.0.0.0`,
+não em loopback, senão o ESP32 fala com o vazio.
+
 ### Um leito por spec
 
 `scripts/preparar_bancada_e2e.py` cria três pacientes, um por spec que precisa

@@ -45,7 +45,18 @@ const RAIZ = path.resolve(AQUI, '..');
 // derrubar a stack para rodar é um harness que ninguém roda — e, pior, se
 // `reuseExistingServer` estivesse ligado, ele rodaria contra o container e o
 // banco DE VERDADE, semeando paciente de teste em cima de dado real.
-const PORTA_API = Number(process.env.E2E_API_PORT || 8010);
+// A porta da API sai do `config.h` do FIRMWARE, que é onde ela está compilada
+// para dentro do ESP32. A spec de hardware faz o aparelho falar com este mesmo
+// backend; fixar o valor aqui também criaria dois lugares para a mesma decisão,
+// e o dia em que divergissem daria um replay parado sem explicação.
+function portaDoFirmware(): number | null {
+  const config = path.join(RAIZ, 'firmware', 'esp32_replay', 'config.h');
+  if (!fs.existsSync(config)) return null;
+  const m = fs.readFileSync(config, 'utf-8').match(/^\s*#define\s+SERVER_PORT\s+(\d+)/m);
+  return m ? Number(m[1]) : null;
+}
+
+const PORTA_API = Number(process.env.E2E_API_PORT) || portaDoFirmware() || 8010;
 const PORTA_WEB = Number(process.env.E2E_WEB_PORT || 3100);
 
 /**
@@ -108,8 +119,11 @@ export default defineConfig({
 
   webServer: [
     {
+      // `0.0.0.0`, e não `127.0.0.1`: o ESP32 da spec de hardware alcança este
+      // backend pela LAN. Em loopback o aparelho falaria com o vazio e o replay
+      // ficaria parado em OCIOSO para sempre.
       command:
-        `python -m uvicorn interface.web:app --host 127.0.0.1 --port ${PORTA_API} --log-level warning`,
+        `python -m uvicorn interface.web:app --host 0.0.0.0 --port ${PORTA_API} --log-level warning`,
       cwd: RAIZ,
       port: PORTA_API,
       reuseExistingServer: false,

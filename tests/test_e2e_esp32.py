@@ -65,14 +65,6 @@ ARQUIVO_EVENTOS = RAIZ / "firmware" / "esp32_replay" / "data" / "eventos.jsonl"
 CONFIG_FIRMWARE = RAIZ / "firmware" / "esp32_replay" / "config.h"
 
 PORTA_SERIAL = os.getenv("UPP_ESP32_PORT")
-PORTA_BACKEND = int(os.getenv("UPP_E2E_PORT", "8000"))
-BAUD = 115200
-
-# Quantas linhas do aparelho o relatório de falha mostra. O padrão cobre o caso
-# comum; num replay inteiro (24 amostras × 3 linhas de log) 40 não alcançam o
-# início da execução, e é justamente lá que costuma estar a explicação — foi o
-# que atrasou o diagnóstico do teste de reboot. `UPP_E2E_LOG_LINHAS=300` para ver tudo.
-LINHAS_NO_ERRO = int(os.getenv("UPP_E2E_LOG_LINHAS", "40"))
 
 # A cama está fixada em `g_config.camaId` (`replay_comum.h`), e é por ela que o
 # dispositivo descobre de quem é a amostra. Mudar aqui sem regravar o firmware
@@ -80,16 +72,31 @@ LINHAS_NO_ERRO = int(os.getenv("UPP_E2E_LOG_LINHAS", "40"))
 # estado OCIOSO.
 CAMA = "C-01"
 
-# Linhas de log que o teste trata como contrato. Ficam aqui, e não espalhadas
-# pelos casos, porque são o acoplamento real deste arquivo com o firmware:
-# mudar um `registrarLog` em `replay_comum.h` tem que quebrar UM ponto, não seis.
-PRONTO = r"\[SETUP\] ESP32 Replay"
-NA_REDE = r"\[WIFI\] Connected IP="
-CHECKPOINT_ZERADO = r"\[INFO\] Checkpoint zerado"
-RETOMANDO = r"\[INFO\] Retomando offset \d+"
-# Único marcador que significa "o ponto de retomada está no disco". Ver a nota
-# em `salvarCheckpoint()`: `[ACK]` não serve para isso.
-CHECKPOINT_GRAVADO = r"\[CKPT\] offset=\d+"
+# ANTES do import abaixo, e não depois.
+#
+# `scripts.esp32_bancada` importa `serial` no topo, e `pyserial` NÃO está no
+# `requirements.txt` — é dependência de bancada, não de produção, e não tem por
+# que entrar na imagem. Sem este `importorskip` na frente, a simples COLETA
+# deste arquivo derruba a suíte inteira em qualquer máquina sem pyserial,
+# inclusive a CI: o erro não seria "teste de hardware pulado", seria "pytest não
+# conseguiu importar" — e nada mais rodaria.
+pytest.importorskip("serial", reason="pyserial não instalado")
+
+# O envelope da serial e as linhas de log que valem como contrato moram em
+# `scripts/esp32_bancada.py`. Não é só desduplicação: o E2E de navegador também
+# dirige o aparelho, e ele roda no Playwright — uma segunda definição de "como
+# se fala com o dispositivo" seria descoberta errada com um ESP32 numa
+# enfermaria.
+from scripts.esp32_bancada import (  # noqa: E402
+    CHECKPOINT_GRAVADO,
+    CHECKPOINT_ZERADO,
+    FIM,
+    NA_REDE,
+    PRONTO,
+    RETOMANDO,
+    Esp32,
+)
+
 # A recusa por credencial cai em pontos DIFERENTES conforme o transporte, e as
 # duas contam:
 #   WebSocket — no handshake, antes de qualquer amostra sair
@@ -100,22 +107,6 @@ CHECKPOINT_GRAVADO = r"\[CKPT\] offset=\d+"
 # Em ambos o dispositivo fica preso ANTES de enviar, que é o comportamento
 # desejado: sem saber de quem é a amostra, ele não envia.
 TOKEN_RECUSADO = r"ws error=invalid_device_token|HTTP=401|status=401"
-
-# O fim de verdade é "Replay finalizado", NÃO "Fim do arquivo".
-#
-# "Fim do arquivo" sai quando a última linha foi lida; o replay ainda está
-# ativo, e só na volta seguinte o estado FINALIZADO grava o checkpoint, loga
-# "Replay finalizado" e baixa `replayAtivo`. Esperar pelo marcador errado fazia
-# o CMD_START seguinte cair na janela entre os dois e ser recusado com
-# "[INFO] Replay ja em execucao" — comando engolido, teste travado em timeout.
-#
-# Como é depois de `salvarCheckpoint()`, este marcador também é a garantia de
-# que o checkpoint já está no SPIFFS — que é o que os testes de retomada
-# precisam saber antes de puxar o fio.
-FIM = r"\[INFO\] Replay finalizado"
-
-pytest.importorskip("serial", reason="pyserial não instalado")
-import serial  # noqa: E402
 
 
 # ---------------------------------------------------------------------------
@@ -136,15 +127,22 @@ def _enderecos_desta_maquina() -> set[str]:
     return {info[4][0] for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET)}
 
 
-def _server_ip_do_firmware() -> str | None:
-    """Lê `SERVER_IP` do `config.h` que foi compilado para dentro do aparelho."""
+def _do_firmware(nome: str, com_aspas: bool) -> str | None:
+    """Lê um `#define` do `config.h` que foi compilado para dentro do aparelho.
+
+    O firmware é a fonte da verdade sobre ONDE ele vai bater. Fixar o endereço
+    também deste lado criaria dois valores para a mesma decisão, e o dia em que
+    divergissem produziria um replay parado em OCIOSO sem explicação.
+    """
     if not CONFIG_FIRMWARE.exists():
         return None
-    m = re.search(r'^\s*#define\s+SERVER_IP\s+"([^"]+)"', CONFIG_FIRMWARE.read_text(encoding="utf-8"), re.M)
+    padrao = rf'^\s*#define\s+{nome}\s+"([^"]+)"' if com_aspas else rf"^\s*#define\s+{nome}\s+(\S+)"
+    m = re.search(padrao, CONFIG_FIRMWARE.read_text(encoding="utf-8"), re.M)
     return m.group(1) if m else None
 
 
-IP_DO_BACKEND = _server_ip_do_firmware()
+IP_DO_BACKEND = _do_firmware("SERVER_IP", com_aspas=True)
+PORTA_BACKEND = int(os.getenv("UPP_E2E_PORT") or _do_firmware("SERVER_PORT", com_aspas=False) or 8000)
 
 
 @pytest.fixture(scope="session", autouse=True)
@@ -306,109 +304,6 @@ def paciente(backend):
 # ---------------------------------------------------------------------------
 # O dispositivo
 # ---------------------------------------------------------------------------
-class Esp32:
-    """Envelope fino sobre a serial: comandar e ler o log.
-
-    Guarda tudo que chegou (`self.log`) para o relatório de falha mostrar o que
-    o aparelho estava fazendo — sem isso, um teste de hardware que quebra não
-    diz nada além de "timeout".
-    """
-
-    def __init__(self, porta: str):
-        self.serial = serial.Serial(porta, BAUD, timeout=0.2)
-        self.log: list[str] = []
-
-    # -- ciclo de vida -----------------------------------------------------
-    def reiniciar(self) -> None:
-        """Reset por hardware: pulsa a linha EN pelo RTS do CP210x.
-
-        É a queda de energia de verdade, não um `ESP.restart()` — que roda
-        depois de o firmware ter tido a chance de gravar coisas. Para o teste do
-        checkpoint essa diferença é o teste inteiro.
-        """
-        self.serial.setDTR(False)
-        self.serial.setRTS(True)
-        time.sleep(0.1)
-        self.serial.setRTS(False)
-        time.sleep(0.05)
-        self.serial.reset_input_buffer()
-
-    def fechar(self) -> None:
-        try:
-            self.serial.close()
-        except Exception:
-            pass
-
-    # -- comandar ----------------------------------------------------------
-    def comandar(self, comando: str) -> None:
-        self.serial.write(f"{comando}\n".encode())
-        self.serial.flush()
-
-    # -- observar ----------------------------------------------------------
-    def esperar(self, padrao: str, timeout: float = 60.0) -> str:
-        """Consome o log até casar `padrao`. Falha citando o log recente."""
-        rx = re.compile(padrao)
-        limite = time.time() + timeout
-        while time.time() < limite:
-            linha = self._ler_linha()
-            if linha is None:
-                continue
-            if rx.search(linha):
-                return linha
-        raise AssertionError(
-            f"não vi /{padrao}/ em {timeout}s.\nÚltimas linhas do aparelho:\n"
-            + "\n".join(f"  {x}" for x in self.log[-LINHAS_NO_ERRO:])
-        )
-
-    def coletar_ate(self, padrao: str, timeout: float = 180.0) -> list[str]:
-        """Como `esperar`, devolvendo tudo que passou até o casamento."""
-        inicio = len(self.log)
-        self.esperar(padrao, timeout=timeout)
-        return self.log[inicio:]
-
-    def drenar(self, segundos: float) -> list[str]:
-        inicio = len(self.log)
-        limite = time.time() + segundos
-        while time.time() < limite:
-            self._ler_linha()
-        return self.log[inicio:]
-
-    def _ler_linha(self) -> str | None:
-        cru = self.serial.readline()
-        if not cru:
-            return None
-        linha = cru.decode("utf-8", "replace").rstrip()
-        if not linha:
-            return None
-        self.log.append(linha)
-        return linha
-
-    def status(self, timeout: float = 15.0) -> dict[str, int]:
-        """A contabilidade do próprio aparelho, via `CMD_STATUS`.
-
-        Contar linhas `[ACK]` no log mede o que o teste conseguiu ler da serial;
-        isto mede o que o dispositivo acha que fez. Quando os dois discordam, o
-        interessante é a diferença — um ACK perdido no buffer da serial não é a
-        mesma coisa que uma amostra não entregue.
-        """
-        self.comandar("CMD_STATUS")
-        linha = self.esperar(r"\[STATUS\] ", timeout=timeout)
-        campos: dict[str, int] = {}
-        for par in linha.split("[STATUS] ", 1)[1].split():
-            chave, _, valor = par.partition("=")
-            campos[chave] = int(valor)
-        return campos
-
-    # -- leitura do log ----------------------------------------------------
-    @staticmethod
-    def acks(linhas: list[str]) -> list[int]:
-        return [int(m.group(1)) for m in (re.match(r"\[ACK\] seq=(\d+)", x) for x in linhas) if m]
-
-    @staticmethod
-    def descartes(linhas: list[str]) -> list[str]:
-        return [x for x in linhas if x.startswith("[DESCARTE]")]
-
-
 @pytest.fixture()
 def esp32():
     aparelho = Esp32(PORTA_SERIAL)

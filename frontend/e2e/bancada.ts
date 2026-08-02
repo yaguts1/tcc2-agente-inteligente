@@ -25,7 +25,7 @@ type Bancada = {
 
 export const BANCADA: Bancada = JSON.parse(fs.readFileSync(process.env.E2E_BANCADA!, 'utf-8'));
 
-export function leito(apelido: 'tempo_real' | 'reconhecer' | 'offline'): Leito {
+export function leito(apelido: 'hardware' | 'tempo_real' | 'reconhecer' | 'offline'): Leito {
   const achado = BANCADA.leitos[apelido];
   if (!achado) {
     throw new Error(

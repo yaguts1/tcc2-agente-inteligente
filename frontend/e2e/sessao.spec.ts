@@ -49,7 +49,7 @@ test.describe('sessão', () => {
     await page.goto('/');
     await page.getByRole('link', { name: /pacientes/i }).click();
     // Um leito por spec — ver `scripts/preparar_bancada_e2e.py`.
-    for (const apelido of ['tempo_real', 'reconhecer', 'offline'] as const) {
+    for (const apelido of ['hardware', 'tempo_real', 'reconhecer', 'offline'] as const) {
       await expect(page.getByText(leito(apelido).nome)).toBeVisible();
     }
   });

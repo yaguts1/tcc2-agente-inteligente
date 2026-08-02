@@ -45,7 +45,8 @@ def gerar_eventos_esp32(
     cama_id: str = "C-01",
     intervalo_min: int = 5,
     output_file: str = "eventos_now.jsonl",
-    seed: int = 42
+    seed: int = 42,
+    postura_fixa: str | None = None,
 ):
     """
     Gera arquivo JSONL com eventos de postura para ESP32.
@@ -88,8 +89,14 @@ def gerar_eventos_esp32(
         # Modelo simples: paciente fica muito tempo em supino, muda ocasionalmente
         tempo_na_postura += intervalo_min
         
-        # Chance de mudar de postura após 1-2 horas
-        if tempo_na_postura >= 60 and random.random() < 0.2:
+        # Chance de mudar de postura após 1-2 horas.
+        #
+        # `postura_fixa` congela a série numa postura só. Existe para a bancada
+        # de E2E: o alerta de imobilidade só nasce se a MESMA postura se
+        # sustentar além da janela do perfil, e uma série que troca no meio
+        # produz um teste que passa ou não conforme o sorteio. Um teste de
+        # ponta a ponta que depende de `random.random()` não é um teste.
+        if postura_fixa is None and tempo_na_postura >= 60 and random.random() < 0.2:
             # Mudar para outra postura
             opcoes = [p for p in POSTURAS if p != postura_atual]
             postura_atual = random.choice(opcoes)
@@ -105,7 +112,7 @@ def gerar_eventos_esp32(
             "device_id": device_id,
             "paciente_id": paciente_id,
             "cama_id": cama_id,
-            "postura": POSTURAS[postura_atual],
+            "postura": postura_fixa or POSTURAS[postura_atual],
             "confianca": confianca,
             "amostra_ms": intervalo_min * 60 * 1000,  # Converter para ms
             "ts_utc": timestamp.strftime("%Y-%m-%dT%H:%M:%SZ"),
@@ -172,6 +179,12 @@ def main():
         help="ID da cama (padrão: C-01)"
     )
     parser.add_argument(
+        "--postura",
+        choices=sorted({"lateral_direito", "supino", "lateral_esquerdo", "prono"}),
+        default=None,
+        help="Congela a serie numa postura so (para provocar alerta de imobilidade)"
+    )
+    parser.add_argument(
         "--seed",
         type=int,
         default=42,
@@ -187,7 +200,8 @@ def main():
         cama_id=args.cama_id,
         intervalo_min=args.intervalo,
         output_file=args.output,
-        seed=args.seed
+        seed=args.seed,
+        postura_fixa=args.postura,
     )
 
 
