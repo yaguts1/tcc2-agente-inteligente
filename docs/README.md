@@ -10,7 +10,8 @@ registre-o nesta tabela.**
 | [datetime_and_firmware.md](datetime_and_firmware.md) | Convenção de tempo: o banco guarda timestamps **UTC naive** |
 | [ADMIN_PAGE_RECONCILIACAO.md](ADMIN_PAGE_RECONCILIACAO.md) | Reconciliação de eventos órfãos na tela de administração |
 | [COMO_USAR_ADMIN.md](COMO_USAR_ADMIN.md) | Uso da página de administração |
-| [GUIA_DEMONSTRACAO.md](GUIA_DEMONSTRACAO.md) | Roteiro de demonstração do sistema |
+| [CHEATSHEET_DEMO.md](CHEATSHEET_DEMO.md) | **Demonstração ao vivo com o ESP32** — comandos, o que dizer, e o que fazer quando der errado |
+| [GUIA_DEMONSTRACAO.md](GUIA_DEMONSTRACAO.md) | Roteiro antigo (narrativa clínica útil; comandos desatualizados) |
 | [esp32_spiffs_upload.md](esp32_spiffs_upload.md) | Gravação de arquivos no SPIFFS do ESP32 |
 | [AUDITORIA_LGPD.md](AUDITORIA_LGPD.md) | Trilha de auditoria: o que é registrado e como consultar |
 | [OPERACAO_BACKUP_E_RESTAURACAO.md](OPERACAO_BACKUP_E_RESTAURACAO.md) | Procedimento de backup e restauração, para quem administra o servidor |

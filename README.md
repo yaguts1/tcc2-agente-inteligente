@@ -53,7 +53,9 @@ cd frontend && npm install && cd ..
 .\verificar_sistema.ps1
 ```
 
-📖 **Guia completo de demonstração:** [`docs/GUIA_DEMONSTRACAO.md`](docs/GUIA_DEMONSTRACAO.md)
+📖 **Demonstração ao vivo (ESP32 físico + container):** [`docs/CHEATSHEET_DEMO.md`](docs/CHEATSHEET_DEMO.md)
+— uma página para ter na mão, com os cinco atos, os tempos medidos e a tabela de
+o-que-fazer-quando-der-errado. O runner é `python -m scripts.demo roteiro`.
 
 ---
 

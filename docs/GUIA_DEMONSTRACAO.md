@@ -1,5 +1,23 @@
 # 🎯 Guia de Demonstração do Sistema
 
+> ## ⚠️ DESATUALIZADO — para apresentar ao vivo, use [CHEATSHEET_DEMO.md](CHEATSHEET_DEMO.md)
+>
+> Este guia é anterior ao ESP32 físico e ao container, e os comandos abaixo
+> **não funcionam mais** (verificado em 2026-08-02):
+>
+> | O que o guia manda | Realidade |
+> |---|---|
+> | `.\venv\Scripts\python.exe ...` | não existe `venv/`; o sistema roda em container |
+> | `http://localhost:5173` | o Vite serve na **3000**, e a demo é contra o container em `http://localhost:8000/TCC/` |
+> | `pytest tests/integration/` | não existe `tests/integration/` |
+> | Simulação por script Python | a demo agora usa o **ESP32 físico** — ver `scripts/demo.py` |
+>
+> O que continua válido aqui é a **narrativa**: as seções sobre o que mostrar em
+> cada tela, o que dizer sobre perfis de risco e a explicação clínica. Os
+> comandos, não.
+>
+> Roteiro operacional atual: `python -m scripts.demo roteiro`.
+
 ## Objetivo
 Este documento apresenta roteiros práticos para demonstrar todas as capacidades do sistema de monitoramento de posturas e prevenção de lesões por pressão.
 
