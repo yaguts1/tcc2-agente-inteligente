@@ -432,3 +432,36 @@ def get_timeline(
             status.HTTP_500_INTERNAL_SERVER_ERROR,
             detail={"code": "timeline_error", "message": "Erro interno ao processar a requisicao."}
         ) from exc
+
+
+@router.get("/relatorios/calibracao", status_code=status.HTTP_200_OK)
+def relatorio_calibracao(
+    dias: int = 30,
+    _: None = Depends(_check_api_rate_limit),
+    unidades: set[int] | None = Depends(escopo_de_unidades),
+) -> dict:
+    """A confiança que o sensor reporta prediz falso alarme?
+
+    `grade.confianca` era gravada em toda amostra e nunca lida — nem para
+    decidir, nem para relatar. E o botão "falso alarme" já existia no
+    fechamento, então o dado do outro lado também já vinha sendo coletado. O que
+    faltava era alguém somar os dois.
+
+    Sem isto, "qual a taxa de falso-positivo da instalação?" só tinha uma
+    resposta honesta: não sei. Com isto, tem número — e, mais útil, tem número
+    POR FAIXA de confiança, que é o que diz se o `CONF_LIMIAR` está no lugar
+    certo.
+
+    Ver `interface/repositories/calibracao.py` para o que liga um alerta às
+    amostras que o geraram, e para o limite honesto do que isto mede.
+    """
+    from interface.repositories.calibracao import calibracao
+
+    try:
+        return calibracao(DB_PATH, dias=dias, unidades=unidades)
+    except Exception as exc:
+        logger.exception("calibracao_error", erro=str(exc))
+        raise HTTPException(
+            status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail={"code": "calibracao_error", "message": "Erro interno ao processar a requisicao."},
+        ) from exc

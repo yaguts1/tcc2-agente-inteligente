@@ -1,9 +1,10 @@
 import { useState } from 'react';
-import { Settings, Bed, Users, Database, Building2 } from 'lucide-react';
+import { Settings, Bed, Users, Database, Building2, Gauge } from 'lucide-react';
 import { OrphanEventsPanel } from '../admin/OrphanEventsPanel';
 import { UsersPanel } from '../admin/UsersPanel';
 import { BackupPanel } from '../admin/BackupPanel';
 import { UnitsPanel } from '../admin/UnitsPanel';
+import { CalibracaoPanel } from '../admin/CalibracaoPanel';
 
 /**
  * Página de administração.
@@ -21,6 +22,7 @@ const ABAS = [
   { id: 'orfaos', rotulo: 'Eventos órfãos', icone: Bed },
   { id: 'usuarios', rotulo: 'Usuários', icone: Users },
   { id: 'unidades', rotulo: 'Unidades', icone: Building2 },
+  { id: 'calibracao', rotulo: 'Calibração', icone: Gauge },
   { id: 'backup', rotulo: 'Backup', icone: Database },
 ] as const;
 
@@ -75,6 +77,7 @@ export function AdminPage() {
         {aba === 'orfaos' && <OrphanEventsPanel />}
         {aba === 'usuarios' && <UsersPanel />}
         {aba === 'unidades' && <UnitsPanel />}
+        {aba === 'calibracao' && <CalibracaoPanel />}
         {aba === 'backup' && <BackupPanel />}
       </div>
     </div>

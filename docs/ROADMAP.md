@@ -118,8 +118,21 @@ estiveram dentro de uma imagem distribuível.
 - **5.1 Relatório gerencial** — agora tem de onde tirar os números: adesão ×
   turno × ala × enfermeiro, distribuição de tempo-até-ack, denominador em
   paciente-hora, incidência de LPP. Falta o **turno**. **M**
-- **5.2 Confiança e calibração** — `confianca` é gravada e nunca lida; sem botão
-  de "falso alarme" a taxa de falso-positivo segue incognoscível. **S/M**
+- ~~**5.2 Confiança e calibração**~~ — **fechado**. Duas correções ao enunciado
+  antigo: o botão de "falso alarme" **já existia** (`MotivoFechamento`), então o
+  dado vinha sendo coletado; o que faltava era alguém **somar**. E `confianca`
+  seguia sem leitor.
+
+  `GET /api/relatorios/calibracao` cruza os dois: para cada alerta fechado com
+  motivo, olha a confiança média das amostras da janela que o gerou
+  (`[inicio - janela_min, inicio]` — a mesma janela do motor) e devolve a taxa
+  de falso alarme por faixa. Aba "Calibração" no admin.
+
+  Duas decisões que os testes protegem: só `falso_alarme` conta como
+  falso-positivo (`em_procedimento`/`recusa_do_paciente`/`contraindicado` são
+  alertas CORRETOS cuja ação não pôde ser executada — contá-los culparia o
+  sensor por decisão clínica); e faixa sem alerta responde `null`, não `0.0` —
+  "não sei" e "zero por cento" levariam a decisões opostas sobre o limiar.
 - **5.3 Watchdog como alerta de verdade** — hoje não tem ciclo de vida:
   sem reconhecimento, sem responsável, sem export. **M**
 - **5.4 HIS/FHIR** — endpoints de leitura `Patient`/`Encounter`/`Location`

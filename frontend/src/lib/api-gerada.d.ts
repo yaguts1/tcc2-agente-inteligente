@@ -1437,6 +1437,39 @@ export interface paths {
         patch?: never;
         trace?: never;
     };
+    "/api/relatorios/calibracao": {
+        parameters: {
+            query?: never;
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        /**
+         * Relatorio Calibracao
+         * @description A confiança que o sensor reporta prediz falso alarme?
+         *
+         *     `grade.confianca` era gravada em toda amostra e nunca lida — nem para
+         *     decidir, nem para relatar. E o botão "falso alarme" já existia no
+         *     fechamento, então o dado do outro lado também já vinha sendo coletado. O que
+         *     faltava era alguém somar os dois.
+         *
+         *     Sem isto, "qual a taxa de falso-positivo da instalação?" só tinha uma
+         *     resposta honesta: não sei. Com isto, tem número — e, mais útil, tem número
+         *     POR FAIXA de confiança, que é o que diz se o `CONF_LIMIAR` está no lugar
+         *     certo.
+         *
+         *     Ver `interface/repositories/calibracao.py` para o que liga um alerta às
+         *     amostras que o geraram, e para o limite honesto do que isto mede.
+         */
+        get: operations["relatorio_calibracao_api_relatorios_calibracao_get"];
+        put?: never;
+        post?: never;
+        delete?: never;
+        options?: never;
+        head?: never;
+        patch?: never;
+        trace?: never;
+    };
     "/api/stats": {
         parameters: {
             query?: never;
@@ -4638,6 +4671,39 @@ export interface operations {
                     "application/json": {
                         [key: string]: unknown;
                     };
+                };
+            };
+        };
+    };
+    relatorio_calibracao_api_relatorios_calibracao_get: {
+        parameters: {
+            query?: {
+                dias?: number;
+            };
+            header?: never;
+            path?: never;
+            cookie?: never;
+        };
+        requestBody?: never;
+        responses: {
+            /** @description Successful Response */
+            200: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": {
+                        [key: string]: unknown;
+                    };
+                };
+            };
+            /** @description Validation Error */
+            422: {
+                headers: {
+                    [name: string]: unknown;
+                };
+                content: {
+                    "application/json": components["schemas"]["HTTPValidationError"];
                 };
             };
         };

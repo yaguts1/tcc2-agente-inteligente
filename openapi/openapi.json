@@ -5279,6 +5279,52 @@
         ]
       }
     },
+    "/api/relatorios/calibracao": {
+      "get": {
+        "description": "A confiança que o sensor reporta prediz falso alarme?\n\n`grade.confianca` era gravada em toda amostra e nunca lida — nem para\ndecidir, nem para relatar. E o botão \"falso alarme\" já existia no\nfechamento, então o dado do outro lado também já vinha sendo coletado. O que\nfaltava era alguém somar os dois.\n\nSem isto, \"qual a taxa de falso-positivo da instalação?\" só tinha uma\nresposta honesta: não sei. Com isto, tem número — e, mais útil, tem número\nPOR FAIXA de confiança, que é o que diz se o `CONF_LIMIAR` está no lugar\ncerto.\n\nVer `interface/repositories/calibracao.py` para o que liga um alerta às\namostras que o geraram, e para o limite honesto do que isto mede.",
+        "operationId": "relatorio_calibracao_api_relatorios_calibracao_get",
+        "parameters": [
+          {
+            "in": "query",
+            "name": "dias",
+            "required": false,
+            "schema": {
+              "default": 30,
+              "title": "Dias",
+              "type": "integer"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "additionalProperties": true,
+                  "title": "Response Relatorio Calibracao Api Relatorios Calibracao Get",
+                  "type": "object"
+                }
+              }
+            },
+            "description": "Successful Response"
+          },
+          "422": {
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/HTTPValidationError"
+                }
+              }
+            },
+            "description": "Validation Error"
+          }
+        },
+        "summary": "Relatorio Calibracao",
+        "tags": [
+          "dashboard"
+        ]
+      }
+    },
     "/api/stats": {
       "get": {
         "description": "Retorna estatísticas do dashboard para o frontend.\n\n✅ CORRIGIDO: Usa janela temporal CONSISTENTE de 24h para todas as métricas\n\nAntes: activeAlerts=7 dias, acknowledgedAlerts=7 dias, completedToday=24h\n       Causava taxa de conclusão inconsistente (misturava períodos diferentes)\n\nAgora: TODAS as métricas usam 24h (últimas 24 horas)\n       Taxa de conclusão = fechados_24h / (abertos_24h + reconhecidos_24h + fechados_24h)\n\nRetorna: activeAlerts, acknowledgedAlerts, completedToday, totalPatients, completionRate",

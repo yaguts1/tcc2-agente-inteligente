@@ -537,6 +537,35 @@ export interface Unit {
   ativo: number;
 }
 
+/** Faixa de confiança e o quanto ela erra. `taxa: null` = sem alertas na faixa. */
+export interface FaixaDeCalibracao {
+  faixa: string;
+  alertas: number;
+  falsos: number;
+  taxa: number | null;
+}
+
+/**
+ * Calibração: a confiança que o sensor reporta prediz falso alarme?
+ *
+ * `taxa_falso_alarme` é `null` quando ninguém classificou alerta nenhum — e
+ * isso NÃO é zero. A tela precisa manter a diferença: "não sei" e "nenhum falso
+ * alarme" levariam a decisões opostas sobre o limiar do filtro.
+ */
+export interface Calibracao {
+  dias: number;
+  alertas_classificados: number;
+  falsos_alarmes: number;
+  taxa_falso_alarme: number | null;
+  sem_amostras: number;
+  por_motivo: Record<string, number>;
+  por_faixa: FaixaDeCalibracao[];
+}
+
+export const calibracaoApi = {
+  get: (dias = 30) => request<Calibracao>(`/api/relatorios/calibracao?dias=${dias}`),
+};
+
 export const unitsApi = {
   /**
    * Unidades que o usuário logado enxerga. Admin recebe todas.
