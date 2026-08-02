@@ -143,8 +143,10 @@ estiveram dentro de uma imagem distribuível.
   pé, então cada rota migrada ganha a proteção de graça.
 - `UPP_DEVICE_TOKEN` não está definido no `.env` atual e nenhum ESP32 foi
   provisionado: a ingestão aceita qualquer origem, e o startup avisa. A bancada
-  de E2E (abaixo) roda sem token dos dois lados; o caminho autenticado do
-  firmware continua sem cobertura de hardware.
+  de E2E roda sem token dos dois lados, mas
+  `test_token_errado_faz_o_aparelho_insistir_ate_alguem_corrigir` exercita a
+  recusa e a recuperação com o aparelho de verdade — o que ainda falta é
+  provisionar um token *válido* por dispositivo.
 - O `SERVER_IP` do firmware é compilado para dentro do aparelho e a bancada usa
   DHCP: quando a rede reatribui o endereço da máquina, é preciso regravar.
   `tests/test_e2e_esp32.py` falha explicando isso, mas fixar o IP no roteador
