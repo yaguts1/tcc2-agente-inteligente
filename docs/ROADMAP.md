@@ -142,7 +142,13 @@ estiveram dentro de uma imagem distribuível.
 - 45 das 66 operações seguem sem `response_model`. O mecanismo de guarda está de
   pé, então cada rota migrada ganha a proteção de graça.
 - `UPP_DEVICE_TOKEN` não está definido no `.env` atual e nenhum ESP32 foi
-  provisionado: a ingestão aceita qualquer origem, e o startup avisa.
+  provisionado: a ingestão aceita qualquer origem, e o startup avisa. A bancada
+  de E2E (abaixo) roda sem token dos dois lados; o caminho autenticado do
+  firmware continua sem cobertura de hardware.
+- O `SERVER_IP` do firmware é compilado para dentro do aparelho e a bancada usa
+  DHCP: quando a rede reatribui o endereço da máquina, é preciso regravar.
+  `tests/test_e2e_esp32.py` falha explicando isso, mas fixar o IP no roteador
+  resolveria de vez.
 
 ---
 
