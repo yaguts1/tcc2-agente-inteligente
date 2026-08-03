@@ -106,8 +106,28 @@ estiveram dentro de uma imagem distribuível.
 
 ### Bloco 3 — escala, operação e qualidade
 
-- **3.3 Estado em processo bloqueia réplicas** — dedup/jitter, rate limit, cache
-  e tarefas de fundo. Redis já disponível. **M**
+- **3.3 Estado em processo bloqueia réplicas** — **parcial**. Feito: o dedup e o
+  buffer de reordenação do filtro saíram dos dicionários de módulo para um store
+  com dois backends (memória, o padrão; Redis quando `REDIS_URL`). O buffer era
+  o caso de CORREÇÃO, não só de eficiência: com duas réplicas, cada uma
+  reordenaria metade das amostras contra a própria janela — e o buffer existe
+  justamente para corrigir chegada fora de ordem. Redis entrou no compose.
+
+  **Falta**, e a lista ficou mais precisa depois de exercitar:
+
+  - `ProcessadorIncremental` mantém `_estado_cache` e `_ultima_ts` como caches
+    EM PROCESSO na frente do store. Mover o store para o Redis não os removeu:
+    duas réplicas ainda divergem, e limpar o estado de fora exige reiniciar o
+    processo (é por isso que `scripts/demo.py` ainda dá `docker restart`);
+  - rate limit (`api_shared`) segue por processo: N réplicas = N× o teto;
+  - tarefas de fundo (backup, reconciliador) rodariam em toda réplica.
+
+  Nota de campo: ligar o `REDIS_URL` expôs `_RedisStateStore` quebrado —
+  `save()` não aceitava o `conn=` que o SQLite ganhou, e o efeito era TypeError
+  em toda gravação de estado, nenhum alerta emitido, amostras caindo no caminho
+  de evento órfão e **o dispositivo recebendo ACK**. A classe estava marcada
+  `# pragma: no cover`. Corrigido, com teste de paridade de assinatura que pega
+  isso sem servidor nenhum. **M**
 - **3.6b mypy gradual** — a única parte de 3.6 que ficou. Vale em `nucleo/`,
   `interface/schemas.py`, `services/`, `repositories/`; não vale em
   `main.py`/`scripts/`. **M**

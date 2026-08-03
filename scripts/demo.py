@@ -395,25 +395,59 @@ def limpar_leito() -> None:
         raise SystemExit(f"não consegui limpar o leito: {saida}")
     ok(f"histórico de {pid} limpo (alertas, grade, eventos)")
 
-    # E o estado EM MEMÓRIA do processo, que apagar linhas do banco não alcança.
+    # E o estado que apagar linhas do banco NÃO alcança.
     #
-    # `quality/filtro.py` guarda `_DEDUP_CACHE[device_id]` com chave
-    # `(device_id, postura, ts_iso)` dentro do processo. O SPIFFS do aparelho
-    # tem sempre as MESMAS amostras, então o segundo replay repete exatamente as
-    # mesmas chaves: tudo é descartado como duplicado — e o servidor ainda
-    # responde ACK, porque descartar duplicata não é erro. Do lado do aparelho o
-    # replay termina "com sucesso"; do lado da tela não aparece nada.
+    # São dois, e nenhum aparece na interface:
     #
-    # É o item 3.3 do ROADMAP ("estado em processo bloqueia réplicas") aparecendo
-    # como demo que só funciona na primeira vez. Enquanto o dedup não sair para o
-    # Redis, reiniciar é o jeito honesto de recomeçar do zero.
+    #   - o dedup/buffer do filtro (`quality/filtro.py`). O SPIFFS do aparelho
+    #     tem sempre as MESMAS amostras, então o segundo replay repete as mesmas
+    #     chaves e é descartado inteiro — com ACK, porque descartar duplicata
+    #     não é erro. Do lado do aparelho o replay termina "com sucesso"; do
+    #     lado da tela não aparece nada;
+    #
+    #   - o estado do motor incremental, que guarda `alerta_atual`. Enquanto ele
+    #     achar que o alerta está ABERTO, não emite de novo.
+    #
+    # Isto ANTES era `docker restart`: os dois viviam na memória do processo, e
+    # reiniciar era a única forma de esquecer. Com `REDIS_URL` configurado eles
+    # passaram a viver no Redis — e aí reiniciar o container deixou de resolver,
+    # porque o Redis sobrevive ao restart. Limpar explicitamente funciona nos
+    # DOIS modos, e é mais rápido: some o tempo de subida do container.
+    limpeza = "; ".join([
+        "from quality.filtro import reset_filtro",
+        "from interface.services.ingestao_service import PROCESSADOR",
+        "reset_filtro()",
+        "PROCESSADOR.reset()",
+        "print('estado limpo')",
+    ])
+    rc, saida = no_container(limpeza)
+    if rc != 0:
+        raise SystemExit(f"não consegui limpar o estado do filtro/motor: {saida}")
+    ok("dedup, buffer de reordenação e estado do motor zerados")
+
+    # E o restart CONTINUA sendo necessário — a tentativa de removê-lo falhou, e
+    # o motivo vale registrar.
+    #
+    # `docker exec` roda em OUTRO processo. Com o estado compartilhado no Redis,
+    # a limpeza acima alcança o que está lá; mas `ProcessadorIncremental` mantém
+    # `_estado_cache` e `_ultima_ts` como caches EM PROCESSO na frente do store.
+    # O processo vivo seguia com o último timestamp em memória, e toda amostra
+    # nova era recusada com "Timestamps devem estar em ordem crescente" — 24
+    # ACKs, grade zerada, nenhum alerta.
+    #
+    # Ou seja: mover o store para o Redis resolveu o filtro e NÃO resolveu o
+    # motor, porque o cache na frente dele continua local. É o 3.3 ainda aberto,
+    # e está anotado no ROADMAP.
+    #
+    # A ordem importa: limpar o compartilhado ANTES de reiniciar, senão o
+    # processo novo recarrega o estado velho do Redis na subida.
     subprocess.run(["docker", "restart", CONTAINER], capture_output=True, text=True)
     limite = time.time() + 90
     while time.time() < limite:
         r = subprocess.run(["docker", "inspect", "-f", "{{.State.Health.Status}}", CONTAINER],
                            capture_output=True, text=True)
         if r.stdout.strip() == "healthy":
-            ok("container reiniciado (dedup e estado incremental zerados)")
+            ok("container reiniciado (caches em processo do motor zerados)")
             return
         time.sleep(2)
     raise SystemExit("o container não voltou a ficar saudável depois do restart")

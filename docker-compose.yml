@@ -37,6 +37,11 @@ services:
       # assinatura da trilha de auditoria, e as duas seguiriam desligadas, com
       # o aviso de startup passando por ruido.
       - UPP_DEVICE_TOKEN=${UPP_DEVICE_TOKEN:-}
+      # Estado compartilhado entre replicas. VAZIO = tudo em processo, que e o
+      # comportamento historico e continua valendo para instalacao de uma
+      # instancia so. Com valor, o dedup e o buffer de reordenacao passam a
+      # viver no Redis — ver `quality/filtro.py`.
+      - REDIS_URL=${REDIS_URL:-redis://redis:6379/0}
       - BRADEN_REAVALIACAO_HORAS=${BRADEN_REAVALIACAO_HORAS:-}
       - UPP_AUDIT_KEY=${UPP_AUDIT_KEY:-}
       # O mesmo defeito das duas acima valia para TODAS as de ajuste abaixo:
@@ -83,6 +88,36 @@ services:
   # publicada acima só para debug direto). Em produção, aponte o DNS do seu
   # domínio para a VM, defina DOMAIN=seudominio.com no .env, e abra só as
   # portas 80/443 no firewall (não a 8000) — ver GUIA_BUILD_DEPLOYMENT.md.
+  # Estado que precisa ser COMPARTILHADO entre replicas.
+  #
+  # O dedup e o buffer de reordenacao do filtro viviam em dicionarios de modulo:
+  # com duas instancias, cada uma reordenaria metade das amostras contra a
+  # propria janela — e o buffer existe justamente para corrigir chegada fora de
+  # ordem. Em processo, subir uma replica silenciosamente desliga essa correcao.
+  #
+  # `appendonly` ligado: perder o dedup num restart significa reprocessar
+  # amostra que ja entrou (inofensivo, a PK da grade recusa) mas perder o BUFFER
+  # significa perder amostra que ainda nao foi gravada.
+  redis:
+    image: redis:7-alpine
+    container_name: upp_redis
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes"]
+    # 127.0.0.1 e nao 0.0.0.0. A aplicacao fala com o Redis pela rede interna do
+    # compose e nao precisa de porta publicada; isto existe para a suite de
+    # paridade (`tests/test_estado_do_filtro.py`) alcancar o servidor a partir da
+    # maquina. Este Redis nao tem senha — publicado na LAN, qualquer um leria e
+    # apagaria o buffer de amostras ainda nao gravadas.
+    ports:
+      - "127.0.0.1:6379:6379"
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
   caddy:
     image: caddy:2-alpine
     container_name: upp_caddy
@@ -141,6 +176,7 @@ services:
 
 volumes:
   app_data:
+  redis_data:
   caddy_data:
   caddy_config:
   prometheus_data:

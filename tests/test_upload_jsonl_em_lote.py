@@ -230,8 +230,12 @@ async def test_grade_nao_esvazia_buffer_de_outro_dispositivo(api_client):
     client = api_client["client"]
 
     # Dispositivo AO VIVO com uma amostra retida no buffer de reordenacao.
-    filtro._BUFFER["ESP-AO-VIVO"].append((None, 0, {"ts_utc": "2025-04-01T00:00:00"}))
-    assert len(filtro._BUFFER["ESP-AO-VIVO"]) == 1
+    #
+    # Pelo armazenamento do filtro, e nao mexendo num dicionario de modulo: o
+    # estado passou a ter dois backends (memoria e Redis) e o teste precisa
+    # valer para os dois. Ver `quality/estado.py`.
+    filtro._ESTADO.guardar("ESP-AO-VIVO", 1743465600.0, {"ts_utc": "2025-04-01T00:00:00"})
+    assert filtro._ESTADO.pendentes("ESP-AO-VIVO") == 1
 
     files = {
         "arquivo": (
@@ -243,7 +247,7 @@ async def test_grade_nao_esvazia_buffer_de_outro_dispositivo(api_client):
     resp = await client.post("/api/grade", files=files)
     assert resp.status_code == 200, resp.text
 
-    assert len(filtro._BUFFER.get("ESP-AO-VIVO", [])) == 1, (
+    assert filtro._ESTADO.pendentes("ESP-AO-VIVO") == 1, (
         "o upload de outro dispositivo esvaziou o buffer do ESP32 ao vivo"
     )
 

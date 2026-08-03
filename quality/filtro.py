@@ -2,9 +2,6 @@
 
 from __future__ import annotations
 
-import heapq
-import itertools
-from collections import defaultdict, deque
 from dataclasses import dataclass
 from datetime import datetime, timedelta, UTC
 from typing import Any
@@ -13,15 +10,23 @@ from collections.abc import Iterable, Mapping
 import structlog
 
 from configuracao import config
+from quality.estado import criar_estado
 
 logger = structlog.get_logger(__name__)
 
 CONF_LIMIAR = config.conf_limiar
 JITTER_SECONDS = config.event_jitter_seconds
 
-_DEDUP_CACHE: dict[str, deque[str]] = defaultdict(lambda: deque(maxlen=2048))
-_BUFFER: dict[str, list] = defaultdict(list)
-_COUNTER = itertools.count()
+# Dedup e buffer de reordenacao viviam em dicionarios de modulo. Com uma replica
+# a mais, o dedup vira desperdicio (a PK da grade recusa a duplicata) mas o
+# BUFFER perde correcao: cada replica reordena metade das amostras contra a
+# propria janela, e o buffer existe justamente para corrigir chegada fora de
+# ordem. Ver `quality/estado.py`.
+#
+# Sem REDIS_URL o backend e o de memoria, com o comportamento identico ao
+# historico — instalacao de uma instancia nao paga rede nem depende de outro
+# servico.
+_ESTADO = criar_estado(getattr(config, "redis_url", None))
 
 
 @dataclass
@@ -80,57 +85,59 @@ def filtrar(evento: Mapping[str, Any]) -> FiltroResultado:
         return FiltroResultado([], descartado=True, motivo="timestamp_invalido")
 
     chave = _dedup_key(device_id, postura, ts_iso)
-    cache = _DEDUP_CACHE[device_id]
-    if chave in cache:
+    if _ESTADO.ja_visto(device_id, chave):
         logger.info("evento_duplicado_descartado", device_id=device_id, paciente_id=paciente_id, ts=ts_iso)
         return FiltroResultado([], descartado=True, motivo="duplicado")
-    cache.append(chave)
+    _ESTADO.registrar(device_id, chave)
 
     evento_norm = dict(evento)
     evento_norm["ts_utc"] = ts_iso
 
-    heap = _BUFFER[device_id]
-    heapq.heappush(heap, (ts_dt, next(_COUNTER), evento_norm))
+    # A ordenacao passa a ser por epoch (float) em vez de datetime: o ZSET do
+    # Redis pontua por numero, e usar a MESMA chave nos dois backends impede que
+    # eles divirjam sobre o que "vem antes".
+    _ESTADO.guardar(device_id, ts_dt.timestamp(), evento_norm)
 
-    liberar_ate = ts_dt if JITTER_SECONDS <= 0 else ts_dt - timedelta(seconds=JITTER_SECONDS)
-
-    prontos: list[dict] = []
-    while heap and heap[0][0] <= liberar_ate:
-        _, _, evt = heapq.heappop(heap)
-        prontos.append(evt)
+    corte = ts_dt if JITTER_SECONDS <= 0 else ts_dt - timedelta(seconds=JITTER_SECONDS)
+    prontos = _ESTADO.liberar_ate(device_id, corte.timestamp())
 
     if not prontos:
-        if len(heap) == 1:
-            _, _, evt = heapq.heappop(heap)
+        # Unico pendente: nao ha o que reordenar, entao segurar so adicionaria
+        # latencia. Preserva o comportamento historico do `len(heap) == 1`.
+        if _ESTADO.pendentes(device_id) == 1:
+            restantes = _ESTADO.drenar(device_id)
             logger.debug("evento_sem_jitter", device_id=device_id, paciente_id=paciente_id, ts=ts_iso)
-            return FiltroResultado(prontos=[evt])
+            return FiltroResultado(prontos=restantes)
         logger.debug("evento_bufferizado", device_id=device_id, paciente_id=paciente_id, ts=ts_iso)
         return FiltroResultado([], descartado=False, motivo=None, buffered=True)
 
-    if heap:
-        logger.debug("buffer_restante", device_id=device_id, pendentes=len(heap))
-    return FiltroResultado(prontos=prontos, buffered=bool(heap))
+    restam = _ESTADO.pendentes(device_id)
+    if restam:
+        logger.debug("buffer_restante", device_id=device_id, pendentes=restam)
+    return FiltroResultado(prontos=prontos, buffered=bool(restam))
 
 
 def flush_filtro(device_id: str | None = None) -> list[dict]:
     dispositivos: Iterable[str]
-    dispositivos = list(_BUFFER.keys()) if device_id is None else [device_id]
+    dispositivos = _ESTADO.dispositivos() if device_id is None else [device_id]
 
     prontos: list[dict] = []
     for dev in dispositivos:
-        heap = _BUFFER.get(dev)
-        if not heap:
+        drenados = _ESTADO.drenar(dev)
+        if not drenados:
             continue
-        quantidade = len(heap)
-        while heap:
-            _, _, evt = heapq.heappop(heap)
-            prontos.append(evt)
-        _BUFFER.pop(dev, None)
-        logger.info("eventos_flush_dispositivo", device_id=dev, quantidade=quantidade)
+        prontos.extend(drenados)
+        logger.info("eventos_flush_dispositivo", device_id=dev, quantidade=len(drenados))
     prontos.sort(key=lambda evt: evt["ts_utc"])
     return prontos
 
 
 def reset_filtro() -> None:
-    _DEDUP_CACHE.clear()
-    _BUFFER.clear()
+    """Esquece tudo: dedup e buffer.
+
+    Existia so para os testes. Passou a ter uso operacional: reenviar as MESMAS
+    amostras (um replay repetido, uma demonstracao) era descartado como
+    duplicata — com ACK, e sem nada na tela. Antes, a unica forma de recomecar
+    era reiniciar o processo.
+    """
+    _ESTADO.limpar()

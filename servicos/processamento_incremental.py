@@ -112,7 +112,21 @@ class _SQLiteStateStore:
       conn.execute("DELETE FROM estado_incremental")
 
 
-class _RedisStateStore:  # pragma: no cover - dependencia nao exercitada em testes
+class _RedisStateStore:
+  """Estado do motor compartilhado entre replicas.
+
+  `conn` aparece nas assinaturas e e IGNORADO de proposito. O store SQLite o
+  recebe para entrar na MESMA transacao da gravacao da amostra — grade, evento e
+  estado commitam juntos ou nao commitam. O Redis nao participa dessa transacao,
+  e fingir que participa seria pior que assumir a diferenca.
+
+  Esta classe passou meses sem nenhum teste (`# pragma: no cover`), e a
+  assinatura do SQLite evoluiu sem ela: `save()` ganhou `conn=` e a versao Redis
+  nao. O resultado so aparecia com REDIS_URL configurado — TypeError em TODA
+  gravacao de estado, entao NENHUM alerta era emitido e as amostras caiam no
+  caminho de evento orfao. Silencioso: o dispositivo recebia ACK.
+  """
+
   def __init__(self, url: str) -> None:
     if redis is None:
       raise RuntimeError("biblioteca redis nao instalada")
@@ -133,10 +147,12 @@ class _RedisStateStore:  # pragma: no cover - dependencia nao exercitada em test
       estados[paciente_id] = json.loads(raw)
     return estados
 
-  def save(self, paciente_id: str, state: dict) -> None:
+  def save(self, paciente_id: str, state: dict, conn=None) -> None:
+    del conn  # ver docstring da classe
     self._cliente.set(self._key(paciente_id), json.dumps(state))
 
-  def delete(self, paciente_id: str) -> None:
+  def delete(self, paciente_id: str, conn=None) -> None:
+    del conn
     self._cliente.delete(self._key(paciente_id))
 
   def clear(self) -> None:
