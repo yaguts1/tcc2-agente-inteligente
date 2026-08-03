@@ -92,12 +92,27 @@ class PrometheusMiddleware(BaseHTTPMiddleware):
 
 @asynccontextmanager
 async def _lifespan(app: FastAPI):
-    # Garante o schema no startup (aplica migrations pendentes; não-fatal).
+    # Garante o schema no startup (aplica migrations pendentes). FATAL.
+    #
+    # Antes isto era um `logger.warning` e o app subia mesmo assim. A intenção
+    # era boa — não derrubar a ala por um problema de migration —, mas o efeito
+    # era o oposto: o healthcheck respondia 200, o proxy publicava a instância, e
+    # ela passava a SERVIR E GRAVAR dado clínico contra um schema meio migrado.
+    # Uma coluna que não existe vira erro 500 por requisição; pior, uma que
+    # existe pela metade grava dado que ninguém consegue ler depois.
+    #
+    # Falhar aqui é ruidoso e recuperável: o container reinicia em laço, o
+    # `restart: unless-stopped` deixa isso visível, e ninguém publica nada.
+    # Subir quebrado é silencioso e não é.
     try:
         criar_esquema(DB_PATH)
         logger.info("schema_garantido", db_path=DB_PATH)
-    except Exception as exc:  # pragma: no cover - log but do not fail startup
-        logger.warning("schema_nao_garantido", motivo=str(exc))
+    except Exception as exc:
+        logger.error("schema_nao_garantido", motivo=str(exc), db_path=DB_PATH)
+        raise RuntimeError(
+            f"schema do banco não pôde ser garantido ({exc}). A aplicação não sobe "
+            "com schema incompleto: conferir migrations e o volume de dados."
+        ) from exc
 
     # A ingestao so fica ABERTA quando nao ha credencial nenhuma: nem token
     # global, nem aparelho provisionado. Um deploy com todos os ESP32 com token
@@ -160,7 +175,29 @@ async def _lifespan(app: FastAPI):
         await stop_housekeeping_task(app)
 
 
-app = FastAPI(title="Monitor de Alertas UPP", lifespan=_lifespan)
+# A documentação interativa é DESLIGADA em produção.
+#
+# `/docs` e `/openapi.json` ficam na RAIZ, fora do `APP_PREFIX`, portanto fora de
+# qualquer regra do proxy: o `Caddyfile` bloqueia `/metrics` e não tem como
+# bloquear estas, porque nem sabe que existem sob esse caminho. Verificado no
+# container em execução: as duas respondiam 200.
+#
+# O que elas entregam a quem alcança a porta: o mapa completo da API, com todo
+# nome de rota, formato de payload e enum — inclusive dos endpoints
+# administrativos. Não é vazamento de dado clínico, é o mapa para chegar nele.
+#
+# Em desenvolvimento continuam ligadas, e é onde elas servem para alguma coisa.
+_DOCS = None if em_producao() else "/docs"
+_REDOC = None if em_producao() else "/redoc"
+_OPENAPI = None if em_producao() else "/openapi.json"
+
+app = FastAPI(
+    title="Monitor de Alertas UPP",
+    lifespan=_lifespan,
+    docs_url=_DOCS,
+    redoc_url=_REDOC,
+    openapi_url=_OPENAPI,
+)
 web_router = APIRouter()
 
 app.state.app_prefix = APP_PREFIX

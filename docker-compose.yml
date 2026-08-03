@@ -72,8 +72,23 @@ services:
       - VAPID_PRIVATE_KEY=${VAPID_PRIVATE_KEY:-}
       - VAPID_SUBJECT=${VAPID_SUBJECT:-}
       - PUSH_CHECK_INTERVAL=${PUSH_CHECK_INTERVAL:-}
+    # 127.0.0.1, e nao 0.0.0.0.
+    #
+    # Publicada na LAN, esta porta ANULAVA o proxy inteiro. O `Caddyfile` bloqueia
+    # `/metrics` com uma justificativa correta — inteligencia operacional sobre
+    # uma unidade de saude, servida sem autenticacao —, e quem falasse direto na
+    # 8000 recebia 200. Verificado no container: `/TCC/metrics`, `/docs` e
+    # `/openapi.json` respondiam todos 200 por fora do Caddy.
+    #
+    # Pior, o rate limit: `_redes_confiaveis()` aceita `X-Forwarded-For` de rede
+    # privada, o que e correto ATRAS de um proxy. Falando direto na 8000, o
+    # cliente da LAN E o peer — e forja o cabecalho para rotacionar o balde.
+    #
+    # A mitigacao anterior era "abra so 80/443 no firewall", documentada no guia
+    # de deploy. Isso e uma checkbox humana defendendo tres controles tecnicos.
+    # Em loopback o debug local continua funcionando e a LAN nao alcanca.
     ports:
-      - "8000:8000"
+      - "127.0.0.1:8000:8000"
     volumes:
       - app_data:/data
     healthcheck:

@@ -81,8 +81,13 @@ Acesse `https://upp.seudominio.com` — deve responder com HTTPS válido automat
 
 ```bash
 curl -f https://upp.seudominio.com/healthz   # {"status":"ok"}
-curl -f https://upp.seudominio.com/docs      # Swagger UI
+curl -f https://upp.seudominio.com/TCC/      # a SPA responde
 ```
+
+> A Swagger UI (`/docs`) é **desligada em produção** — ela mora na raiz, fora do
+> `APP_PREFIX`, portanto fora de qualquer regra do Caddy, e entrega o mapa
+> completo da API incluindo as rotas administrativas. Em `ENVIRONMENT=development`
+> continua disponível. Ver `interface/web.py`.
 
 ---
 

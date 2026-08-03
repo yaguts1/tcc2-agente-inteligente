@@ -40,6 +40,11 @@ def _connect(db_path: str) -> sqlite3.Connection:
     # scheduler de backup ja podem estar tocando o banco. Sem isso a primeira
     # colisao aborta a migration.
     conn = sqlite3.connect(str(path), timeout=BUSY_TIMEOUT_MS / 1000)
+    # Autocommit: o controle de transacao passa a ser EXPLICITO, dentro do
+    # script (ver `_aplicar`). Com o modo legado, o driver abre transacao
+    # sozinho para DML e nao para DDL — duas regras diferentes no mesmo runner,
+    # e foi essa ambiguidade que escondeu a migration nao-atomica.
+    conn.isolation_level = None
     conn.execute("PRAGMA journal_mode=WAL")
     conn.execute(f"PRAGMA busy_timeout={BUSY_TIMEOUT_MS}")
     return conn
@@ -68,6 +73,48 @@ def _versao_atual(conn: sqlite3.Connection) -> int:
     return int(row[0]) if row and row[0] is not None else 0
 
 
+def _aplicar(conn: sqlite3.Connection, versao: int, sql: str) -> None:
+    """Aplica UMA migration inteira, ou nenhuma parte dela.
+
+    O BEGIN/COMMIT vai DENTRO do script, e nao em volta da chamada. A versao
+    anterior fazia:
+
+        with conn:                    # "transacao: rollback se falhar"
+            conn.executescript(sql)
+
+    e o comentario estava errado. `executescript` emite um COMMIT implicito
+    ANTES de rodar e, nas palavras da documentacao, "nenhum outro controle de
+    transacao e realizado; qualquer controle de transacao deve ser adicionado ao
+    script". O `with conn:` nao envolvia nada: cada statement commitava sozinho.
+
+    O custo era uma migration com backfill (a `0010_unidades.sql` tem 15
+    statements) falhando no meio: os primeiros ficavam aplicados, o
+    `schema_version` nao avancava, e a subida seguinte reaplicava do inicio para
+    morrer em "duplicate column name" — para sempre, sem caminho de volta.
+
+    O `INSERT` da versao entra no MESMO script de proposito: schema e versao
+    precisam avancar juntos, senao um crash entre os dois recria o mesmo impasse.
+    A interpolacao de `versao` e segura por construcao — vem de
+    `_FILENAME_RE`, que so casa digitos.
+    """
+    try:
+        conn.executescript(
+            "BEGIN;\n"
+            f"{sql}\n"
+            f"INSERT INTO schema_version (version) VALUES ({int(versao)});\n"
+            "COMMIT;"
+        )
+    except Exception:
+        # A transacao fica ABERTA quando o script morre antes do COMMIT: sem o
+        # rollback explicito, o proximo `executescript` a commitaria junto com o
+        # trabalho seguinte — transformando uma falha limpa em corrupcao.
+        try:
+            conn.execute("ROLLBACK")
+        except sqlite3.Error:
+            pass  # nao havia transacao aberta; a falha original e que importa
+        raise
+
+
 def upgrade(db_path: str) -> int:
     """Aplica todas as migrations pendentes. Retorna a versao final do schema."""
     conn = _connect(db_path)
@@ -76,12 +123,7 @@ def upgrade(db_path: str) -> int:
         pendentes = [(v, arq) for v, arq in _listar_migrations() if v > versao_atual]
 
         for versao, arquivo in pendentes:
-            sql = arquivo.read_text(encoding="utf-8")
-            with conn:  # transacao: commit no fim do bloco, rollback se falhar
-                conn.executescript(sql)
-                conn.execute(
-                    "INSERT INTO schema_version (version) VALUES (?)", (versao,)
-                )
+            _aplicar(conn, versao, arquivo.read_text(encoding="utf-8"))
             versao_atual = versao
 
         return versao_atual

@@ -176,3 +176,48 @@ class TestEscolhaDoBackend:
         if not _redis_disponivel():
             pytest.skip("sem Redis")
         assert isinstance(criar_estado(URL_REDIS), EstadoNoRedis)
+
+
+class TestACiPrecisaExercitarEsteCaminho:
+    """Guarda contra o pulo silencioso voltar.
+
+    Os testes acima pulam sem servidor — o que é certo para uma bancada, e era
+    catastrófico para a CI: o `docker-compose.yml` LIGA Redis por padrão
+    (`${REDIS_URL:-redis://redis:6379/0}`, e `:-` dispara também com string
+    vazia), então o caminho que roda em produção era exatamente o que o build
+    nunca exercitava. Ficava verde.
+
+    Foi assim que `_RedisStateStore.save()` passou meses sem o parâmetro `conn=`:
+    TypeError em toda gravação de estado, nenhum alerta emitido, e o dispositivo
+    recebendo ACK.
+    """
+
+    def test_workflow_declara_o_servico_redis(self):
+        from pathlib import Path
+
+        import yaml
+
+        w = yaml.safe_load(
+            (Path(__file__).resolve().parents[1] / ".github/workflows/python-tests.yml").read_text(
+                encoding="utf-8"
+            )
+        )
+        servicos = w["jobs"]["test"].get("services", {})
+
+        assert "redis" in servicos, (
+            "o job `test` não declara `services: redis` — sem isso os testes de "
+            "paridade pulam sempre e o backend que roda em produção fica sem cobertura."
+        )
+
+    def test_gate_de_cobertura_inclui_quality(self):
+        from pathlib import Path
+
+        texto = (
+            Path(__file__).resolve().parents[1] / ".github/workflows/python-tests.yml"
+        ).read_text(encoding="utf-8")
+
+        assert "--cov=quality" in texto, (
+            "`quality/` está fora do gate. É onde vivem o dedup e o buffer de "
+            "reordenação — o componente que o ROADMAP classifica como caso de "
+            "CORREÇÃO, não de eficiência."
+        )
